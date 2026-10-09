@@ -2,9 +2,9 @@
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Femoral Morphology Analyzer</title><style>
 :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:920px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:9px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}.result{background:#0f172a;padding:10px;border-radius:8px;text-align:center}.val{font-size:1.25rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}
 </style></head><body><div class="app">
-<div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub">v2.0.0-dev.32 · AI-assisted development / Human-in-the-loop</div></div>
+<div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub">v2.0.0-dev.33 · AI-assisted development / Human-in-the-loop</div></div>
 <div class="card"><div class="grid"><div><label>Study ID</label><input id="studyId"></div><div><label>Observer ID</label><input id="observerId"></div><div><label>Mode</label><select id="workMode"><option value="measurement">Measurement</option><option value="annotation">Annotation</option></select></div><div><label>Image type</label><select id="imageType"><option value="postop_THA">Postop THA</option><option value="native">Native hip</option></select></div><div><label>Session</label><select id="session"><option>App-1</option><option>App-repeat</option></select></div><div><label>Side</label><select id="side"><option>R</option><option>L</option></select></div><div><label>Head diameter (mm)</label><input id="headSize" type="number" step="1" value="32"></div><div><label>Calibration</label><select id="calMode"><option value="head">THA head (default)</option><option value="manual">Manual mm/pixel</option></select></div><div><label>mm / pixel</label><input id="scale" type="number" step="0.0001" placeholder="auto from Head"></div></div></div>
-<div class="card"><div class="grid"><label class="primary" style="text-align:center;padding:10px;border-radius:7px;cursor:pointer">画像選択<input id="file" type="file" accept="image/*" style="display:none"></label><button id="undo">1点戻す</button><button id="reset" class="danger">全点リセット</button><label class="primary" style="text-align:center;padding:9px;border-radius:7px;cursor:pointer">AI候補JSON<input id="aiJsonFile" type="file" accept=".json,application/json" style="display:none"></label><button id="aiSuggest">AI候補を適用</button><button id="zoomOut">−</button><span id="zoomLabel">100%</span><button id="zoomIn">＋</button><button id="zoomReset">100%</button><select id="annotationTarget"><option value="head">Head circle (3 points)</option><option value="lt_midpoint">LT medial-most point projection (pilot)</option><option value="femur_medial">Outer cortex - medial</option><option value="femur_lateral">Outer cortex - lateral</option><option value="canal_medial">Canal - medial</option><option value="canal_lateral">Canal - lateral</option><option value="femur_mask">Femur contour (legacy)</option><option value="canal_mask">Canal contour (legacy)</option><option value="stem_medial">Stem - medial</option><option value="stem_lateral">Stem - lateral</option><option value="stem_mask">Stem contour (legacy)</option><option value="lt_region">LT region (pilot)</option></select><button id="undoAnnotation">Undo point</button><button id="closeAnnotation">Finish line</button><button id="saveAnnotation">Annotation JSON</button><button id="accept" class="primary">Accept measurement</button><button id="export" class="primary">CSV export</button><button id="exportProfile">Profile CSV</button><button id="saveCase" class="primary">Save case (3 files)</button></div><div id="guide" class="guide">画像を選択してください。</div><div class="canvasWrap"><canvas id="cv" width="900" height="650"></canvas></div><div class="small">Head輪郭を3点指定すると円を自動推定（将来AI検出に置換） → LT medial-most point → shaft axis proximal → shaft axis distal → 各levelの medial endosteal / lateral endosteal。+100 mmのみ続けて medial outer / lateral outer。点はドラッグで微調整できます。</div></div>
+<div class="card"><div class="grid"><label class="primary" style="text-align:center;padding:10px;border-radius:7px;cursor:pointer">画像選択<input id="file" type="file" accept="image/*" style="display:none"></label><button id="undo">1点戻す</button><button id="reset" class="danger">全点リセット</button><label class="primary" style="text-align:center;padding:9px;border-radius:7px;cursor:pointer">AI候補JSON<input id="aiJsonFile" type="file" accept=".json,application/json" style="display:none"></label><button id="autoHead" class="primary">Head自動検出</button><button id="aiSuggest">AI候補を適用</button><button id="zoomOut">−</button><span id="zoomLabel">100%</span><button id="zoomIn">＋</button><button id="zoomReset">100%</button><select id="annotationTarget"><option value="head">Head circle (3 points)</option><option value="lt_midpoint">LT medial-most point projection (pilot)</option><option value="femur_medial">Outer cortex - medial</option><option value="femur_lateral">Outer cortex - lateral</option><option value="canal_medial">Canal - medial</option><option value="canal_lateral">Canal - lateral</option><option value="femur_mask">Femur contour (legacy)</option><option value="canal_mask">Canal contour (legacy)</option><option value="stem_medial">Stem - medial</option><option value="stem_lateral">Stem - lateral</option><option value="stem_mask">Stem contour (legacy)</option><option value="lt_region">LT region (pilot)</option></select><button id="undoAnnotation">Undo point</button><button id="closeAnnotation">Finish line</button><button id="saveAnnotation">Annotation JSON</button><button id="accept" class="primary">Accept measurement</button><button id="export" class="primary">CSV export</button><button id="exportProfile">Profile CSV</button><button id="saveCase" class="primary">Save case (3 files)</button></div><div id="guide" class="guide">画像を選択してください。</div><div class="canvasWrap"><canvas id="cv" width="900" height="650"></canvas></div><div class="small">Head輪郭を3点指定すると円を自動推定（将来AI検出に置換） → LT medial-most point → shaft axis proximal → shaft axis distal → 各levelの medial endosteal / lateral endosteal。+100 mmのみ続けて medial outer / lateral outer。点はドラッグで微調整できます。</div></div>
 <div class="card"><div class="results"><div class="result"><div class="small">AP-CTI +100</div><div class="val" id="cti">--</div></div><div class="result"><div class="small">LDR-α (LT/+20)</div><div class="val" id="ldra">--</div></div><div class="result"><div class="small">LDR-β (LT/+30)</div><div class="val" id="ldrb">--</div></div><div class="result"><div class="small">Modified MCI (LT/+70)</div><div class="val" id="mci">--</div></div><div class="result"><div class="small">P20/D20</div><div class="val" id="p20d20">--</div></div><div class="result"><div class="small">P20/D30</div><div class="val" id="p20d30">--</div></div><div class="result"><div class="small">測定時間</div><div class="val" id="time">--</div></div></div></div>
 <div class="card"><table><thead><tr><th>Level</th><th>Canal px</th><th>Canal mm</th><th>Outer px</th><th>Outer mm</th><th>Stem mm</th><th>CTI</th><th>CFR</th></tr></thead><tbody id="tbl"></tbody></table></div>
 </div><script>
@@ -116,7 +116,7 @@ function annotationPayload(){
  femur_mask:annotation.femur_mask,canal_mask:annotation.canal_mask,stem_mask:annotation.stem_mask,
  femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,
  stem_medial:annotation.stem_medial,stem_lateral:annotation.stem_lateral,contour_closed:annotationClosed,
- annotation_correction_count:annotationCorrectionCount,ai_loaded:aiLoaded,ai_initial_prediction:aiLoaded?aiInitial:null,app_version:'2.0.0-dev.32',timestamp:new Date().toISOString()};
+ annotation_correction_count:annotationCorrectionCount,ai_loaded:aiLoaded,ai_initial_prediction:aiLoaded?aiInitial:null,app_version:'2.0.0-dev.33',timestamp:new Date().toISOString()};
 }
 function profileCsvText(){
  const rows=calculateProfiles(),hdr=['Distance_from_LT_mm','Outer_width_px','Canal_width_px','Stem_width_px','Outer_width_mm','Canal_width_mm','Stem_width_mm','CTI','CFR'];
@@ -124,10 +124,10 @@ function profileCsvText(){
 }
 function measurementCsvText(){
  let s=parseFloat($('scale').value)||'',rows=[['Study_ID','Observer_ID','Image_type','Session','Side','Landmark_name','X_px','Y_px','Image_width_px','Image_height_px','Scale_mm_per_px','Head_diameter_mm','Calibration_source','AP_CTI','LDR_alpha','LDR_beta','Modified_MCI','P20_D20','P20_D30','Measurement_time_sec','AI_initial_prediction','AI_landmark_count','Profile_point_count','Profile_interval_mm','Human_corrected','Correction_count','Accepted','App_version','Timestamp']];
- for(const[name,k]of steps){let p=pts[k];if(!p)continue;rows.push([ensureCaseId(),$('observerId').value,$('imageType').value,$('session').value,$('side').value,k,p.x.toFixed(3),p.y.toFixed(3),cv.width,cv.height,s,$('headSize').value,$('calMode').value,$('cti').textContent,$('ldra').textContent,$('ldrb').textContent,$('mci').textContent,$('p20d20').textContent,$('p20d30').textContent,start?Math.round((Date.now()-start)/1000):'',aiLoaded?'true':'false',Object.keys(aiInitial).length,profileRows.length,profileRows.length?'1':'',correctionCount>0?'true':'false',correctionCount,accepted?'true':'false','2.0.0-dev.32',new Date().toISOString()])}
+ for(const[name,k]of steps){let p=pts[k];if(!p)continue;rows.push([ensureCaseId(),$('observerId').value,$('imageType').value,$('session').value,$('side').value,k,p.x.toFixed(3),p.y.toFixed(3),cv.width,cv.height,s,$('headSize').value,$('calMode').value,$('cti').textContent,$('ldra').textContent,$('ldrb').textContent,$('mci').textContent,$('p20d20').textContent,$('p20d30').textContent,start?Math.round((Date.now()-start)/1000):'',aiLoaded?'true':'false',Object.keys(aiInitial).length,profileRows.length,profileRows.length?'1':'',correctionCount>0?'true':'false',correctionCount,accepted?'true':'false','2.0.0-dev.33',new Date().toISOString()])}
  return rows.map(r=>r.map(esc).join(',')).join('\n');
 }
-$('saveAnnotation').onclick=()=>{const payload={annotation_version:annotation.version,study_id:ensureCaseId(),image_type:$('imageType').value,side:$('side').value,head:annotation.head,lt_midpoint:annotation.lt_midpoint,lt_region:annotation.lt_region,femur_mask:annotation.femur_mask,canal_mask:annotation.canal_mask,stem_mask:annotation.stem_mask,femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,stem_medial:annotation.stem_medial,stem_lateral:annotation.stem_lateral,contour_closed:annotationClosed,annotation_correction_count:annotationCorrectionCount,app_version:'2.0.0-dev.32',timestamp:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=ensureCaseId()+'_annotation.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};let pendingAiPrediction=null;
+$('saveAnnotation').onclick=()=>{const payload={annotation_version:annotation.version,study_id:ensureCaseId(),image_type:$('imageType').value,side:$('side').value,head:annotation.head,lt_midpoint:annotation.lt_midpoint,lt_region:annotation.lt_region,femur_mask:annotation.femur_mask,canal_mask:annotation.canal_mask,stem_mask:annotation.stem_mask,femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,stem_medial:annotation.stem_medial,stem_lateral:annotation.stem_lateral,contour_closed:annotationClosed,annotation_correction_count:annotationCorrectionCount,app_version:'2.0.0-dev.33',timestamp:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=ensureCaseId()+'_annotation.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};let pendingAiPrediction=null;
 function normalizePrediction(j){
  const p=j.prediction||j;
  const out={points:p.measurement_points||p.points||{},annotation:{}};
@@ -151,13 +151,52 @@ function applyFullPrediction(pred){
  accepted=false;correctionCount=0;annotationCorrectionCount=0;draw();guide();saveWork();
  $('guide').innerHTML='<span class="status">AI候補を読み込みました。水色ラインを確認し、必要な部分だけ修正してください。</span>';
 }
+$('autoHead').onclick=autoDetectHead;
 $('aiJsonFile').onchange=async e=>{
  const f=e.target.files&&e.target.files[0];if(!f)return;
  try{pendingAiPrediction=JSON.parse(await f.text());$('guide').innerHTML='<span class="status">AI候補JSONを読み込みました。「AI候補を適用」を押してください。</span>'}
  catch(err){pendingAiPrediction=null;alert('JSONを読み込めませんでした: '+err.message)}
 };
 $('aiSuggest').onclick=()=>{if(!img){alert('先に画像を選択してください');return}if(!pendingAiPrediction){alert('先に「AI候補JSON」から候補ファイルを選択してください');return}applyFullPrediction(pendingAiPrediction)};$('accept').onclick=()=>{if(step<steps.length){alert('測定が完了していません');return}accepted=true;$('guide').innerHTML='<span class="status">Accepted ✓　CSV exportできます。</span>'};$('scale').oninput=calc;$('headSize').oninput=calc;$('calMode').onchange=calc;
-function dist(a,b){return a&&b?Math.hypot(a.x-b.x,a.y-b.y):null}function circle3(a,b,c){if(!a||!b||!c)return null;let d=2*(a.x*(b.y-c.y)+b.x*(c.y-a.y)+c.x*(a.y-b.y));if(Math.abs(d)<1e-6)return null;let aa=a.x*a.x+a.y*a.y,bb=b.x*b.x+b.y*b.y,cc=c.x*c.x+c.y*c.y;let x=(aa*(b.y-c.y)+bb*(c.y-a.y)+cc*(a.y-b.y))/d,y=(aa*(c.x-b.x)+bb*(a.x-c.x)+cc*(b.x-a.x))/d;return{x,y,r:Math.hypot(a.x-x,a.y-y)}}function canal(l){return dist(pts['m'+l],pts['l'+l])}function calc(){
+function dist(a,b){return a&&b?Math.hypot(a.x-b.x,a.y-b.y):null}function autoDetectHead(){
+ if(!img){alert('先に画像を選択してください');return}
+ const W=cv.width,H=cv.height,sw=Math.min(420,W),sh=Math.round(H*sw/W);
+ const oc=document.createElement('canvas');oc.width=sw;oc.height=sh;const ox=oc.getContext('2d',{willReadFrequently:true});
+ ox.drawImage(img,0,0,sw,sh);const d=ox.getImageData(0,0,sw,sh).data,g=new Float32Array(sw*sh);
+ for(let i=0,j=0;i<d.length;i+=4,j++)g[j]=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+ const sx=W/sw,sy=H/sh;
+ // Manual Case01 suggests radius ~95 px on 1200-wide canvas; search a broad 55-135 px range.
+ const rMin=Math.max(12,Math.round(55/sx)),rMax=Math.max(rMin+3,Math.round(140/sx));
+ let best=null;
+ const yMax=Math.round(sh*0.48), xMin=Math.round(sw*0.08),xMax=Math.round(sw*0.92);
+ const ang=[];for(let a=0;a<Math.PI*2;a+=Math.PI/18)ang.push([Math.cos(a),Math.sin(a)]);
+ function pix(x,y){x=Math.max(0,Math.min(sw-1,Math.round(x)));y=Math.max(0,Math.min(sh-1,Math.round(y)));return g[y*sw+x]}
+ for(let r=rMin;r<=rMax;r+=3){
+   const step=Math.max(4,Math.round(r/5));
+   for(let cy=r+2;cy<yMax;cy+=step)for(let cx=Math.max(xMin,r+2);cx<Math.min(xMax,sw-r-2);cx+=step){
+     let edge=0,inside=0,outside=0,n=0;
+     for(const [ca,sa] of ang){const xi=cx+ca*(r-2),yi=cy+sa*(r-2),xo=cx+ca*(r+2),yo=cy+sa*(r+2);inside+=pix(xi,yi);outside+=pix(xo,yo);edge+=Math.abs(pix(xi,yi)-pix(xo,yo));n++}
+     // Prosthetic head should be bright internally and have a strong circular boundary.
+     const score=edge/n+0.18*(inside/n-outside/n);
+     if(!best||score>best.score)best={cx,cy,r,score};
+   }
+ }
+ if(!best){alert('Head候補を検出できませんでした');return}
+ // local refinement around coarse best
+ let b=best;
+ for(let r=Math.max(rMin,b.r-4);r<=Math.min(rMax,b.r+4);r++)for(let cy=Math.max(r+2,b.cy-5);cy<=Math.min(yMax-1,b.cy+5);cy++)for(let cx=Math.max(r+2,b.cx-5);cx<=Math.min(sw-r-2,b.cx+5);cx++){
+   let edge=0,inside=0,outside=0,n=0;for(const[ca,sa]of ang){inside+=pix(cx+ca*(r-2),cy+sa*(r-2));outside+=pix(cx+ca*(r+2),cy+sa*(r+2));edge+=Math.abs(pix(cx+ca*(r-2),cy+sa*(r-2))-pix(cx+ca*(r+2),cy+sa*(r+2)));n++}
+   const score=edge/n+0.18*(inside/n-outside/n);if(score>b.score)b={cx,cy,r,score};
+ }
+ const C={x:b.cx*sx,y:b.cy*sy},R=b.r*(sx+sy)/2;
+ // populate 3 rim points so existing calibration and editing workflow continue unchanged
+ pts.head1={x:C.x+R,y:C.y};pts.head2={x:C.x-R*0.5,y:C.y+R*Math.sqrt(3)/2};pts.head3={x:C.x-R*0.5,y:C.y-R*Math.sqrt(3)/2};
+ annotation.head={center:C,radius_px:R,source:'auto-radial-edge-v1',score:b.score};
+ aiLoaded=true;aiInitial.head={center:{...C},radius_px:R,source:'auto-radial-edge-v1',score:b.score};
+ step=Math.max(step,3);calc();draw();saveWork();
+ $('guide').innerHTML='<span class="status">Head自動候補を表示しました。緑円を確認してください。ずれていれば3点を修正できます。</span>';
+}
+function circle3(a,b,c){if(!a||!b||!c)return null;let d=2*(a.x*(b.y-c.y)+b.x*(c.y-a.y)+c.x*(a.y-b.y));if(Math.abs(d)<1e-6)return null;let aa=a.x*a.x+a.y*a.y,bb=b.x*b.x+b.y*b.y,cc=c.x*c.x+c.y*c.y;let x=(aa*(b.y-c.y)+bb*(c.y-a.y)+cc*(a.y-b.y))/d,y=(aa*(c.x-b.x)+bb*(a.x-c.x)+cc*(b.x-a.x))/d;return{x,y,r:Math.hypot(a.x-x,a.y-y)}}function canal(l){return dist(pts['m'+l],pts['l'+l])}function calc(){
   let s=parseFloat($('scale').value)||null;
   if($('calMode').value==='head'){let hd=parseFloat($('headSize').value)||32,hc=circle3(pts.head1,pts.head2,pts.head3),hp=hc?2*hc.r:null;if(hp){s=hd/hp;$('scale').value=s.toFixed(5)}}
   const g=measurementGeometry(),fixed={};
@@ -183,7 +222,7 @@ function saveWork(){
   const key=imageWorkKey(window._fmaFile);if(!key)return;
   const data={pts,step,zoom,panX,panY,annotation,annotationClosed,annotationCorrectionCount,profileRows,
     fields:{studyId:$('studyId').value,observerId:$('observerId').value,imageType:$('imageType').value,session:$('session').value,side:$('side').value,headSize:$('headSize').value,calMode:$('calMode').value,scale:$('scale').value},
-    savedAt:new Date().toISOString(),appVersion:'2.0.0-dev.32'};
+    savedAt:new Date().toISOString(),appVersion:'2.0.0-dev.33'};
   try{localStorage.setItem(key,JSON.stringify(data))}catch(e){}
 }
 function restoreWork(file){
@@ -204,7 +243,7 @@ function restoreWork(file){
   annotationCorrectionCount=d.annotationCorrectionCount||0;profileRows=d.profileRows||[];
   if(d.fields)for(const [k,v] of Object.entries(d.fields)){if($(k)&&v!=null)$(k).value=v}
   $('zoomLabel').textContent=Math.round(zoom*100)+'%';
-  try{localStorage.setItem(key,JSON.stringify({...d,pts,step,appVersion:'2.0.0-dev.32'}))}catch(e){}
+  try{localStorage.setItem(key,JSON.stringify({...d,pts,step,appVersion:'2.0.0-dev.33'}))}catch(e){}
   return true;
 }
 function clearSavedWork(){if(window._fmaFile){const k=imageWorkKey(window._fmaFile);if(k)localStorage.removeItem(k)}}
