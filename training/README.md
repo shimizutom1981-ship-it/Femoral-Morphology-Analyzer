@@ -29,3 +29,26 @@ python training/infer_fma_v2.py new_case.jpg new_case_mask512.png /path/to/outpu
 ```
 
 App-side conversion from the predicted class mask to editable contour/JSON suggestions remains a separate integration step.
+
+
+## Jang-based AP pipeline (next formal development pipeline)
+The legacy 10-case pilot code above is intentionally retained for reproducibility. New AP retraining should use `train_fma_jang_ap.py` and `infer_fma_jang_ap.py`.
+
+Reference-method alignment:
+- 512x512 input
+- adaptive histogram equalization (CLAHE)
+- crop, rotate, flip, contrast augmentation
+- pretrained ResNet-34 encoder with U-Net decoder
+- batch size 4
+- 150 epochs
+- best checkpoint selected by validation multiclass Dice
+
+FMA-specific deviations are recorded in the model card: postoperative 4-class segmentation and weighted CE + Dice loss; mild augmentation ranges are explicitly fixed in code. Brightness augmentation is not used in the Jang-based baseline.
+
+**Data leakage rule:** supply disjoint Research IDs to `--train-cases` and `--val-cases`; the script refuses overlap. Keep an untouched Research-ID-level test set outside both lists.
+
+Example:
+```bash
+python training/train_fma_jang_ap.py --dataset /path/to/dataset --train-cases R001,R002,... --val-cases R0XX,R0YY --out /path/to/output
+python training/infer_fma_jang_ap.py new_case.jpg new_case_mask512.png /path/to/output/FMA_ResNet34_UNet_best.pt
+```
