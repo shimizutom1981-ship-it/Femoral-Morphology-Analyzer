@@ -259,13 +259,31 @@ function measurementCsvText(){
  for(const[name,k]of steps){let p=pts[k];if(!p)continue;rows.push([ensureCaseId(),$('observerId').value,$('imageType').value,$('session').value,$('side').value,$('implantCollar').value,k,p.x.toFixed(3),p.y.toFixed(3),cv.width,cv.height,s,$('headSize').value,$('calMode').value,$('cti').textContent,$('ldra').textContent,$('ldrb').textContent,$('mci').textContent,$('p20d20').textContent,$('p20d30').textContent,elapsedSec!=null?elapsedSec:(start?Math.round((Date.now()-start)/1000):''),aiLoaded?'true':'false',Object.keys(aiInitial).length,profileRows.length,profileRows.length?'1':'',correctionCount>0?'true':'false',correctionCount,accepted?'true':'false','2.0.0-dev.103',new Date().toISOString()])}
  return rows.map(r=>r.map(esc).join(',')).join('\n');
 }
-$('saveAnnotation').onclick=()=>{const payload={annotation_version:annotation.version,study_id:ensureCaseId(),image_type:$('imageType').value,side:$('side').value,implant_collar:$('implantCollar').value,head:annotation.head,lt_midpoint:annotation.lt_midpoint,lt_region:annotation.lt_region,femur_mask:annotation.femur_mask,canal_mask:annotation.canal_mask,stem_mask:annotation.stem_mask,femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,stem_medial:annotation.stem_medial,stem_lateral:annotation.stem_lateral,contour_closed:annotationClosed,annotation_correction_count:annotationCorrectionCount,app_version:'v2.1.0-dev.9',timestamp:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=ensureCaseId()+'_annotation.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};let pendingAiPrediction=null;
+$('saveAnnotation').onclick=()=>{const payload={annotation_version:annotation.version,study_id:ensureCaseId(),image_type:$('imageType').value,side:$('side').value,implant_collar:$('implantCollar').value,head:annotation.head,lt_midpoint:annotation.lt_midpoint,lt_region:annotation.lt_region,femur_mask:annotation.femur_mask,canal_mask:annotation.canal_mask,stem_mask:annotation.stem_mask,femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,stem_medial:annotation.stem_medial,stem_lateral:annotation.stem_lateral,contour_closed:annotationClosed,annotation_correction_count:annotationCorrectionCount,app_version:'v2.1.0-dev.11',timestamp:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=ensureCaseId()+'_annotation.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};let pendingAiPrediction=null;
+function rdpPolyline(points,eps){
+ if(points.length<3)return points.slice();
+ const a=points[0],b=points[points.length-1],dx=b.x-a.x,dy=b.y-a.y,den=Math.hypot(dx,dy)||1;
+ let im=-1,dm=-1;
+ for(let i=1;i<points.length-1;i++){const p=points[i],d=Math.abs(dy*p.x-dx*p.y+b.x*a.y-b.y*a.x)/den;if(d>dm){dm=d;im=i}}
+ if(dm>eps&&im>0){const l=rdpPolyline(points.slice(0,im+1),eps),r=rdpPolyline(points.slice(im),eps);return l.slice(0,-1).concat(r)}
+ return [a,b];
+}
+function reduceAIControlPoints(points,maxPts=12){
+ if(!Array.isArray(points)||points.length<=maxPts)return (points||[]).map(q=>({...q,_aiControl:true}));
+ let eps=2,best=points;
+ for(let n=0;n<14;n++){const q=rdpPolyline(points,eps);best=q;if(q.length<=maxPts)break;eps*=1.45}
+ if(best.length>maxPts){const out=[];for(let i=0;i<maxPts;i++)out.push(best[Math.round(i*(best.length-1)/(maxPts-1))]);best=out}
+ return best.map(q=>({...q,_aiControl:true}));
+}
 function normalizePrediction(j){
  const p=j.prediction||j;
  const out={points:p.measurement_points||p.points||{},annotation:{}};
  const a=p.annotation||p;
  for(const k of ['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral']){
-   if(Array.isArray(a[k]))out.annotation[k]=a[k].map(q=>({x:Number(q.x),y:Number(q.y)})).filter(q=>Number.isFinite(q.x)&&Number.isFinite(q.y));
+   if(Array.isArray(a[k])){
+     const dense=a[k].map(q=>({x:Number(q.x),y:Number(q.y)})).filter(q=>Number.isFinite(q.x)&&Number.isFinite(q.y));
+     out.annotation[k]=reduceAIControlPoints(dense,12);
+   }
  }
  if(a.head)out.annotation.head=a.head;
  if(a.lt_midpoint)out.annotation.lt_midpoint=a.lt_midpoint;
@@ -281,7 +299,7 @@ function applyFullPrediction(pred){
  }
  while(step<steps.length&&pts[steps[step][1]])step++;
  accepted=false;correctionCount=0;annotationCorrectionCount=0;draw();guide();saveWork();
- $('guide').innerHTML='<span class="status">AI候補を読み込みました。水色ラインを確認し、必要な部分だけ修正してください。</span>';
+ $('guide').innerHTML='<span class="status">AI候補を少数の制御点＋滑らかなラインに変換しました。ずれた制御点をドラッグして必要な部分だけ修正してください。</span>';
 }
 $('autoStem').onclick=()=>{autoDetectStem();guide();};$('autoHead').onclick=()=>{autoDetectHead();guidedStage=0;$('workMode').value='annotation';$('annotationTarget').value='head';guide();};
 $('aiJsonFile').onchange=async e=>{
