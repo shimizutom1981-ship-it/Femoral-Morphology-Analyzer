@@ -665,6 +665,99 @@ function smooth1DAnchored(list,radius=1){
     return {x:xs[Math.floor(xs.length/2)],y:p.y};
   });
 }
+// Deterministic mask-to-contour extraction, in 512x512 mask coordinates.
+// Do not infer a calcar peak solely from a global X extremum: require a rise and turn.
+function fmaExtractMaskContours(md,w=512,h=512,isR=true){
+  if(!md||md.length<w*h*4)throw Error('Invalid RGBA mask');
+  function labelAt(x,y){
+    const v=md[(y*w+x)*4];
+    return (v===1||v===2||v===3)?v:(v>200?3:v>120?2:v>40?1:0);
+  }
+  function mainRun(y,minCls){
+    let left=-1,best=null;
+    for(let x=0;x<=w;x++){
+      const inside=x<w && labelAt(x,y)>=minCls;
+      if(inside){if(left<0)left=x}
+      else if(left>=0){
+        const next={l:left,r:x-1,w:x-left};
+        if(!best||next.w>best.w)best=next;
+        left=-1;
+      }
+    }
+    return best;
+  }
+  const raw=[];
+  for(let y=0;y<h;y++)raw.push({y,fRun:mainRun(y,1),cRun:mainRun(y,2),sRun:mainRun(y,3)});
+  // Choose the greatest-area 2D stem body, not the first fragment.
+  // A narrow tip is kept if its row is spatially connected to the main body.
+  const sr=raw.filter(r=>r.sRun);
+  const components=[];let group=[],previous=null;
+  for(const r of sr){
+    const gap=previous?r.y-previous.y:0;
+    const tol=3+2*Math.max(0,gap-1);
+    const connects=previous&&gap<=10&&r.sRun.l<=previous.sRun.r+tol&&r.sRun.r>=previous.sRun.l-tol;
+    if(group.length&&!connects){components.push(group);group=[]}
+    group.push(r);previous=r;
+  }
+  if(group.length)components.push(group);
+  components.sort((a,b)=>b.reduce((v,r)=>v+r.sRun.w,0)-a.reduce((v,r)=>v+r.sRun.w,0));
+  const stemBody=new Set((components[0]||[]).map(r=>r.y));
+  const stemRows=raw.filter(r=>stemBody.has(r.y));
+  const canRows=raw.filter(r=>r.cRun&&r.cRun.w>=5);
+  const femRows=raw.filter(r=>r.fRun&&r.fRun.w>=7);
+  const medialX=(r,key)=>isR?r[key].r:-r[key].l;
+  const median=arr=>{const sorted=arr.slice().sort((a,b)=>a-b);return sorted[Math.floor(sorted.length/2)]};
+  function medialPeakY(rows,key){
+    if(rows.length<16)return {y:rows.length?rows[0].y:0,detected:false};
+    const head=rows.slice(0,Math.min(Math.ceil(rows.length*0.40),120));
+    if(head.length<16)return {y:rows[0].y,detected:false};
+    const values=head.map((r,i)=>median(head.slice(Math.max(0,i-2),Math.min(head.length,i+3)).map(q=>medialX(q,key))));
+    let idx=0;
+    for(let i=3;i<head.length-7;i++)if(values[i]>values[idx])idx=i;
+    const baseline=median(values.slice(0,Math.min(6,values.length)));
+    const tail=median(values.slice(-Math.min(8,values.length)));
+    // At least 6 mask pixels of medial expansion and a subsequent >=2px turn.
+    // Otherwise preserve the original proximal boundary for manual inspection.
+    const detected=idx>=3 && idx<head.length-7 && values[idx]-baseline>=6 && values[idx]-tail>=2;
+    return {y:detected?head[idx].y:rows[0].y,detected};
+  }
+  const stPeak=medialPeakY(stemRows,'sRun');
+  const caPeak=medialPeakY(canRows,'cRun');
+  const fePeak=medialPeakY(femRows,'fRun');
+  const stemStart=stPeak.y;
+  const canalStart=stPeak.detected?Math.max(stemStart,caPeak.y):caPeak.y;
+  const femStart=stPeak.detected?Math.max(stemStart,fePeak.y):fePeak.y;
+  const femL=[],femR=[],canL=[],canR=[],stmL=[],stmR=[];
+  for(const r of raw){
+    const y=r.y;
+    let fl=r.fRun?r.fRun.l:Infinity,fr=r.fRun?r.fRun.r:-Infinity;
+    let cl=r.cRun?r.cRun.l:Infinity,cr=r.cRun?r.cRun.r:-Infinity;
+    const hasF=!!r.fRun&&r.fRun.w>=7,hasC=!!r.cRun&&r.cRun.w>=5;
+    const hasS=stemBody.has(y),sl=hasS?r.sRun.l:Infinity,sr=hasS?r.sRun.r:-Infinity;
+    const sMedOk=hasS&&y>=stemStart,cMedOk=hasC&&y>=canalStart,fMedOk=hasF&&y>=femStart;
+    // Enforce containment only where the corresponding medial edge is valid.
+    if(hasC&&hasS){
+      if(isR){cl=Math.min(cl,sl);if(cMedOk&&sMedOk)cr=Math.max(cr,sr)}
+      else{cr=Math.max(cr,sr);if(cMedOk&&sMedOk)cl=Math.min(cl,sl)}
+    }
+    if(hasF&&hasC){
+      if(isR){fl=Math.min(fl,cl);if(fMedOk&&cMedOk)fr=Math.max(fr,cr)}
+      else{fr=Math.max(fr,cr);if(fMedOk&&cMedOk)fl=Math.min(fl,cl)}
+    }
+    if(hasF){if(isR){femL.push({x:fl,y});if(fMedOk)femR.push({x:fr,y})}
+             else{femR.push({x:fr,y});if(fMedOk)femL.push({x:fl,y})}}
+    if(hasC){if(isR){canL.push({x:cl,y});if(cMedOk)canR.push({x:cr,y})}
+             else{canR.push({x:cr,y});if(cMedOk)canL.push({x:cl,y})}}
+    if(hasS){if(isR){stmL.push({x:sl,y});if(sMedOk)stmR.push({x:sr,y})}
+             else{stmR.push({x:sr,y});if(sMedOk)stmL.push({x:sl,y})}}
+  }
+  return {femL,femR,canL,canR,stmL,stmR,
+    qc:{stemMedStartY:stemStart,canalMedStartY:canalStart,femurMedStartY:femStart,
+        stemTurnDetected:stPeak.detected,canalTurnDetected:caPeak.detected,
+        femurTurnDetected:fePeak.detected,
+        stemTipY:stemRows.length?stemRows[stemRows.length-1].y:null,
+        stemComponents:components.length}};
+}
 $('aiMaskFile').onchange=e=>{
   const f=e.target.files&&e.target.files[0];if(!f)return;
   if(!img){alert('先に元画像（1. 画像選択）を読み込んでください');return}
@@ -674,77 +767,32 @@ $('aiMaskFile').onchange=e=>{
     const mx=mc.getContext('2d',{willReadFrequently:true});mx.imageSmoothingEnabled=false;
     mx.drawImage(mImg,0,0,512,512);
     const md=mx.getImageData(0,0,512,512).data;
+    const contours=fmaExtractMaskContours(md,512,512,$('side').value==='R');
     const s=Math.min(512/cv.width,512/cv.height),ox=(512-cv.width*s)/2,oy=(512-cv.height*s)/2;
-    const toCanvas=(px,py)=>({x:(px-ox)/s,y:(py-oy)/s});
+    const convert=arr=>smooth1DAnchored(arr.map(p=>({x:(p.x-ox)/s,y:(p.y-oy)/s})));
+    const femL=convert(contours.femL),femR=convert(contours.femR);
+    const canL=convert(contours.canL),canR=convert(contours.canR);
+    const stmL=convert(contours.stmL),stmR=convert(contours.stmR);
     const isR=($('side').value==='R');
-    // Keep the longest contiguous run per row, avoiding disconnected AI false positives.
-    function getMainRun(y,minClass){
-      let bestLen=0,bestL=512,bestR=-1,curL=-1;
-      for(let x=4;x<=508;x++){
-        let cls=0;
-        if(x<508){
-          const v=md[(y*512+x)*4];
-          cls=(v===1||v===2||v===3)?v:(v>200?3:v>120?2:v>40?1:0);
-        }
-        if(cls>=minClass){if(curL<0)curL=x}
-        else if(curL>=0){
-          const len=x-curL;
-          if(len>bestLen){bestLen=len;bestL=curL;bestR=x-1}
-          curL=-1;
-        }
-      }
-      return bestLen>0?{l:bestL,r:bestR,w:bestLen}:null;
-    }
-    const rawRows=[];
-    for(let y=4;y<508;y+=2)rawRows.push({y,fRun:getMainRun(y,1),cRun:getMainRun(y,2),sRun:getMainRun(y,3)});
-    const sValid=rawRows.filter(r=>r.sRun&&r.sRun.w>=2);
-    let stemMedStartY=sValid.length?sValid[0].y:0;
-    if(sValid.length>=8){
-      const topN=Math.min(Math.floor(sValid.length*0.35),25);
-      let maxW=-1,peakIdx=0;
-      for(let i=0;i<topN;i++)if(sValid[i].sRun.w>maxW){maxW=sValid[i].sRun.w;peakIdx=i}
-      for(let i=0;i<=peakIdx;i++)if(sValid[i].sRun.w>=maxW*0.85){stemMedStartY=sValid[i].y;break}
-    }
-    const femL=[],femR=[],canL=[],canR=[],stmL=[],stmR=[];
-    for(const r of rawRows){
-      const y=r.y;
-      let fl=r.fRun?r.fRun.l:512,fr=r.fRun?r.fRun.r:-1;
-      let cl=r.cRun?r.cRun.l:512,cr=r.cRun?r.cRun.r:-1;
-      const sl=r.sRun?r.sRun.l:512,sr=r.sRun?r.sRun.r:-1;
-      const hasF=(fr-fl>=6),hasC=(cr-cl>=4),hasS=(r.sRun&&r.sRun.w>=1);
-      const medStemValid=hasS&&y>=stemMedStartY;
-      if(hasC&&hasS){
-        if(isR){cl=Math.min(cl,sl);if(medStemValid)cr=Math.max(cr,sr)}
-        else{cr=Math.max(cr,sr);if(medStemValid)cl=Math.min(cl,sl)}
-      }
-      if(hasF&&hasC){fl=Math.min(fl,cl);fr=Math.max(fr,cr)}
-      if(hasF){femL.push(toCanvas(fl,y));femR.push(toCanvas(fr,y))}
-      if(hasC){canL.push(toCanvas(cl,y));canR.push(toCanvas(cr,y))}
-      if(hasS){
-        if(isR){stmL.push(toCanvas(sl,y));if(medStemValid)stmR.push(toCanvas(sr,y))}
-        else{stmR.push(toCanvas(sr,y));if(medStemValid)stmL.push(toCanvas(sl,y))}
-      }
-    }
-    const sFemL=smooth1DAnchored(femL),sFemR=smooth1DAnchored(femR);
-    const sCanL=smooth1DAnchored(canL),sCanR=smooth1DAnchored(canR);
-    const sStmL=smooth1DAnchored(stmL),sStmR=smooth1DAnchored(stmR);
     const pred={annotation:{
-      femur_medial:isR?sFemR:sFemL,femur_lateral:isR?sFemL:sFemR,
-      canal_medial:isR?sCanR:sCanL,canal_lateral:isR?sCanL:sCanR,
-      stem_medial:isR?sStmR:sStmL,stem_lateral:isR?sStmL:sStmR
+      femur_medial:isR?femR:femL,femur_lateral:isR?femL:femR,
+      canal_medial:isR?canR:canL,canal_lateral:isR?canL:canR,
+      stem_medial:isR?stmR:stmL,stem_lateral:isR?stmL:stmR
     }};
-    if(sCanL.length>=6&&(!pts.sap||!pts.sad)){
-      const i0=Math.floor(sCanL.length*0.3),i1=Math.floor(sCanL.length*0.85);
-      pts.sap={x:(sCanL[i0].x+sCanR[i0].x)/2,y:(sCanL[i0].y+sCanR[i0].y)/2};
-      pts.sad={x:(sCanL[i1].x+sCanR[i1].x)/2,y:(sCanL[i1].y+sCanR[i1].y)/2};
+    if(canL.length>=6&&(!pts.sap||!pts.sad)){
+      const i0=Math.floor(canL.length*0.3),i1=Math.floor(canL.length*0.85);
+      pts.sap={x:(canL[i0].x+canR[i0].x)/2,y:(canL[i0].y+canR[i0].y)/2};
+      pts.sad={x:(canL[i1].x+canR[i1].x)/2,y:(canL[i1].y+canR[i1].y)/2};
     }
     applyFullPrediction(pred);
     URL.revokeObjectURL(u);
-    $('guide').innerHTML='<span class="status">mask512.pngを読み込み、飛び地除去・近位斜め境界の除外・端点保護平滑化を適用しました ✓</span>';
+    const warning=contours.qc.stemTurnDetected?'':'（折り返し点が不明瞭のため近位内側は要目視確認）';
+    $('guide').innerHTML='<span class="status">mask512.png：内側折り返し候補・連結したステム本体を抽出しました ✓ '+warning+'</span>';
   };
   mImg.onerror=()=>{URL.revokeObjectURL(u);alert('マスク画像を読み込めませんでした')};
   mImg.src=u;
 };
+
 
 function buildDataDictionaryV11Record(){
   calc();
