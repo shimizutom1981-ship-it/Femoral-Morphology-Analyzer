@@ -861,8 +861,46 @@ function fmaExtractMaskContours(md,w=512,h=512,isR=true){
     if(hasS){if(isR){stmL.push({x:sl,y});if(sMedOk)stmR.push({x:sr,y})}
              else{stmR.push({x:sr,y});if(sMedOk)stmL.push({x:sl,y})}}
   }
+  // Image-edge artifact guard: only stabilize femur/canal lines which reach
+  // the bottom crop boundary. A real stem tip or an interior-ending contour
+  // must not be extrapolated, flattened, or truncated.
+  function guardCroppedDistalEdge(points,inwardSign){
+    const last=points.length?points[points.length-1]:null;
+    if(!last||last.y<h-10||points.length<32)return 0;
+    const anchorY=last.y-20;
+    const baseline=points.filter(p=>p.y>=last.y-60&&p.y<=anchorY);
+    if(baseline.length<12)return 0;
+    const slopes=[];
+    // 5-row difference reduces one-pixel raster noise without assuming vertical shafts.
+    for(let i=5;i<baseline.length;i++){
+      const a=baseline[i-5],b=baseline[i];
+      if(b.y>a.y)slopes.push((b.x-a.x)/(b.y-a.y));
+    }
+    if(slopes.length<7)return 0;
+    slopes.sort((a,b)=>a-b);
+    const naturalSlope=Math.max(-0.35,Math.min(0.35,slopes[Math.floor(slopes.length/2)]));
+    const anchor=baseline[baseline.length-1];
+    const tail=points.filter(p=>p.y>anchorY);
+    // Don't react to a genuine mild shaft taper. Require a substantial terminal
+    // inward drift relative to the stable segment's extrapolated trajectory.
+    const inwardError=p=>inwardSign*(p.x-(anchor.x+naturalSlope*(p.y-anchor.y)));
+    if(!tail.some(p=>inwardError(p)>5))return 0;
+    let edits=0;
+    for(const p of tail){
+      const predicted=anchor.x+naturalSlope*(p.y-anchor.y);
+      const tolerance=2+0.10*(p.y-anchor.y);
+      const error=inwardSign*(p.x-predicted);
+      if(error>tolerance){
+        p.x=predicted+inwardSign*tolerance;
+        edits++;
+      }
+    }
+    return edits;
+  }
+  const distalOuterEdits=guardCroppedDistalEdge(femL,+1)+guardCroppedDistalEdge(femR,-1);
+  const distalCanalEdits=guardCroppedDistalEdge(canL,+1)+guardCroppedDistalEdge(canR,-1);
   return {femL,femR,canL,canR,stmL,stmR,
-    qc:{stemMedStartY:stemStart,canalMedStartY:canalStart,femurMedStartY:femStart,
+    qc:{distalOuterEdits,distalCanalEdits,stemMedStartY:stemStart,canalMedStartY:canalStart,femurMedStartY:femStart,
         stemTurnDetected:stPeak.detected,canalTurnDetected:caPeak.detected,
         femurTurnDetected:fePeak.detected,
         stemTipY:stemRows.length?stemRows[stemRows.length-1].y:null,
@@ -898,7 +936,7 @@ $('aiMaskFile').onchange=e=>{
     URL.revokeObjectURL(u);
     const warning=contours.qc.stemTurnDetected?'':'（近位内側の折り返し点は要目視確認）';
     const q=contours.qc;
-    const note='外側髄腔：純粋なクラス2の開始Y='+(q.canalLatStartSupported?q.canalLatStartY:'未検出（目視確認）')+'／分断領域 '+q.recoveredCanalLateralRows+'行、短区間補間 '+q.interpolatedCanalLateralRows+'行';
+    const note='外側髄腔：純粋なクラス2の開始Y='+(q.canalLatStartSupported?q.canalLatStartY:'未検出（目視確認）')+'／分断領域 '+q.recoveredCanalLateralRows+'行、短区間補間 '+q.interpolatedCanalLateralRows+'行／画像端補正 外皮質 '+q.distalOuterEdits+'点、髄腔 '+q.distalCanalEdits+'点';
     const pending=q.unresolvedCanalLateralRows?'／未確定 '+q.unresolvedCanalLateralRows+'行（要手動確認）':'';
     $('guide').innerHTML='<span class="status">mask512.png：輪郭候補を抽出しました ✓ '+warning+' '+note+pending+'</span>';
   };
