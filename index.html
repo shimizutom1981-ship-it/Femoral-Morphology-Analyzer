@@ -702,6 +702,77 @@ function fmaExtractMaskContours(md,w=512,h=512,isR=true){
   if(group.length)components.push(group);
   components.sort((a,b)=>b.reduce((v,r)=>v+r.sRun.w,0)-a.reduce((v,r)=>v+r.sRun.w,0));
   const stemBody=new Set((components[0]||[]).map(r=>r.y));
+  // Recover lateral class-2 islands that are disconnected from the stem body.
+  // Require consistency in neighboring rows; never promote isolated speckles.
+  function canalIslandRuns(r){
+    if(!stemBody.has(r.y)||!r.fRun||!r.cRun||!r.sRun)return [];
+    const lo=isR?Math.max(0,r.fRun.l+2,r.sRun.l-42):Math.max(0,r.fRun.l+2,r.sRun.r+2);
+    const hi=isR?Math.min(w-1,r.fRun.r-2,r.sRun.l-2):Math.min(w-1,r.fRun.r-2,r.sRun.r+42);
+    const runs=[];let begin=-1;
+    for(let x=lo;x<=hi+1;x++){
+      if(x<=hi&&labelAt(x,r.y)===2){if(begin<0)begin=x}
+      else if(begin>=0){if(x-begin>=2)runs.push({l:begin,r:x-1});begin=-1}
+    }
+    return runs;
+  }
+  const islands=new Map(raw.map(r=>[r.y,canalIslandRuns(r)]));
+  const outerEdge=q=>isR?q.l:q.r;
+  let recoveredCanalLateralRows=0,interpolatedCanalLateralRows=0;
+  for(const r of raw){
+    if(!stemBody.has(r.y)||!r.fRun||!r.cRun||!r.sRun)continue;
+    const originalEdge=outerEdge(r.cRun);
+    const supported=(islands.get(r.y)||[]).filter(q=>{
+      const edge=outerEdge(q);
+      if(isR?edge>=originalEdge-2:edge<=originalEdge+2)return false;
+      let matches=0;
+      for(let yy=Math.max(0,r.y-3);yy<=Math.min(h-1,r.y+3);yy++){
+        if(yy!==r.y && (islands.get(yy)||[]).some(z=>Math.abs(outerEdge(z)-edge)<=5))matches++;
+      }
+      return matches>=2;
+    });
+    if(!supported.length)continue;
+    const q=supported.reduce((a,b)=>(isR?b.l<a.l:b.r>a.r)?b:a);
+    if(isR)r.cRun={...r.cRun,l:q.l,w:r.cRun.r-q.l+1};
+    else r.cRun={...r.cRun,r:q.r,w:q.r-r.cRun.l+1};
+    recoveredCanalLateralRows++;
+  }
+  // Interpolate only short gaps between anatomically plausible local anchors.
+  // Never extrapolate shaft cortical thickness into the proximal femur.
+  function trusted(r){
+    if(!r||!stemBody.has(r.y)||!r.fRun||!r.cRun||!r.sRun)return false;
+    const f=outerEdge(r.fRun),c=outerEdge(r.cRun),st=outerEdge(r.sRun);
+    const cortical=isR?c-f:f-c,gap=isR?st-c:c-st;
+    return cortical>=2&&cortical<=48&&gap>=3;
+  }
+  const anchors=raw.filter(trusted);
+  for(let i=1;i<anchors.length;i++){
+    const a=anchors[i-1],b=anchors[i],length=b.y-a.y;
+    if(length<2||length>13)continue;
+    const ta=isR?a.cRun.l-a.fRun.l:a.fRun.r-a.cRun.r;
+    const tb=isR?b.cRun.l-b.fRun.l:b.fRun.r-b.cRun.r;
+    if(Math.abs(ta-tb)>Math.max(4,(ta+tb)*0.35))continue;
+    for(let y=a.y+1;y<b.y;y++){
+      const r=raw[y];
+      if(!r||!stemBody.has(y)||!r.fRun||!r.sRun||!r.cRun||trusted(r))continue;
+      const f=outerEdge(r.fRun),st=outerEdge(r.sRun),old=outerEdge(r.cRun);
+      if((isR?st-old:old-st)>2)continue;
+      const t=(y-a.y)/length,thick=ta+(tb-ta)*t;
+      const next=Math.round(isR?f+thick:f-thick);
+      if(isR){
+        if(next<f+2||next>st-3||next>=old||next>=r.cRun.r)continue;
+        r.cRun={...r.cRun,l:next,w:r.cRun.r-next+1};
+      }else{
+        if(next>f-2||next<st+3||next<=old||next<=r.cRun.l)continue;
+        r.cRun={...r.cRun,r:next,w:next-r.cRun.l+1};
+      }
+      interpolatedCanalLateralRows++;
+    }
+  }
+  const unresolvedCanalLateralRows=raw.reduce((n,r)=>{
+    if(!stemBody.has(r.y)||!r.fRun||!r.sRun||!r.cRun)return n;
+    const c=outerEdge(r.cRun),st=outerEdge(r.sRun);
+    return n+((isR?st-c:c-st)<=2?1:0);
+  },0);
   const stemRows=raw.filter(r=>stemBody.has(r.y));
   const canRows=raw.filter(r=>r.cRun&&r.cRun.w>=5);
   const femRows=raw.filter(r=>r.fRun&&r.fRun.w>=7);
@@ -756,7 +827,7 @@ function fmaExtractMaskContours(md,w=512,h=512,isR=true){
         stemTurnDetected:stPeak.detected,canalTurnDetected:caPeak.detected,
         femurTurnDetected:fePeak.detected,
         stemTipY:stemRows.length?stemRows[stemRows.length-1].y:null,
-        stemComponents:components.length}};
+        stemComponents:components.length,recoveredCanalLateralRows,interpolatedCanalLateralRows,unresolvedCanalLateralRows}};
 }
 $('aiMaskFile').onchange=e=>{
   const f=e.target.files&&e.target.files[0];if(!f)return;
@@ -786,8 +857,11 @@ $('aiMaskFile').onchange=e=>{
     }
     applyFullPrediction(pred);
     URL.revokeObjectURL(u);
-    const warning=contours.qc.stemTurnDetected?'':'（折り返し点が不明瞭のため近位内側は要目視確認）';
-    $('guide').innerHTML='<span class="status">mask512.png：内側折り返し候補・連結したステム本体を抽出しました ✓ '+warning+'</span>';
+    const warning=contours.qc.stemTurnDetected?'':'（近位内側の折り返し点は要目視確認）';
+    const q=contours.qc;
+    const note='外側髄腔：分断領域 '+q.recoveredCanalLateralRows+'行、短区間補間 '+q.interpolatedCanalLateralRows+'行';
+    const pending=q.unresolvedCanalLateralRows?'／未確定 '+q.unresolvedCanalLateralRows+'行（要手動確認）':'';
+    $('guide').innerHTML='<span class="status">mask512.png：輪郭候補を抽出しました ✓ '+warning+' '+note+pending+'</span>';
   };
   mImg.onerror=()=>{URL.revokeObjectURL(u);alert('マスク画像を読み込めませんでした')};
   mImg.src=u;
