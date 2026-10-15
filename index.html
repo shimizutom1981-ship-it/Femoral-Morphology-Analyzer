@@ -39,7 +39,7 @@ Key Rules for AI Assistants modifying this file:
   <div><label>Stem Family</label><input id="stemFamily" placeholder="例: Z1, Avenir, Preop" value="Z1"></div>
   <div><label>Side</label><select id="side"><option>R</option><option>L</option></select></div>
   <div><label>Implant collar</label><select id="implantCollar"><option value="yes">あり (Collared)</option><option value="no">なし (Collarless)</option><option value="NA">NA (Preop)</option></select></div>
-  <div><label>Known Calib Ø (mm)</label><input id="headSize" type="number" step="0.1" min="0.1" placeholder="実際の径を入力"></div>
+  <div><label>Known Calib Ø (mm)</label><input id="headSize" type="number" step="0.1" min="0.1" value="32" title="術後標準32 mm／術前マーカー標準25 mm。症例ごとの実径を必ず確認して変更してください" placeholder="症例の実径を確認"></div>
   <div><label>Calibration</label><select id="calMode"><option value="head">Head / Marker Circle</option><option value="manual">Manual mm/pixel</option></select></div>
   <div><label>mm / pixel</label><input id="scale" type="number" step="0.0001" placeholder="auto from Circle"></div>
   <div><label>LT Visibility (Rule 3.5)</label><select id="ltVisibility"><option value="">未評価</option><option value="clear">Clear (明瞭)</option><option value="partially_visible">Partial (一部視認)</option><option value="occluded_unidentifiable">Occluded (内旋隠蔽/N.A.)</option></select></div>
@@ -149,8 +149,12 @@ function updateCanvasFilter(){
 ['fltBright','fltContrast','fltInvert'].forEach(id=>$(id).addEventListener('input',updateCanvasFilter));
 $('fltReset').onclick=()=>{$('fltBright').value=100;$('fltContrast').value=100;$('fltInvert').checked=false;updateCanvasFilter()};
 
+function defaultCalibrationDiameter(imageType){
+  // Protocol defaults only: always verify the actual head/marker size per case.
+  return imageType==='postop_THA'?'32':imageType==='native'?'25':'';
+}
 $('imageType').addEventListener('change',()=>{
-  $('headSize').value='';$('scale').value='';
+  $('headSize').value=defaultCalibrationDiameter($('imageType').value);$('scale').value='';
   if($('imageType').value==='native'){$('implantCollar').value='NA';if($('stemFamily').value==='Z1')$('stemFamily').value='Preop';}
   calc();saveWork();
 });
@@ -1135,7 +1139,7 @@ $('file').onchange=e=>{
     const base=f.name.replace(/\.[^.]+$/,'').replace(/_source$/i,'');
     $('studyId').value=base;
   }
-  $('headSize').value='';$('scale').value='';$('ltVisibility').value='';$('doubleCortex').value='';$('exclusionFlag').value='';$('modelVersion').value='';$('imageId').value='';$('repeatIndex').value='';pendingAiPrediction=null;
+  $('headSize').value=defaultCalibrationDiameter($('imageType').value);$('scale').value='';$('ltVisibility').value='';$('doubleCortex').value='';$('exclusionFlag').value='';$('modelVersion').value='';$('imageId').value='';$('repeatIndex').value='';pendingAiPrediction=null;
   const u=URL.createObjectURL(f);img=new Image();
   img.onload=()=>{
     const ratio=img.height/img.width;cv.width=1200;cv.height=Math.round(1200*ratio);
