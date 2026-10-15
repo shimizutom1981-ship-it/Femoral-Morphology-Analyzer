@@ -215,3 +215,13 @@ run('aiLoaded=false');set('modelVersion','FMA-AI-v2-10cases');
 pilotRecord=run('buildDataDictionaryV11Record()');
 assert.equal(pilotRecord.provenance_and_split.model_version,null,'pure manual teacher data must have N/A model');
 console.log('PASS: documented pilot model default; metadata override; unknown and manual provenance safeguards');
+
+
+// Stem Family must never be guessed: independent from head diameter and pilot AI model.
+assert.match(html,/<input id="stemFamily" placeholder="例: Z1, Avenir, Preop">/,'Stem Family starts without a value');
+assert.doesNotMatch(html,/<input id="stemFamily"[^>]*value="Z1"/,'no hardcoded Z1 default');
+assert.match(html,/\$\('stemFamily'\)\.value='';pendingAiPrediction=null/,'new image clears prior family');
+assert.doesNotMatch(html,/if\(\$\('stemFamily'\)\.value==='Z1'\)\$\('stemFamily'\)\.value='Preop'/,'preop switch does not silently replace user stem');
+set('stemFamily','Avenir');
+assert.equal(run("document.getElementById('stemFamily').value"),'Avenir','user stem is editable');
+console.log('PASS: Stem Family blank by default, image-load reset, no preop auto-inference, editable');
