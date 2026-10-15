@@ -36,7 +36,7 @@ Key Rules for AI Assistants modifying this file:
   <div><label>AIモデル版（10例pilot初期値／異なる重みなら変更）</label><input id="modelVersion" value="FMA-AI-v2-10cases" title="2026-10-13に学習した10症例pilot U-Net。別モデルのmask512.pngなら実際の重み版へ変更。不明なら空欄のまま保存。" placeholder="実際にマスクを生成した重みの版・hash"></div>
   <div><label>Mode</label><select id="workMode"><option value="measurement">Measurement</option><option value="annotation">Annotation</option></select></div>
   <div><label>Image type</label><select id="imageType"><option value="postop_THA">Postop THA</option><option value="native">Preop Native (25mm Ball)</option></select></div>
-  <div><label>Stem Family</label><input id="stemFamily" placeholder="例: Z1, Avenir, Preop" value="Z1"></div>
+  <div><label>Stem Family</label><input id="stemFamily" placeholder="例: Z1, Avenir, Preop"></div>
   <div><label>Side</label><select id="side"><option>R</option><option>L</option></select></div>
   <div><label>Implant collar</label><select id="implantCollar"><option value="yes">あり (Collared)</option><option value="no">なし (Collarless)</option><option value="NA">NA (Preop)</option></select></div>
   <div><label>Known Calib Ø (mm)</label><input id="headSize" type="number" step="0.1" min="0.1" value="32" title="術後標準32 mm／術前マーカー標準25 mm。症例ごとの実径を必ず確認して変更してください" placeholder="症例の実径を確認"></div>
@@ -156,7 +156,7 @@ function defaultCalibrationDiameter(imageType){
 }
 $('imageType').addEventListener('change',()=>{
   $('headSize').value=defaultCalibrationDiameter($('imageType').value);$('scale').value='';
-  if($('imageType').value==='native'){$('implantCollar').value='NA';if($('stemFamily').value==='Z1')$('stemFamily').value='Preop';}
+  if($('imageType').value==='native'){$('implantCollar').value='NA';}
   calc();saveWork();
 });
 
@@ -1140,7 +1140,7 @@ $('file').onchange=e=>{
     const base=f.name.replace(/\.[^.]+$/,'').replace(/_source$/i,'');
     $('studyId').value=base;
   }
-  $('headSize').value=defaultCalibrationDiameter($('imageType').value);$('scale').value='';$('ltVisibility').value='';$('doubleCortex').value='';$('exclusionFlag').value='';$('modelVersion').value=DEFAULT_PILOT_MODEL_VERSION;$('imageId').value='';$('repeatIndex').value='';pendingAiPrediction=null;
+  $('headSize').value=defaultCalibrationDiameter($('imageType').value);$('scale').value='';$('ltVisibility').value='';$('doubleCortex').value='';$('exclusionFlag').value='';$('modelVersion').value=DEFAULT_PILOT_MODEL_VERSION;$('imageId').value='';$('repeatIndex').value='';$('stemFamily').value='';pendingAiPrediction=null;
   const u=URL.createObjectURL(f);img=new Image();
   img.onload=()=>{
     const ratio=img.height/img.width;cv.width=1200;cv.height=Math.round(1200*ratio);
