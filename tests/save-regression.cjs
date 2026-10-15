@@ -71,3 +71,53 @@ const straight=run('fmaExtractMaskContours(syntheticData,512,512,true)');
 assert.equal(straight.qc.stemTurnDetected,false,'must not invent a calcar turn on a straight stem');
 assert.equal(straight.stmR[0].y,30,'straight-sided stem proximal contour must be preserved');
 console.log('PASS: mask contour right/left proximal medial, continuous stem tip, disconnected distal noise, straight-sided fallback');
+
+
+// Canal-lateral regression: detached class-2 islands vs isolated noise.
+// R/L mirror; preserve tip and do not fabricate a contour across long gaps.
+function canalFixture(side,mode){
+ const W=512,H=512,a=new Uint8ClampedArray(W*H*4);
+ const put=(x,y,v)=>{const xx=side==='R'?x:W-1-x,idx=(y*W+xx)*4;a[idx]=a[idx+1]=a[idx+2]=v;a[idx+3]=255};
+ for(let y=30;y<=250;y++){
+  const medial=y<=90?Math.round(230+(y-30)*1.1):Math.round(296-(y-90)*.12);
+  const fR=y<=90?Math.round(260+(y-30)*.9):Math.round(314-(y-90)*.07);
+  const cR=y<=90?Math.round(245+(y-30)):Math.round(305-(y-90)*.08);
+  const sl=y>235?Math.round(185+(y-235)*1.1):185;
+  const sr=y>235?Math.max(sl,Math.round(medial-(y-235)*2)):medial;
+  for(let x=120;x<=fR;x++){
+   let k=x>=155&&x<=cR?2:1;
+   if(x>=sl&&x<=sr)k=3;
+   if(y>=108&&y<=154){
+    if(x>=154&&x<=182)k=1;
+    if(x>=185&&x<=sr)k=3;
+    if(mode==='islands'&&x>=154&&x<=162)k=2;
+    if(mode==='short'&&(y<124||y>129)&&x>=154&&x<=162)k=2;
+    if(mode==='long'&&(y<111||y>151)&&x>=154&&x<=162)k=2;
+    if(mode==='speck'&&y===125&&x>=154&&x<=155)k=2;
+   }
+   put(x,y,k);
+  }
+ }
+ for(let y=290;y<304;y++)for(let x=475;x<479;x++)put(x,y,3);
+ return a;
+}
+for(const side of ['R','L'])for(const mode of ['islands','short','long','speck']){
+ front.maskFixture=canalFixture(side,mode);
+ const c=run('fmaExtractMaskContours(maskFixture,512,512,'+(side==='R'?'true':'false')+')');
+ const canLat=side==='R'?c.canL:c.canR;
+ const stmLat=side==='R'?c.stmL:c.stmR;
+ assert.equal(stmLat.at(-1).y,250,'stem tip retention '+side);
+ assert.equal(c.qc.stemComponents,2,'disconnected distal stem noise '+side);
+ if(mode==='islands')assert.ok(c.qc.recoveredCanalLateralRows>=40,'disconnected canal island '+side);
+ if(mode==='short')assert.ok(c.qc.interpolatedCanalLateralRows>=5,'short hole interpolation '+side);
+ if(mode==='long'){
+  assert.ok(c.qc.unresolvedCanalLateralRows>=30,'long gap must be flagged '+side);
+  assert.equal(c.qc.interpolatedCanalLateralRows,0,'no long-range cortex extrapolation '+side);
+ }
+ if(mode==='speck')assert.equal(c.qc.recoveredCanalLateralRows,0,'reject isolated class-2 speck '+side);
+ if(mode==='islands'||mode==='short'){
+   const edge=canLat.find(p=>p.y===125)?.x;
+   assert.ok(side==='R'?edge<170:edge>341,'outer canal must be recovered '+side+': '+edge);
+ }
+}
+console.log('PASS: R/L canal island recovery, short gap interpolation, long-gap abstention, isolated-noise rejection and stem-tip protection');
