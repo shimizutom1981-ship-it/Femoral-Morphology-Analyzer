@@ -24,24 +24,27 @@ Key Rules for AI Assistants modifying this file:
 :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--cloud:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:980px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.cloudBtn{background:var(--cloud);color:#fff;border-color:#7c3aed}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.result{background:#0f172a;padding:9px;border-radius:8px;text-align:center}.val{font-size:1.15rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}.filterBar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#0f172a;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:.75rem}.filterBar label{display:flex;align-items:center;gap:6px;margin:0;color:var(--text)}.filterBar input[type=range]{width:110px;padding:0}
 #workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
 </style></head><body><div class="app">
-<div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub">v2.1.2-cloud · Protocol v2.1 / Annotation Rule v1.0 / Data Dictionary v1.1 · Google Cloud & Local Hybrid</div></div>
+<div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub">v2.1.3-cloud · Protocol v2.1 / Annotation Rule v1.0 / Data Dictionary v1.1 · Google Cloud & Local Hybrid</div></div>
 
 <!-- Metadata & Protocol v2.1 Governance Card -->
 <div class="card"><div class="grid">
   <div><label>Research ID (Study ID)</label><input id="studyId" placeholder="例: FMA_0001_R"></div>
   <div><label>Patient ID (Leakage防止)</label><input id="patientId" placeholder="空欄ならResearch ID継承"></div>
-  <div><label>Observer ID</label><input id="observerId" placeholder="例: TS"></div>
+  <div><label>Observer ID（必須）</label><input id="observerId" placeholder="例: TS"></div>
+  <div><label>反復番号（必須）</label><input id="repeatIndex" type="number" min="1" step="1" placeholder="例: 1"></div>
+  <div><label>Image ID（必須・匿名ID）</label><input id="imageId" placeholder="例: postop_AP_01"></div>
+  <div><label>AIモデル版（不明なら空欄）</label><input id="modelVersion" placeholder="重みファイルの版・hash"></div>
   <div><label>Mode</label><select id="workMode"><option value="measurement">Measurement</option><option value="annotation">Annotation</option></select></div>
-  <div><label>Image type</label><select id="imageType"><option value="postop_THA">Postop THA (32mm Head)</option><option value="native">Preop Native (25mm Ball)</option></select></div>
+  <div><label>Image type</label><select id="imageType"><option value="postop_THA">Postop THA</option><option value="native">Preop Native (25mm Ball)</option></select></div>
   <div><label>Stem Family</label><input id="stemFamily" placeholder="例: Z1, Avenir, Preop" value="Z1"></div>
   <div><label>Side</label><select id="side"><option>R</option><option>L</option></select></div>
   <div><label>Implant collar</label><select id="implantCollar"><option value="yes">あり (Collared)</option><option value="no">なし (Collarless)</option><option value="NA">NA (Preop)</option></select></div>
-  <div><label>Known Calib Ø (mm)</label><input id="headSize" type="number" step="0.1" value="32.0"></div>
+  <div><label>Known Calib Ø (mm)</label><input id="headSize" type="number" step="0.1" min="0.1" placeholder="実際の径を入力"></div>
   <div><label>Calibration</label><select id="calMode"><option value="head">Head / Marker Circle</option><option value="manual">Manual mm/pixel</option></select></div>
   <div><label>mm / pixel</label><input id="scale" type="number" step="0.0001" placeholder="auto from Circle"></div>
-  <div><label>LT Visibility (Rule 3.5)</label><select id="ltVisibility"><option value="clear">Clear (明瞭)</option><option value="partially_visible">Partial (一部視認)</option><option value="occluded_unidentifiable">Occluded (内旋隠蔽/N.A.)</option></select></div>
-  <div><label>Double Cortex (Rule 3.2)</label><select id="doubleCortex"><option value="none">None</option><option value="mild_resolvable">Mild (判別可)</option><option value="severe_linea_aspera">Severe (粗線重なり)</option></select></div>
-  <div><label>Exclusion / Cohort</label><select id="exclusionFlag"><option value="eligible">Eligible (適格)</option><option value="legacy_pilot">Legacy Pilot</option><option value="excl_cement">Excl: Cement</option><option value="excl_hardware">Excl: Hardware</option><option value="excl_deformity">Excl: Deformity</option></select></div>
+  <div><label>LT Visibility (Rule 3.5)</label><select id="ltVisibility"><option value="">未評価</option><option value="clear">Clear (明瞭)</option><option value="partially_visible">Partial (一部視認)</option><option value="occluded_unidentifiable">Occluded (内旋隠蔽/N.A.)</option></select></div>
+  <div><label>Double Cortex (Rule 3.2)</label><select id="doubleCortex"><option value="">未評価</option><option value="none">None</option><option value="mild_resolvable">Mild (判別可)</option><option value="severe_linea_aspera">Severe (粗線重なり)</option></select></div>
+  <div><label>Exclusion / Cohort</label><select id="exclusionFlag"><option value="">未評価</option><option value="eligible">Eligible (適格)</option><option value="legacy_pilot">Legacy Pilot</option><option value="excl_cement">Excl: Cement</option><option value="excl_hardware">Excl: Hardware</option><option value="excl_deformity">Excl: Deformity</option></select></div>
   <div style="display:none"><label>Session</label><select id="session"><option>App-1</option><option>App-repeat</option></select></div>
 </div></div>
 
@@ -126,6 +129,8 @@ Key Rules for AI Assistants modifying this file:
 </div>
 
 <script>
+const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
+const APP_VERSION='v2.1.3-cloud';
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Shaft axis proximal','sap'],['Shaft axis distal','sad']];
 const guidedStages=['head','femur_lateral','canal_lateral','stem_lateral','stem_medial','canal_medial','femur_medial','lt_midpoint','shaft_adjust'];
@@ -145,8 +150,8 @@ function updateCanvasFilter(){
 $('fltReset').onclick=()=>{$('fltBright').value=100;$('fltContrast').value=100;$('fltInvert').checked=false;updateCanvasFilter()};
 
 $('imageType').addEventListener('change',()=>{
-  if($('imageType').value==='native'){$('headSize').value='25.0';$('implantCollar').value='NA';if($('stemFamily').value==='Z1')$('stemFamily').value='Preop';}
-  else if(parseFloat($('headSize').value)===25){$('headSize').value='32.0';}
+  $('headSize').value='';$('scale').value='';
+  if($('imageType').value==='native'){$('implantCollar').value='NA';if($('stemFamily').value==='Z1')$('stemFamily').value='Preop';}
   calc();saveWork();
 });
 
@@ -391,11 +396,7 @@ function measurementGeometry(){
   let vx=d.x-p.x,vy=d.y-p.y,L=Math.hypot(vx,vy);if(!L)return null;vx/=L;vy/=L;
   const proj=(m.x-p.x)*vx+(m.y-p.y)*vy;
   const lt={x:p.x+proj*vx,y:p.y+proj*vy};
-  let s=parseFloat($('scale').value)||null;
-  if(!s&&$('calMode').value==='head'&&annotation.head&&Number.isFinite(annotation.head.radius_px)&&annotation.head.radius_px>0){
-    const hd=parseFloat($('headSize').value)||32;
-    s=hd/(2*annotation.head.radius_px);$('scale').value=s.toFixed(5);
-  }
+  const s=calibrationScale();
   if(!s)return null;
   return{lt,ltMedial:m,vx,vy,pxPerMm:1/s,mmPerPx:s};
 }
@@ -771,33 +772,42 @@ function buildDataDictionaryV11Record(){
       image_stage:$('imageType').value==='postop_THA'?'postop_ap':'preop_ap',
       stem_family:$('stemFamily').value.trim()||'NA',
       collar_status:$('implantCollar').value==='yes'?'collared':($('implantCollar').value==='no'?'collarless':'NA'),
-      exclusion_flag:$('exclusionFlag').value
+      exclusion_flag:$('exclusionFlag').value||null
     },
     provenance_and_split:{
       research_id:rid,
       patient_id:pid,
-      observer_id:$('observerId').value.trim()||'observer',
+      observer_id:$('observerId').value.trim()||null,
+      repeat_index:measurementIdentity().repeat_index,
+      image_id:$('imageId').value.trim()||null,
+      side:$('side').value,
+      measurement_key:measurementKey(),
+      app_version:APP_VERSION,
       dataset_partition:$('exclusionFlag').value==='legacy_pilot'?'legacy_pilot':'unassigned',
       timestamp_utc:new Date().toISOString(),
-      model_version:aiLoaded?'fma_jang_resnet34_unet_v1':'manual_teacher_v1',
+      model_version:aiLoaded?($('modelVersion').value.trim()||null):null,
+      model_version_status:aiLoaded?($('modelVersion').value.trim()?'recorded':'unknown'):'not_applicable',
       preprocess_version:'canvas_highres_v2.1',
       annotation_rule_ver:'v1.0',
-      algorithm_git_hash:'v2.1.2-cloud',
+      algorithm_git_hash:codeCommit(),
       mask_source_type:aiLoaded?(totalEditCount>0?'ai_observer_corrected':'ai_raw'):'teacher_gt'
     },
     calibration_metrics:{
       orig_width_px:cv.width,
       orig_height_px:cv.height,
       calib_target_type:$('imageType').value==='postop_THA'?'femoral_head':'marker_ball',
-      calib_known_mm:parseFloat($('headSize').value)||32.0,
+      calib_known_mm:positiveValue('headSize'),
+      calibration_status:calibrationScale()?'entered':'missing',
+      calibration_method:$('calMode').value,
       calib_measured_px:annotation.head&&annotation.head.radius_px?Number((annotation.head.radius_px*2).toFixed(3)):null,
-      calib_fit_rmse_px:annotation.head&&annotation.head.rmse_px!=null?Number(annotation.head.rmse_px.toFixed(4)):0,
-      calibrated_mm_per_px:g?Number(g.mmPerPx.toFixed(6)):(parseFloat($('scale').value)||null)
+      calib_fit_rmse_px:annotation.head&&annotation.head.rmse_px!=null?Number(annotation.head.rmse_px.toFixed(4)):null,
+      calibrated_mm_per_px:g?Number(g.mmPerPx.toFixed(6)):calibrationScale()
     },
     segmentation_qc:{
-      qc_overall_status:g?'measurable':'review_required',
-      lt_visibility_status:$('ltVisibility').value,
-      double_cortex_grade:$('doubleCortex').value,
+      qc_overall_status:g&&$('ltVisibility').value&&$('doubleCortex').value&&$('exclusionFlag').value?'measurement_available':'review_required',
+      lt_visibility_status:$('ltVisibility').value||null,
+      double_cortex_grade:$('doubleCortex').value||null,
+      qc_review_status:($('ltVisibility').value&&$('doubleCortex').value&&$('exclusionFlag').value)?'entered':'not_reviewed',
       observer_correction_count:totalEditCount,
       observer_mod_canal_mm:canalShiftMm!=null?Number(canalShiftMm.toFixed(3)):null,
       observer_edit_time_sec:elapsedSec!=null?elapsedSec:(start?Math.round((Date.now()-start)/1000):null)
@@ -840,11 +850,14 @@ function buildDataDictionaryV11Record(){
 }
 
 $('saveCloud').onclick=async()=>{
-  const id=ensureCaseId();
+  if(!validateIdentity())return;
+  const id=newSaveKey();
   if(!id){alert('⚠ Research ID (Study ID) を入力してください。');$('studyId').focus();return}
   if(!confirmMissingBeforeSave('Googleクラウドへ保存'))return;
   if(start&&elapsedSec==null)elapsedSec=Math.round((Date.now()-start)/1000);
   const payload=buildDataDictionaryV11Record();
+  payload.provenance_and_split.record_key=id;
+  payload.raw_annotations.record_key=id;
   try{payload.overlay_png_base64=cv.toDataURL('image/png');}catch(e){}
   const maskBlob=await trainingMaskPngBlob();
   const maskBase64=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(maskBlob)});
@@ -887,12 +900,17 @@ function measurementMissingReport(){
   return[...new Set(miss)];
 }
 function confirmMissingBeforeSave(action){
-  const miss=measurementMissingReport();if(!miss.length)return true;
+  const miss=measurementMissingReport();
+  if(!calibrationScale())miss.push('校正値未入力：mm計測は欠測');
+  if(!$('ltVisibility').value||!$('doubleCortex').value||!$('exclusionFlag').value)miss.push('画質・適格性の未評価項目あり');
+  if(aiLoaded&&!$('modelVersion').value.trim())miss.push('AIモデル版不明');
+  if(!miss.length)return true;
   return confirm('⚠ 一部スライスに未計測があります。\n\n・'+miss.join('\n・')+'\n\nこのまま'+action+'しますか？');
 }
 
 $('saveCase').onclick=async()=>{
-  const id=ensureCaseId();
+  if(!validateIdentity())return;
+  const id=newSaveKey();
   if(!id){alert('⚠ Research ID (Study ID) が入力されていません。');$('studyId').focus();return}
   if(!confirmMissingBeforeSave('ローカル保存'))return;
   const res=await saveCaseFilesToFolder(id);if(!res.ok)return;
@@ -911,6 +929,7 @@ $('file').onchange=e=>{
     const base=f.name.replace(/\.[^.]+$/,'').replace(/_source$/i,'');
     $('studyId').value=base;
   }
+  $('headSize').value='';$('scale').value='';$('ltVisibility').value='';$('doubleCortex').value='';$('exclusionFlag').value='';$('modelVersion').value='';$('imageId').value='';$('repeatIndex').value='';pendingAiPrediction=null;
   const u=URL.createObjectURL(f);img=new Image();
   img.onload=()=>{
     const ratio=img.height/img.width;cv.width=1200;cv.height=Math.round(1200*ratio);
@@ -1019,11 +1038,13 @@ function trainingMaskPngBlob(){
 async function saveCaseFilesToFolder(id){
   const maskBlob=await trainingMaskPngBlob();
   const fmaRecord=buildDataDictionaryV11Record();
+  fmaRecord.provenance_and_split.record_key=id;
+  fmaRecord.raw_annotations.record_key=id;
   const src=window._fmaFile;
   const ext=(src&&src.name&&src.name.includes('.'))?src.name.split('.').pop().toLowerCase():'jpg';
   const files=[
     [JSON.stringify(fmaRecord,null,2),'application/json',id+'_fma_record.json'],
-    [JSON.stringify(annotationPayload(),null,2),'application/json',id+'_annotation.json'],
+    [JSON.stringify(fmaRecord.raw_annotations,null,2),'application/json',id+'_annotation.json'],
     [profileCsvText(),'text/csv;charset=utf-8',id+'_profile.csv'],
     [measurementCsvText(),'text/csv;charset=utf-8','FMA_'+id+'_'+($('observerId').value||'observer')+'.csv'],
     [trainingManifestText(),'text/csv;charset=utf-8',id+'_training_manifest.csv'],
@@ -1046,6 +1067,8 @@ async function saveCaseFilesToFolder(id){
 function ensureCaseId(){return $('studyId').value.trim()}
 function annotationPayload(){
   return {
+    measurement_identity:measurementIdentity(),measurement_key:measurementKey(),algorithm_git_hash:codeCommit(),
+    model_version:aiLoaded?($('modelVersion').value.trim()||null):null,
     annotation_version:annotation.version,training_schema:'AP_multiclass_v2.1',coordinate_space:'canvas_px',
     source_image_filename:(window._fmaFile&&window._fmaFile.name)||'',study_id:ensureCaseId(),
     patient_id:$('patientId').value.trim()||ensureCaseId(),image_type:$('imageType').value,
@@ -1058,7 +1081,7 @@ function annotationPayload(){
     stem_medial:annotation.stem_medial,stem_lateral:annotation.stem_lateral,
     contour_closed:annotationClosed,annotation_correction_count:annotationCorrectionCount,
     ai_loaded:aiLoaded,ai_initial_prediction:aiLoaded?aiInitial:null,
-    app_version:'v2.1.2-cloud',timestamp:new Date().toISOString()
+    app_version:'v2.1.3-cloud',timestamp:new Date().toISOString()
   };
 }
 function profileCsvText(){
@@ -1066,10 +1089,10 @@ function profileCsvText(){
   return [hdr.join(',')].concat(rows.map(r=>[r.distance_from_LT_mm,r.outer_width_px,r.canal_width_px,r.stem_width_px,r.outer_width_mm,r.canal_width_mm,r.stem_width_mm,r.CTI,r.CFR].map(v=>v==null?'':v).join(','))).join('\n');
 }
 function measurementCsvText(){
-  let s=parseFloat($('scale').value)||'',rows=[['Study_ID','Patient_ID','Observer_ID','Image_type','Stem_family','Side','Implant_collar','Landmark_name','X_px','Y_px','Image_width_px','Image_height_px','Scale_mm_per_px','Head_diameter_mm','Calibration_source','AP_CTI','CFI','CCR','CBR','Stem_Align_deg','Mean_Stem_Fill','Measurement_time_sec','AI_loaded','Correction_count','App_version','Timestamp']];
+  let s=parseFloat($('scale').value)||'',rows=[['Study_ID','Patient_ID','Observer_ID','Image_type','Stem_family','Side','Implant_collar','Landmark_name','X_px','Y_px','Image_width_px','Image_height_px','Scale_mm_per_px','Head_diameter_mm','Calibration_source','AP_CTI','CFI','CCR','CBR','Stem_Align_deg','Mean_Stem_Fill','Measurement_time_sec','AI_loaded','Correction_count','App_version','Timestamp','Repeat_index','Image_ID','Measurement_key','Code_commit','Model_version']];
   for(const[name,k]of steps){
     let p=pts[k];if(!p)continue;
-    rows.push([ensureCaseId(),$('patientId').value||ensureCaseId(),$('observerId').value,$('imageType').value,$('stemFamily').value,$('side').value,$('implantCollar').value,k,p.x.toFixed(3),p.y.toFixed(3),cv.width,cv.height,s,$('headSize').value,$('calMode').value,$('cti').textContent,$('cfiVal').textContent,$('ccrVal').textContent,$('cbrVal').textContent,$('alignVal').textContent,$('meanFillVal').textContent,elapsedSec!=null?elapsedSec:(start?Math.round((Date.now()-start)/1000):''),aiLoaded?'true':'false',correctionCount+annotationCorrectionCount,'v2.1.2-cloud',new Date().toISOString()]);
+    rows.push([ensureCaseId(),$('patientId').value||ensureCaseId(),$('observerId').value,$('imageType').value,$('stemFamily').value,$('side').value,$('implantCollar').value,k,p.x.toFixed(3),p.y.toFixed(3),cv.width,cv.height,s,$('headSize').value,$('calMode').value,$('cti').textContent,$('cfiVal').textContent,$('ccrVal').textContent,$('cbrVal').textContent,$('alignVal').textContent,$('meanFillVal').textContent,elapsedSec!=null?elapsedSec:(start?Math.round((Date.now()-start)/1000):''),aiLoaded?'true':'false',correctionCount+annotationCorrectionCount,APP_VERSION,new Date().toISOString(),measurementIdentity().repeat_index,$('imageId').value,measurementKey(),codeCommit(),aiLoaded?$('modelVersion').value:'']);
   }
   return rows.map(r=>r.map(esc).join(',')).join('\n');
 }
@@ -1105,6 +1128,7 @@ function normalizePrediction(j){
 }
 function applyFullPrediction(pred){
   if(!pred)return;
+  $('modelVersion').value=pred.provenance_and_split?.model_version||pred.model_version||pred.prediction?.model_version||'';
   const n=normalizePrediction(pred);aiInitial=JSON.parse(JSON.stringify(n));aiLoaded=true;
   annotation._manualAnchors={};annotation._nextManualId=0;
   for(const[k,p]of Object.entries(n.points||{}))if(p&&Number.isFinite(Number(p.x))&&Number.isFinite(Number(p.y)))pts[k]={x:Number(p.x),y:Number(p.y)};
@@ -1252,13 +1276,36 @@ function circle3(a,b,c){
   return{x,y,r:Math.hypot(a.x-x,a.y-y)};
 }
 
-function calc(){
-  let s=parseFloat($('scale').value)||null;
-  if($('calMode').value==='head'){
-    let hd=parseFloat($('headSize').value)||32,hc=circle3(pts.head1,pts.head2,pts.head3);
-    let hp=hc?2*hc.r:(annotation.head&&Number.isFinite(annotation.head.radius_px)?2*annotation.head.radius_px:null);
-    if(hp){s=hd/hp;$('scale').value=s.toFixed(5)}
+function positiveValue(id){const n=Number($(id).value);return Number.isFinite(n)&&n>0?n:null}
+function calibrationScale(){
+  if($('calMode').value==='manual')return positiveValue('scale');
+  const diameter=positiveValue('headSize'),hc=circle3(pts.head1,pts.head2,pts.head3);
+  const radius=hc?hc.r:annotation.head?.radius_px;
+  const scale=diameter&&Number.isFinite(radius)&&radius>0?diameter/(2*radius):null;
+  $('scale').value=scale?scale.toFixed(6):'';
+  return scale;
+}
+function measurementIdentity(){
+  return {research_id:ensureCaseId(),observer_id:$('observerId').value.trim(),
+    repeat_index:Number($('repeatIndex').value)||null,image_id:$('imageId').value.trim(),
+    side:$('side').value,image_stage:$('imageType').value};
+}
+function validateIdentity(){
+  const v=measurementIdentity();
+  if(!v.research_id||!v.observer_id||!v.image_id||!Number.isInteger(v.repeat_index)||v.repeat_index<1){
+    alert('Research ID・Observer ID・反復番号（1以上の整数）・匿名Image IDを入力してください。');return false;
   }
+  return true;
+}
+function measurementKey(){
+  const v=measurementIdentity();
+  return [v.research_id,v.observer_id,v.repeat_index,v.image_id,v.side,v.image_stage].map(x=>encodeURIComponent(String(x??''))).join('__');
+}
+function newSaveKey(){return measurementKey()+'__'+crypto.randomUUID()}
+function codeCommit(){return /^[a-f0-9]{40}$/.test(BUILD_COMMIT)?BUILD_COMMIT:null}
+function calc(){
+  calibrationScale();
+  profileRows=[];continuousSlices=[];continuousSummary={};
   const g=measurementGeometry(),fixed={};
   if(g){const rows=calculateProfiles();for(const l of levels)fixed[l]=rows.find(r=>r.distance_from_LT_mm===l)||null}
   const r100=fixed[100];
@@ -1298,22 +1345,23 @@ function saveWork(){
   if(!window._fmaFile)return;
   const key=imageWorkKey(window._fmaFile);if(!key)return;
   const data={pts,step,zoom,panX,panY,annotation,annotationClosed,annotationCorrectionCount,profileRows,autoStemInfo,start,elapsedSec,
-    fields:{studyId:$('studyId').value,patientId:$('patientId').value,observerId:$('observerId').value,imageType:$('imageType').value,stemFamily:$('stemFamily').value,side:$('side').value,implantCollar:$('implantCollar').value,headSize:$('headSize').value,calMode:$('calMode').value,scale:$('scale').value,ltVisibility:$('ltVisibility').value,doubleCortex:$('doubleCortex').value,exclusionFlag:$('exclusionFlag').value},
-    savedAt:new Date().toISOString(),appVersion:'v2.1.2-cloud'};
+    fields:{studyId:$('studyId').value,patientId:$('patientId').value,observerId:$('observerId').value,repeatIndex:$('repeatIndex').value,imageId:$('imageId').value,modelVersion:$('modelVersion').value,imageType:$('imageType').value,stemFamily:$('stemFamily').value,side:$('side').value,implantCollar:$('implantCollar').value,headSize:$('headSize').value,calMode:$('calMode').value,scale:$('scale').value,ltVisibility:$('ltVisibility').value,doubleCortex:$('doubleCortex').value,exclusionFlag:$('exclusionFlag').value},
+    savedAt:new Date().toISOString(),appVersion:'v2.1.3-cloud'};
   try{localStorage.setItem(key,JSON.stringify(data))}catch(e){}
 }
 function clearSavedWork(){if(window._fmaFile){const k=imageWorkKey(window._fmaFile);if(k)localStorage.removeItem(k)}}
 function esc(v){v=String(v??'');return '"'+v.replaceAll('"','""')+'"'}
 
 $('export').onclick=()=>{
+  if(!validateIdentity())return;
   if(!confirmMissingBeforeSave('CSV出力'))return;
   let csv=measurementCsvText();
-  downloadBlob(csv,'text/csv;charset=utf-8',`FMA_${ensureCaseId()||'case'}_${$('observerId').value||'observer'}.csv`);
+  downloadBlob(csv,'text/csv;charset=utf-8',`FMA_${newSaveKey()}.csv`);
 };
 $('workMode').onchange=()=>{guide();saveWork()};
 $('annotationTarget').onchange=()=>{$('workMode').value='annotation';guide();saveWork()};
 ['pointerup'].forEach(ev=>cv.addEventListener(ev,()=>setTimeout(saveWork,0)));
-['studyId','patientId','observerId','imageType','stemFamily','side','implantCollar','headSize','calMode','scale','ltVisibility','doubleCortex','exclusionFlag','workMode','annotationTarget'].forEach(id=>{if($(id))$(id).addEventListener('change',saveWork)});
+['studyId','patientId','observerId','repeatIndex','imageId','modelVersion','imageType','stemFamily','side','implantCollar','headSize','calMode','scale','ltVisibility','doubleCortex','exclusionFlag','workMode','annotationTarget'].forEach(id=>{if($(id))$(id).addEventListener('change',saveWork)});
 window.addEventListener('beforeunload',saveWork);
 guide();draw();
 </script></body></html>

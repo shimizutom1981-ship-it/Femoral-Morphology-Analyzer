@@ -30,116 +30,88 @@ function saveOrUpdateBlobFile(folder, fileName, blob) {
   return folder.createFile(blob);
 }
 
-/**
- * HTML側から呼び出される一括クラウド保存関数
- * 1) {rid}_mask512.png
- * 2) {rid}_profile.csv
- * 3) {rid}_overlay.png
- * 4) {rid}_annotation.json
- * 5) {rid}_fma_record.json
- * 6) case_list の行を自動追加・更新
- */
+// Replaced by the deployment workflow; identifies the server actually handling a save.
+const SERVER_BUILD_COMMIT = '__FMA_BUILD_COMMIT__';
+
+function validatedRecordKey(payload) {
+  const p = payload.provenance_and_split || {};
+  for (const field of ['research_id', 'observer_id', 'image_id']) {
+    if (typeof p[field] !== 'string' || !p[field].trim()) throw new Error(field + ' is required. Reload the latest app.');
+  }
+  if (!Number.isInteger(p.repeat_index) || p.repeat_index < 1) throw new Error('repeat_index must be a positive integer.');
+  if (!['R','L'].includes(p.side)) throw new Error('side is required.');
+  const stage = payload.meta_input?.image_stage;
+  if (!['postop_ap','preop_ap'].includes(stage)) throw new Error('image_stage is required.');
+  const imageType = stage === 'postop_ap' ? 'postop_THA' : 'native';
+  const expected = [p.research_id,p.observer_id,p.repeat_index,p.image_id,p.side,imageType].map(x=>encodeURIComponent(String(x))).join('__');
+  if (p.measurement_key !== expected) throw new Error('Measurement identity does not match key.');
+  const suffix = String(p.record_key || '').slice(expected.length + 2);
+  if (!String(p.record_key || '').startsWith(expected+'__') || !/^[a-f0-9-]{36}$/.test(suffix)) throw new Error('record_key is required. Reload the latest app.');
+  return p.record_key;
+}
+
+/** Each save is an immutable snapshot; legacy case-only records are left untouched. */
 function saveFmaRecordToCloud(payload) {
-  const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName('case_list');
-
-  if (!sheet) {
-    sheet = ss.insertSheet('case_list');
-    sheet.appendRow([
-      'research_id', 'patient_id', 'image_stage', 'stem_family',
-      'calib_known_mm', 'collar_status', 'exclusion_flag',
-      'calibrated_mm_per_px', 'stem_alignment_deg', 'mean_stem_fill_total',
-      'cfi', 'ccr', 'cbr', 'cti_minus100', 'lt_visibility_status', 'double_cortex_grade',
-      'updated_at', 'json_file_url', 'mask512_url', 'profile_csv_url'
-    ]);
+  const key = validatedRecordKey(payload);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) throw new Error('No bound spreadsheet found.');
+    let sheet = ss.getSheetByName('case_list');
+    if (!sheet) sheet = ss.insertSheet('case_list');
+    const p = payload.provenance_and_split;
+    const c = payload.calibration_metrics || {}, q = payload.segmentation_qc || {};
+    const d = payload.discrete_parameters || {}, m = payload.meta_input || {};
+    const positive = value => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+    c.calib_known_mm = positive(c.calib_known_mm);
+    c.calibrated_mm_per_px = positive(c.calibrated_mm_per_px);
+    q.lt_visibility_status = q.lt_visibility_status || null;
+    q.double_cortex_grade = q.double_cortex_grade || null;
+    p.server_git_hash = /^[a-f0-9]{40}$/.test(SERVER_BUILD_COMMIT) ? SERVER_BUILD_COMMIT : null;
+    const row = {
+      research_id:p.research_id, patient_id:p.patient_id ?? '', image_stage:m.image_stage,
+      stem_family:m.stem_family ?? '', calib_known_mm:c.calib_known_mm,
+      collar_status:m.collar_status ?? '', exclusion_flag:m.exclusion_flag ?? '',
+      calibrated_mm_per_px:c.calibrated_mm_per_px, stem_alignment_deg:d.stem_alignment_deg,
+      mean_stem_fill_total:payload.continuous_profile?.exploratory_summary?.mean_stem_fill_total,
+      cfi:d.cfi, ccr:d.ccr, cbr:d.cbr, cti_minus100:d.cti_minus100,
+      lt_visibility_status:q.lt_visibility_status, double_cortex_grade:q.double_cortex_grade,
+      updated_at:new Date(), json_file_url:'', mask512_url:'', profile_csv_url:'',
+      record_key:key, measurement_key:p.measurement_key, observer_id:p.observer_id,
+      repeat_index:p.repeat_index, image_id:p.image_id, side:p.side,
+      algorithm_git_hash:p.algorithm_git_hash ?? '', server_git_hash:p.server_git_hash,
+      app_version:p.app_version ?? '', model_version:p.model_version ?? '',
+      model_version_status:p.model_version_status ?? 'unknown',
+      calibration_status:c.calibration_status ?? 'missing', calibration_method:c.calibration_method ?? '',
+      qc_review_status:q.qc_review_status ?? 'not_reviewed', mask_source_type:p.mask_source_type ?? ''
+    };
+    let headers = sheet.getLastRow() ? sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0] : [];
+    for (const name of Object.keys(row)) if (!headers.includes(name)) headers.push(name);
+    sheet.getRange(1,1,1,headers.length).setValues([headers]);
     sheet.setFrozenRows(1);
-  }
-
-  const rid = payload.provenance_and_split.research_id;
-  const overlayBase64 = payload.overlay_png_base64 || null;
-  const mask512Base64 = payload.mask512_png_base64 || null;
-  const profileCsvText = payload.profile_csv_text || null;
-  delete payload.overlay_png_base64;
-  delete payload.mask512_png_base64;
-  delete payload.profile_csv_text;
-
-  let maskFileUrl = '';
-  if (mask512Base64) {
-    const maskName = `${rid}_mask512.png`;
-    const maskData = mask512Base64.replace(/^data:image\/png;base64,/, '');
-    const maskBlob = Utilities.newBlob(Utilities.base64Decode(maskData), MimeType.PNG, maskName);
-    const maskFile = saveOrUpdateBlobFile(folder, maskName, maskBlob);
-    maskFileUrl = maskFile.getUrl();
-  }
-
-  let csvFileUrl = '';
-  if (profileCsvText) {
-    const csvName = `${rid}_profile.csv`;
-    const csvFile = saveOrUpdateTextFile(folder, csvName, profileCsvText, MimeType.CSV);
-    csvFileUrl = csvFile.getUrl();
-  }
-
-  if (overlayBase64) {
-    const pngName = `${rid}_overlay.png`;
-    const base64Data = overlayBase64.replace(/^data:image\/png;base64,/, '');
-    const overlayBlob = Utilities.newBlob(Utilities.base64Decode(base64Data), MimeType.PNG, pngName);
-    saveOrUpdateBlobFile(folder, pngName, overlayBlob);
-  }
-
-  if (payload.raw_annotations) {
-    const annFileName = `${rid}_annotation.json`;
-    const annContent = JSON.stringify(payload.raw_annotations, null, 2);
-    saveOrUpdateTextFile(folder, annFileName, annContent, MimeType.PLAIN_TEXT);
-  }
-
-  const jsonFileName = `${rid}_fma_record.json`;
-  const jsonContent = JSON.stringify(payload, null, 2);
-  const jsonFile = saveOrUpdateTextFile(folder, jsonFileName, jsonContent, MimeType.PLAIN_TEXT);
-
-  const rowData = [
-    rid,
-    payload.provenance_and_split.patient_id || '',
-    payload.meta_input?.image_stage || 'postop_ap',
-    payload.meta_input?.stem_family || '',
-    payload.calibration_metrics?.calib_known_mm || 32.0,
-    payload.meta_input?.collar_status || '',
-    payload.meta_input?.exclusion_flag || 'eligible',
-    payload.calibration_metrics?.calibrated_mm_per_px ?? '',
-    payload.discrete_parameters?.stem_alignment_deg ?? '',
-    payload.continuous_profile?.exploratory_summary?.mean_stem_fill_total ?? '',
-    payload.discrete_parameters?.cfi ?? '',
-    payload.discrete_parameters?.ccr ?? '',
-    payload.discrete_parameters?.cbr ?? '',
-    payload.discrete_parameters?.cti_minus100 ?? '',
-    payload.segmentation_qc?.lt_visibility_status || 'clear',
-    payload.segmentation_qc?.double_cortex_grade || 'none',
-    new Date(),
-    jsonFile.getUrl(),
-    maskFileUrl,
-    csvFileUrl
-  ];
-
-  const data = sheet.getDataRange().getValues();
-  let targetRow = -1;
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(rid)) {
-      targetRow = i + 1;
-      break;
+    // A retried request must never overwrite a completed snapshot.
+    if (sheet.getLastRow() > 1) {
+      const keys = sheet.getRange(2,headers.indexOf('record_key')+1,sheet.getLastRow()-1,1).getValues();
+      if (keys.some(r=>r[0]===key)) return {status:'success',research_id:p.research_id,record_key:key,already_saved:true};
     }
-  }
-
-  if (targetRow > 0) {
-    sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
-  } else {
-    sheet.appendRow(rowData);
-  }
-
-  return {
-    status: 'success',
-    research_id: rid,
-    fileUrl: jsonFile.getUrl(),
-    maskUrl: maskFileUrl,
-    csvUrl: csvFileUrl
-  };
+    function savePng(value, suffix) {
+      if (!value) return '';
+      const name = key + suffix;
+      const data = value.replace(/^data:image\/png;base64,/, '');
+      return saveOrUpdateBlobFile(folder,name,Utilities.newBlob(Utilities.base64Decode(data),MimeType.PNG,name)).getUrl();
+    }
+    row.mask512_url = savePng(payload.mask512_png_base64,'_mask512.png');
+    savePng(payload.overlay_png_base64,'_overlay.png');
+    if (payload.profile_csv_text) row.profile_csv_url = saveOrUpdateTextFile(folder,key+'_profile.csv',payload.profile_csv_text,MimeType.CSV).getUrl();
+    delete payload.overlay_png_base64; delete payload.mask512_png_base64; delete payload.profile_csv_text;
+    if (payload.raw_annotations) saveOrUpdateTextFile(folder,key+'_annotation.json',JSON.stringify(payload.raw_annotations,null,2),MimeType.PLAIN_TEXT);
+    const jsonFile = saveOrUpdateTextFile(folder,key+'_fma_record.json',JSON.stringify(payload,null,2),MimeType.PLAIN_TEXT);
+    row.json_file_url = jsonFile.getUrl();
+    // Treat user-entered values as text, not spreadsheet formulae.
+    const cell = value => value == null ? '' : typeof value === 'string' && /^[=+@-]/.test(value) ? "'"+value : value;
+    sheet.appendRow(headers.map(name=>cell(row[name])));
+    return {status:'success',research_id:p.research_id,record_key:key,fileUrl:row.json_file_url,maskUrl:row.mask512_url,csvUrl:row.profile_csv_url};
+  } finally { lock.releaseLock(); }
 }
