@@ -1,86 +1,342 @@
 <!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Femoral Morphology Analyzer</title><style>
-:root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:920px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:9px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}.result{background:#0f172a;padding:10px;border-radius:8px;text-align:center}.val{font-size:1.25rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}
+<!--
+================================================================================
+AI HANDOVER SPECIFICATION (For ChatGPT / Gemini / Claude Code Maintenance)
+================================================================================
+Project: Femoral Morphology Analyzer (FMA) v2.1 (Protocol v2.1 / Data Dictionary v1.1)
+Architecture: Single-file HTML/JS application compatible with BOTH:
+  1. Google Apps Script Web App (Plan B: calls `google.script.run.saveFmaRecordToCloud(payload)`)
+  2. Standalone / GitHub Pages (falls back to File System Access API / Blob download)
 
-/* Routine measurement UI: development controls remain hidden in DOM. */
-#workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}
+Key Rules for AI Assistants modifying this file:
+  - DO NOT remove `google.script.run.saveFmaRecordToCloud` integration.
+  - Cloud Save sends: `_fma_record.json`, `_annotation.json`, `_mask512.png`, `_profile.csv`, and `_overlay.png`.
+  - Preserve the 9-stage guided workflow (`guidedStages`), `autoDetectStem`, `autoDetectHead`,
+    PCHIP `stem_interface_anchors`, and local export (`saveCaseFilesToFolder`).
+  - Coordinate convention along Shaft Axis (`vx, vy` from proximal `sap` to distal `sad`):
+    `distance_from_LT_mm`: negative = proximal to LT (-20mm = 2cm above LT, -10mm = 1cm above LT),
+    positive = distal to LT (+20, +30, +70, +100mm).
+  - 512x512 Mask convention (`trainingMaskPngBlob` & `aiMaskFile`):
+    Class 0: rgb(0,0,0) bg, Class 1: rgb(1,1,1) femur outer, Class 2: rgb(2,2,2) canal, Class 3: rgb(3,3,3) stem.
+================================================================================
+-->
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Femoral Morphology Analyzer v2.1</title><style>
+:root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--cloud:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:980px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.cloudBtn{background:var(--cloud);color:#fff;border-color:#7c3aed}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.result{background:#0f172a;padding:9px;border-radius:8px;text-align:center}.val{font-size:1.15rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}.filterBar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#0f172a;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:.75rem}.filterBar label{display:flex;align-items:center;gap:6px;margin:0;color:var(--text)}.filterBar input[type=range]{width:110px;padding:0}
+#workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
 </style></head><body><div class="app">
-<div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub">v2.1.0-dev.11 · AI-assisted AP development / Human-in-the-loop · Training-data capture</div></div>
-<div class="card"><div class="grid"><div><label>Study ID</label><input id="studyId" placeholder="必須：手動入力"></div><div><label>Observer ID</label><input id="observerId"></div><div><label>Mode</label><select id="workMode"><option value="measurement">Measurement</option><option value="annotation">Annotation</option></select></div><div><label>Image type</label><select id="imageType"><option value="postop_THA">Postop THA</option><option value="native">Native hip</option></select></div><div><label>Session</label><select id="session"><option>App-1</option><option>App-repeat</option></select></div><div><label>Side</label><select id="side"><option>R</option><option>L</option></select></div><div><label>Implant collar</label><select id="implantCollar"><option value="yes">あり</option><option value="no">なし</option></select></div><div><label>Head diameter (mm)</label><input id="headSize" type="number" step="1" value="32"></div><div><label>Calibration</label><select id="calMode"><option value="head">THA head (default)</option><option value="manual">Manual mm/pixel</option></select></div><div><label>mm / pixel</label><input id="scale" type="number" step="0.0001" placeholder="auto from Head"></div></div></div>
-<div class="card"><div class="grid"><label class="primary" style="text-align:center;padding:10px;border-radius:7px;cursor:pointer">画像選択<input id="file" type="file" accept="image/*" style="display:none"></label><button id="undo" style="display:none">1点戻す</button><button id="reset" class="danger" style="display:none">全点リセット</button><label class="primary" style="text-align:center;padding:9px;border-radius:7px;cursor:pointer">AI候補JSON<input id="aiJsonFile" type="file" accept=".json,application/json" style="display:none"></label><button id="autoStem" class="primary" style="display:none">Stem自動検出</button><button id="autoHead" class="primary" style="display:none">Head自動検出</button><button id="aiSuggest" class="primary">AI候補を適用</button><button id="zoomOut">−</button><span id="zoomLabel">100%</span><button id="zoomIn">＋</button><button id="zoomReset">100%</button><select id="annotationTarget" style="display:none"><option value="head">Head circle (3 points)</option><option value="lt_midpoint">LT medial-most point projection (pilot)</option><option value="femur_medial">Outer cortex - medial</option><option value="femur_lateral">Outer cortex - lateral</option><option value="canal_medial">Canal - medial</option><option value="canal_lateral">Canal - lateral</option><option value="femur_mask">Femur contour (legacy)</option><option value="canal_mask">Canal contour (legacy)</option><option value="stem_interface_anchors">Stem/cortex correction points (add until satisfied)</option><option value="stem_medial">Stem - medial</option><option value="stem_lateral">Stem - lateral</option><option value="stem_mask">Stem contour (legacy)</option><option value="lt_region">LT region (pilot)</option></select><button id="undoAnnotation">1点戻す</button><button id="clearStemAnchors" style="display:none">補正点クリア</button><button id="workflowBack">戻る</button><button id="workflowNext" class="primary">次へ</button><button id="closeAnnotation" style="display:none">Finish line</button><button id="saveAnnotation" style="display:none">Annotation JSON</button><button id="accept" class="primary">Accept measurement</button><button id="export" class="primary">CSV export</button><button id="exportProfile" style="display:none">Profile CSV</button><button id="saveCase" class="primary">Save case (6 files)</button></div><div id="guide" class="guide">画像を選択してください。</div><div class="small" style="margin:7px 2px"><span style="color:#22c55e">● Stem</span>　<span style="color:#f97316">● endosteal cortex</span>　<span style="color:#22d3ee">● outer cortex</span>　<span style="color:#ef4444">┄ Stem axis</span></div><div class="canvasWrap"><canvas id="cv" width="900" height="650"></canvas></div><div class="small">Head輪郭を3点指定すると円を自動推定（将来AI検出に置換） → LT medial-most point → shaft axis proximal → shaft axis distal → 各levelの medial endosteal / lateral endosteal。+100 mmのみ続けて medial outer / lateral outer。点はドラッグで微調整できます。</div></div>
-<div class="card"><div class="results"><div class="result"><div class="small">AP-CTI +100</div><div class="val" id="cti">--</div></div><div class="result"><div class="small">LDR-α (LT/+20)</div><div class="val" id="ldra">--</div></div><div class="result"><div class="small">LDR-β (LT/+30)</div><div class="val" id="ldrb">--</div></div><div class="result"><div class="small">Modified MCI (LT/+70)</div><div class="val" id="mci">--</div></div><div class="result"><div class="small">P10/D20</div><div class="val" id="p20d20">--</div></div><div class="result"><div class="small">P10/D30</div><div class="val" id="p20d30">--</div></div><div class="result"><div class="small">測定時間</div><div class="val" id="time">--</div></div></div></div>
-<div class="card"><table><thead><tr><th>Level</th><th>Canal px</th><th>Canal mm</th><th>Outer px</th><th>Outer mm</th><th>Stem manual mm</th><th>Stem AUTO mm</th><th>ΔStem mm</th><th>CTI</th><th>CFR manual</th><th>CFR AUTO</th></tr></thead><tbody id="tbl"></tbody></table></div>
-</div><script>
-const levels=[-10,0,20,30,70,100];const steps=[['Head rim point 1 (AI placeholder)','head1'],['Head rim point 2 (AI placeholder)','head2'],['Head rim point 3 (AI placeholder)','head3'],['LT medial-most point','ltm'],['Shaft axis proximal','sap'],['Shaft axis distal','sad']];
-const guidedStages=['head','femur_lateral','canal_lateral','stem_lateral','stem_medial','canal_medial','femur_medial','lt_midpoint','shaft_adjust'];let guidedStage=0;const cv=document.getElementById('cv'),ctx=cv.getContext('2d');let img=null,grayCache=null,pts={},step=0,start=null,elapsedSec=null,drag=null,zoom=1,panX=0,panY=0,isPanning=false,panStart=null,accepted=false,correctionCount=0,aiInitial={},aiLoaded=false,profileRows=[],annotation={version:'2.1-training',head:null,lt_midpoint:null,stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]},annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false},annotationDrag=null,annotationCorrectionCount=0;const $=id=>document.getElementById(id);function screenPos(e){const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*cv.width/r.width,y:(e.clientY-r.top)*cv.height/r.height}}function pos(e){const p=screenPos(e);return{x:(p.x-panX)/zoom,y:(p.y-panY)/zoom}}function setZoom(z,cx=cv.width/2,cy=cv.height/2){const old=zoom;zoom=Math.max(0.5,Math.min(5,z));panX=cx-(cx-panX)*zoom/old;panY=cy-(cy-panY)*zoom/old;$('zoomLabel').textContent=Math.round(zoom*100)+'%';draw()}function buildGrayCache(){if(!img)return;const oc=document.createElement('canvas');oc.width=cv.width;oc.height=cv.height;const ox=oc.getContext('2d',{willReadFrequently:true});ox.drawImage(img,0,0,cv.width,cv.height);const d=ox.getImageData(0,0,cv.width,cv.height).data;grayCache=new Float32Array(cv.width*cv.height);for(let i=0,j=0;i<d.length;i+=4,j++)grayCache[j]=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]}
-function gradAt(x,y){if(!grayCache)return 0;x=Math.round(x);y=Math.round(y);if(x<2||y<2||x>=cv.width-2||y>=cv.height-2)return 0;const gx=grayCache[y*cv.width+x+1]-grayCache[y*cv.width+x-1],gy=grayCache[(y+1)*cv.width+x]-grayCache[(y-1)*cv.width+x];return Math.hypot(gx,gy)}
-function snapToLocalEdge(p){if(!grayCache)return p;const r=Math.max(5,Math.round(12/zoom));let best=p,bg=-1;for(let yy=Math.round(p.y)-r;yy<=Math.round(p.y)+r;yy+=2)for(let xx=Math.round(p.x)-r;xx<=Math.round(p.x)+r;xx+=2){const g=gradAt(xx,yy),pen=.12*Math.hypot(xx-p.x,yy-p.y),score=g-pen;if(score>bg){bg=score;best={x:xx,y:yy}}}return best}
-function autoEdgeSeed(t,p){const q=snapToLocalEdge(p);const arr=annotation[t];if(arr.length)return q;q._manual=true;const pts=[q];const stepY=8,searchX=10,maxN=18;for(const dir of [-1,1]){let cur=q;const branch=[];for(let n=0;n<maxN;n++){const ty=cur.y+dir*stepY;if(ty<3||ty>=cv.height-3)break;let bx=cur.x,bs=-1;for(let dx=-searchX;dx<=searchX;dx+=2){const x=cur.x+dx,g=gradAt(x,ty),score=g-.18*Math.abs(dx);if(score>bs){bs=score;bx=x}}if(bs<8)break;cur={x:bx,y:ty,_auto:true};branch.push(cur)}if(dir<0)pts.unshift(...branch.reverse());else pts.push(...branch)}return pts}
+<div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub">v2.1.2-cloud · Protocol v2.1 / Annotation Rule v1.0 / Data Dictionary v1.1 · Google Cloud & Local Hybrid</div></div>
+
+<!-- Metadata & Protocol v2.1 Governance Card -->
+<div class="card"><div class="grid">
+  <div><label>Research ID (Study ID)</label><input id="studyId" placeholder="例: FMA_0001_R"></div>
+  <div><label>Patient ID (Leakage防止)</label><input id="patientId" placeholder="空欄ならResearch ID継承"></div>
+  <div><label>Observer ID</label><input id="observerId" placeholder="例: TS"></div>
+  <div><label>Mode</label><select id="workMode"><option value="measurement">Measurement</option><option value="annotation">Annotation</option></select></div>
+  <div><label>Image type</label><select id="imageType"><option value="postop_THA">Postop THA (32mm Head)</option><option value="native">Preop Native (25mm Ball)</option></select></div>
+  <div><label>Stem Family</label><input id="stemFamily" placeholder="例: Z1, Avenir, Preop" value="Z1"></div>
+  <div><label>Side</label><select id="side"><option>R</option><option>L</option></select></div>
+  <div><label>Implant collar</label><select id="implantCollar"><option value="yes">あり (Collared)</option><option value="no">なし (Collarless)</option><option value="NA">NA (Preop)</option></select></div>
+  <div><label>Known Calib Ø (mm)</label><input id="headSize" type="number" step="0.1" value="32.0"></div>
+  <div><label>Calibration</label><select id="calMode"><option value="head">Head / Marker Circle</option><option value="manual">Manual mm/pixel</option></select></div>
+  <div><label>mm / pixel</label><input id="scale" type="number" step="0.0001" placeholder="auto from Circle"></div>
+  <div><label>LT Visibility (Rule 3.5)</label><select id="ltVisibility"><option value="clear">Clear (明瞭)</option><option value="partially_visible">Partial (一部視認)</option><option value="occluded_unidentifiable">Occluded (内旋隠蔽/N.A.)</option></select></div>
+  <div><label>Double Cortex (Rule 3.2)</label><select id="doubleCortex"><option value="none">None</option><option value="mild_resolvable">Mild (判別可)</option><option value="severe_linea_aspera">Severe (粗線重なり)</option></select></div>
+  <div><label>Exclusion / Cohort</label><select id="exclusionFlag"><option value="eligible">Eligible (適格)</option><option value="legacy_pilot">Legacy Pilot</option><option value="excl_cement">Excl: Cement</option><option value="excl_hardware">Excl: Hardware</option><option value="excl_deformity">Excl: Deformity</option></select></div>
+  <div style="display:none"><label>Session</label><select id="session"><option>App-1</option><option>App-repeat</option></select></div>
+</div></div>
+
+<!-- Main Toolbar & Canvas Card -->
+<div class="card">
+  <div class="grid">
+    <label class="primary" style="text-align:center;padding:9px;border-radius:7px;cursor:pointer">1. 画像選択<input id="file" type="file" accept="image/*" style="display:none"></label>
+    <label class="primary" style="text-align:center;padding:9px;border-radius:7px;cursor:pointer">AI Mask512 PNG<input id="aiMaskFile" type="file" accept="image/png" style="display:none"></label>
+    <label class="primary" style="text-align:center;padding:9px;border-radius:7px;cursor:pointer">AI候補JSON<input id="aiJsonFile" type="file" accept=".json,application/json" style="display:none"></label>
+    <button id="aiSuggest" class="primary">AI候補を適用</button>
+    <button id="autoStem" class="primary">Stem自動検出</button>
+    <button id="autoHead" class="primary">Head自動検出</button>
+    <button id="undo" style="display:none">1点戻す</button>
+    <button id="reset" class="danger" style="display:none">全点リセット</button>
+    <button id="zoomOut">−</button>
+    <span id="zoomLabel" style="display:flex;align-items:center;justify-content:center;font-weight:700">100%</span>
+    <button id="zoomIn">＋</button>
+    <button id="zoomReset">100%</button>
+    <select id="annotationTarget">
+      <option value="head">Step 1: Head / Ball circle (3+ pts)</option>
+      <option value="femur_lateral">Step 2: Outer cortex - lateral</option>
+      <option value="canal_lateral">Step 3: Canal - lateral</option>
+      <option value="stem_lateral">Step 4: Stem - lateral</option>
+      <option value="stem_medial">Step 5: Stem - medial</option>
+      <option value="canal_medial">Step 6: Canal - medial</option>
+      <option value="femur_medial">Step 7: Outer cortex - medial</option>
+      <option value="lt_midpoint">Step 8: LT medial-most point</option>
+      <option value="osteotomy_line">Opt: Osteotomy line (近位0%境界)</option>
+      <option value="stem_interface_anchors">Opt: Stem/cortex PCHIP補正点</option>
+      <option value="lt_region">Opt: LT region contour</option>
+      <option value="femur_mask">Legacy: Femur contour</option>
+      <option value="canal_mask">Legacy: Canal contour</option>
+      <option value="stem_mask">Legacy: Stem contour</option>
+    </select>
+    <button id="undoAnnotation">1点戻す</button>
+    <button id="clearStemAnchors" style="display:none">補正点クリア</button>
+    <button id="workflowBack">◀ 戻る</button>
+    <button id="workflowNext" class="primary">次へ ▶</button>
+    <button id="closeAnnotation" style="display:none">Finish line</button>
+    <button id="saveAnnotation" style="display:none">Annotation JSON</button>
+    <button id="accept" class="primary">Accept 計測確定</button>
+    <button id="export">CSV export</button>
+    <button id="exportProfile" style="display:none">Profile CSV</button>
+    <button id="saveCase" class="primary">Local Save (7 files)</button>
+    <button id="saveCloud" class="cloudBtn">☁ Cloud Save (Drive+Sheet)</button>
+  </div>
+
+  <div id="guide" class="guide">画像を選択してください。</div>
+
+  <!-- Contrast / WL-WW Bar for Double Cortical Line Inspection -->
+  <div class="filterBar">
+    <span style="color:var(--accent);font-weight:700">画質調整 (二重線判別用):</span>
+    <label>明度 <input id="fltBright" type="range" min="50" max="180" value="100"></label>
+    <label>コントラスト <input id="fltContrast" type="range" min="50" max="250" value="100"></label>
+    <label><input id="fltInvert" type="checkbox" style="width:auto"> 白黒反転</label>
+    <button id="fltReset" style="width:auto;padding:4px 10px;font-size:.7rem">リセット</button>
+    <span style="margin-left:auto"><span style="color:#22c55e">● Stem</span> <span style="color:#f97316">● Endosteal</span> <span style="color:#22d3ee">● Outer</span> <span style="color:#f43f5e">● Osteotomy</span></span>
+  </div>
+
+  <div class="canvasWrap"><canvas id="cv" width="900" height="650"></canvas></div>
+  <div class="small" style="margin-top:6px">操作ヒント：Alt+ドラッグ（または中ボタン）で画面移動、ホイールで拡大縮小、Shift+ドラッグで既存の点を微調整。LTが内旋で見えない場合は「LT Visibility」を Occluded に設定するとLT基準項目のみN.A.となり、0–100%連続Stem-Fit解析はそのまま実行できます。</div>
+</div>
+
+<!-- Summary Metrics Card (Existing + v2.1 Continuous & Jang Metrics) -->
+<div class="card">
+  <div class="results">
+    <div class="result"><div class="small">AP-CTI (+100)</div><div class="val" id="cti">--</div></div>
+    <div class="result"><div class="small">CFI (Jang)</div><div class="val" id="cfiVal">--</div></div>
+    <div class="result"><div class="small">CCR (Jang)</div><div class="val" id="ccrVal">--</div></div>
+    <div class="result"><div class="small">CBR (+100)</div><div class="val" id="cbrVal">--</div></div>
+    <div class="result"><div class="small">Stem Align (°)</div><div class="val" id="alignVal">--</div></div>
+    <div class="result"><div class="small">Mean Fill (0-100%)</div><div class="val" id="meanFillVal">--</div></div>
+    <div class="result"><div class="small">Prox / Mid / Dist Fill</div><div class="val" id="zoneFillVal" style="font-size:.95rem">--</div></div>
+    <div class="result"><div class="small">LDR-α / LDR-β</div><div class="val" id="ldra" style="font-size:.95rem">--</div><div id="ldrb" style="display:none">--</div></div>
+    <div class="result"><div class="small">Mod MCI / P10D20</div><div class="val" id="mci" style="font-size:.95rem">--</div><div id="p20d20" style="display:none">--</div><div id="p20d30" style="display:none">--</div></div>
+    <div class="result"><div class="small">測定時間 / 修正誤差</div><div class="val" id="time" style="font-size:.95rem">--</div></div>
+  </div>
+</div>
+
+<!-- Fixed Level Table -->
+<div class="card"><table><thead><tr><th>Level (from LT)</th><th>Canal px</th><th>Canal mm</th><th>Outer px</th><th>Outer mm</th><th>Stem manual mm</th><th>Stem AUTO mm</th><th>ΔStem mm</th><th>CTI</th><th>CFR manual</th><th>CFR AUTO</th></tr></thead><tbody id="tbl"></tbody></table></div>
+</div>
+
+<script>
+const levels=[-20,-10,0,20,30,70,100];
+const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Shaft axis proximal','sap'],['Shaft axis distal','sad']];
+const guidedStages=['head','femur_lateral','canal_lateral','stem_lateral','stem_medial','canal_medial','femur_medial','lt_midpoint','shaft_adjust'];
+let guidedStage=0;
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+let img=null,grayCache=null,pts={},step=0,start=null,elapsedSec=null,drag=null,zoom=1,panX=0,panY=0,isPanning=false,panStart=null,accepted=false,correctionCount=0,aiInitial={},aiLoaded=false,profileRows=[],continuousSlices=[],continuousSummary={};
+let annotation={version:'2.1-training',head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};
+let annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,osteotomy_line:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};
+let annotationDrag=null,annotationCorrectionCount=0;
+const $=id=>document.getElementById(id);
+
+function updateCanvasFilter(){
+  const b=$('fltBright').value, c=$('fltContrast').value, inv=$('fltInvert').checked?100:0;
+  cv.style.filter=`brightness(${b}%) contrast(${c}%) invert(${inv}%)`;
+}
+['fltBright','fltContrast','fltInvert'].forEach(id=>$(id).addEventListener('input',updateCanvasFilter));
+$('fltReset').onclick=()=>{$('fltBright').value=100;$('fltContrast').value=100;$('fltInvert').checked=false;updateCanvasFilter()};
+
+$('imageType').addEventListener('change',()=>{
+  if($('imageType').value==='native'){$('headSize').value='25.0';$('implantCollar').value='NA';if($('stemFamily').value==='Z1')$('stemFamily').value='Preop';}
+  else if(parseFloat($('headSize').value)===25){$('headSize').value='32.0';}
+  calc();saveWork();
+});
+
+function screenPos(e){const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*cv.width/r.width,y:(e.clientY-r.top)*cv.height/r.height}}
+function pos(e){const p=screenPos(e);return{x:(p.x-panX)/zoom,y:(p.y-panY)/zoom}}
+function setZoom(z,cx=cv.width/2,cy=cv.height/2){const old=zoom;zoom=Math.max(0.5,Math.min(6,z));panX=cx-(cx-panX)*zoom/old;panY=cy-(cy-panY)*zoom/old;$('zoomLabel').textContent=Math.round(zoom*100)+'%';draw()}
+
+function buildGrayCache(){
+  if(!img)return;
+  const oc=document.createElement('canvas');oc.width=cv.width;oc.height=cv.height;
+  const ox=oc.getContext('2d',{willReadFrequently:true});ox.drawImage(img,0,0,cv.width,cv.height);
+  const d=ox.getImageData(0,0,cv.width,cv.height).data;
+  grayCache=new Float32Array(cv.width*cv.height);
+  for(let i=0,j=0;i<d.length;i+=4,j++)grayCache[j]=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+}
+function gradAt(x,y){
+  if(!grayCache)return 0;x=Math.round(x);y=Math.round(y);
+  if(x<2||y<2||x>=cv.width-2||y>=cv.height-2)return 0;
+  const gx=grayCache[y*cv.width+x+1]-grayCache[y*cv.width+x-1],gy=grayCache[(y+1)*cv.width+x]-grayCache[(y-1)*cv.width+x];
+  return Math.hypot(gx,gy);
+}
+
+function fitCircleLeastSquares(points){
+  if(!Array.isArray(points)||points.length<3)return null;
+  if(points.length===3){
+    const c=circle3(points[0],points[1],points[2]);
+    return c?{x:c.x,y:c.y,r:c.r,rmse:0}:null;
+  }
+  const n=points.length;
+  let mx=0,my=0;for(const p of points){mx+=p.x;my+=p.y}mx/=n;my/=n;
+  let suu=0,suv=0,svv=0,suuu=0,svvv=0,suvv=0,svuu=0;
+  for(const p of points){
+    const u=p.x-mx,v=p.y-my,u2=u*u,v2=v*v;
+    suu+=u2;suv+=u*v;svv+=v2;suuu+=u2*u;svvv+=v2*v;suvv+=u*v2;svuu+=v*u2;
+  }
+  const det=suu*svv-suv*suv;if(Math.abs(det)<1e-6)return circle3(points[0],points[1],points[2]);
+  const B1=0.5*(suuu+suvv),B2=0.5*(svvv+svuu);
+  const uc=(B1*svv-B2*suv)/det, vc=(suu*B2-suv*B1)/det;
+  const cx=mx+uc, cy=my+vc, r=Math.sqrt(uc*uc+vc*vc+(suu+svv)/n);
+  let sse=0;for(const p of points){const d=Math.hypot(p.x-cx,p.y-cy)-r;sse+=d*d}
+  return {x:cx,y:cy,r,rmse:Math.sqrt(sse/n)};
+}
+
 function orderedContour(name){
- const a=(annotation[name]||[]).slice();
- const guided=['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral'];
- if(!guided.includes(name)||a.length<2)return a;
- // Guided contours are OPEN anatomical borders. Preserve the clinician's click order.
- // Re-ordering by nearest-neighbour can jump across a curved proximal cortex and falsely "enclose" it.
- return a;
+  const a=(annotation[name]||[]).slice();
+  const guided=['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral','osteotomy_line'];
+  if(!guided.includes(name)||a.length<2||name==='osteotomy_line')return a;
+  const g=measurementGeometry();
+  if(g)return a.sort((u,v)=>((u.x-g.lt.x)*g.vx+(u.y-g.lt.y)*g.vy)-((v.x-g.lt.x)*g.vx+(v.y-g.lt.y)*g.vy));
+  return a.sort((u,v)=>u.y-v.y);
 }
 function smoothGuidePath(a){
- if(!Array.isArray(a)||a.length<3)return a||[];
- const out=[{x:a[0].x,y:a[0].y}];
- const tj=(ti,p,q)=>ti+Math.sqrt(Math.max(1e-6,Math.hypot(q.x-p.x,q.y-p.y)));
- const lerp=(p,q,u)=>({x:p.x+(q.x-p.x)*u,y:p.y+(q.y-p.y)*u});
- for(let i=0;i<a.length-1;i++){
-   const p0=a[Math.max(0,i-1)],p1=a[i],p2=a[i+1],p3=a[Math.min(a.length-1,i+2)];
-   const t0=0,t1=tj(t0,p0,p1),t2=tj(t1,p1,p2),t3=tj(t2,p2,p3);
-   for(let j=1;j<=10;j++){
-     const t=t1+(t2-t1)*(j/10);
-     const A1=(t1-t0)>1e-6?lerp(p0,p1,(t-t0)/(t1-t0)):p1;
-     const A2=lerp(p1,p2,(t-t1)/(t2-t1));
-     const A3=(t3-t2)>1e-6?lerp(p2,p3,(t-t2)/(t3-t2)):p2;
-     const B1=(t2-t0)>1e-6?lerp(A1,A2,(t-t0)/(t2-t0)):A2;
-     const B2=(t3-t1)>1e-6?lerp(A2,A3,(t-t1)/(t3-t1)):A2;
-     out.push((t2-t1)>1e-6?lerp(B1,B2,(t-t1)/(t2-t1)):A2);
-   }
- }
- return out;
+  if(!Array.isArray(a)||a.length<3)return a||[];
+  const out=[{x:a[0].x,y:a[0].y}];
+  const tj=(ti,p,q)=>ti+Math.sqrt(Math.max(1e-6,Math.hypot(q.x-p.x,q.y-p.y)));
+  const lerp=(p,q,u)=>({x:p.x+(q.x-p.x)*u,y:p.y+(q.y-p.y)*u});
+  for(let i=0;i<a.length-1;i++){
+    const p0=a[Math.max(0,i-1)],p1=a[i],p2=a[i+1],p3=a[Math.min(a.length-1,i+2)];
+    const t0=0,t1=tj(t0,p0,p1),t2=tj(t1,p1,p2),t3=tj(t2,p2,p3);
+    for(let j=1;j<=10;j++){
+      const t=t1+(t2-t1)*(j/10);
+      const A1=(t1-t0)>1e-6?lerp(p0,p1,(t-t0)/(t1-t0)):p1;
+      const A2=lerp(p1,p2,(t-t1)/(t2-t1));
+      const A3=(t3-t2)>1e-6?lerp(p2,p3,(t-t2)/(t3-t2)):p2;
+      const B1=(t2-t0)>1e-6?lerp(A1,A2,(t-t0)/(t2-t0)):A2;
+      const B2=(t3-t1)>1e-6?lerp(A2,A3,(t-t1)/(t3-t1)):A2;
+      out.push((t2-t1)>1e-6?lerp(B1,B2,(t-t1)/(t2-t1)):A2);
+    }
+  }
+  return out;
 }
-function drawAnnotation(){if(Array.isArray(annotation._head_points)&&annotation._head_points.length){ctx.save();ctx.fillStyle='#00e5ff';for(const p of annotation._head_points){ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fill()}ctx.restore()}if(annotation.head){ctx.save();ctx.strokeStyle='#22c55e';ctx.lineWidth=2/zoom;ctx.beginPath();ctx.arc(annotation.head.center.x,annotation.head.center.y,annotation.head.radius_px,0,Math.PI*2);ctx.stroke();ctx.restore()}if(annotation.lt_midpoint){ctx.save();ctx.beginPath();ctx.arc(annotation.lt_midpoint.x,annotation.lt_midpoint.y,6,0,Math.PI*2);ctx.fill();ctx.restore()}if(Array.isArray(annotation.stem_interface_anchors)){ctx.save();ctx.fillStyle='#fb7185';ctx.strokeStyle='#fff';ctx.lineWidth=2/zoom;ctx.font=(13/zoom)+'px sans-serif';annotation.stem_interface_anchors.forEach((p,i)=>{ctx.beginPath();ctx.arc(p.x,p.y,7/zoom,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#fb7185';ctx.fillText('A'+(i+1),p.x+9/zoom,p.y-9/zoom)});ctx.restore()}const names=['femur_medial','femur_lateral','canal_medial','canal_lateral','femur_mask','canal_mask','stem_mask','lt_region'];if($('annotationTarget').value!=='stem_interface_anchors')names.splice(4,0,'stem_medial','stem_lateral');const contourColor=n=>(n==='stem_medial'||n==='stem_lateral')?'#22c55e':(n==='canal_medial'||n==='canal_lateral')?'#f97316':(n==='femur_medial'||n==='femur_lateral')?'#22d3ee':'#00e5ff';ctx.save();ctx.lineWidth=2/zoom;for(const n of names){const a=orderedContour(n);if(!a.length)continue;const col=contourColor(n);ctx.strokeStyle=col;ctx.fillStyle=col;if(a.length>=2){const sp=a.length>=3?smoothGuidePath(a):a;ctx.beginPath();ctx.moveTo(sp[0].x,sp[0].y);for(let i=1;i<sp.length;i++)ctx.lineTo(sp[i].x,sp[i].y);ctx.stroke()}for(const p of a){if(p._auto)continue;ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fill()}}ctx.restore()}function draw(){ctx.clearRect(0,0,cv.width,cv.height);ctx.save();ctx.setTransform(zoom,0,0,zoom,panX,panY);if(img)ctx.drawImage(img,0,0,cv.width,cv.height);let hc=circle3(pts.head1,pts.head2,pts.head3);if(!hc&&annotation.head&&annotation.head.center&&Number.isFinite(annotation.head.radius_px))hc={x:annotation.head.center.x,y:annotation.head.center.y,r:annotation.head.radius_px};if(hc){ctx.beginPath();ctx.arc(hc.x,hc.y,hc.r,0,Math.PI*2);ctx.strokeStyle='#22c55e';ctx.lineWidth=3/zoom;ctx.stroke()}if(pts.sap&&pts.sad){ctx.save();ctx.strokeStyle='#ef4444';ctx.fillStyle='#ef4444';ctx.lineWidth=3/zoom;ctx.setLineDash([10/zoom,6/zoom]);ctx.beginPath();ctx.moveTo(pts.sap.x,pts.sap.y);ctx.lineTo(pts.sad.x,pts.sad.y);ctx.stroke();for(const p of [pts.sap,pts.sad]){ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fill()}ctx.font=(13/zoom)+'px sans-serif';ctx.fillText('Shaft axis',pts.sap.x+8/zoom,pts.sap.y-8/zoom);ctx.restore()}const sg=measurementGeometry();if(sg){ctx.save();ctx.strokeStyle='#22c55e';ctx.lineWidth=1.5/zoom;ctx.setLineDash([5/zoom,4/zoom]);ctx.beginPath();ctx.moveTo(sg.ltMedial.x,sg.ltMedial.y);ctx.lineTo(sg.lt.x,sg.lt.y);ctx.stroke();ctx.setLineDash([]);ctx.beginPath();ctx.arc(sg.lt.x,sg.lt.y,4/zoom,0,Math.PI*2);ctx.fillStyle='#22c55e';ctx.fill();ctx.restore();ctx.save();ctx.strokeStyle='#ef4444';ctx.lineWidth=2/zoom;ctx.setLineDash([10/zoom,6/zoom]);const L=Math.max(cv.width,cv.height)*2;ctx.beginPath();const axisAnchor=pts.sap;ctx.moveTo(axisAnchor.x-sg.vx*L,axisAnchor.y-sg.vy*L);ctx.lineTo(axisAnchor.x+sg.vx*L,axisAnchor.y+sg.vy*L);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ef4444';ctx.font=(12/zoom)+'px sans-serif';ctx.fillText('Shaft axis',pts.sap.x+8/zoom,pts.sap.y-8/zoom);ctx.restore()}const lc=levelCenters();if(Object.keys(lc).length){ctx.save();ctx.strokeStyle='#f59e0b';ctx.fillStyle='#f59e0b';ctx.lineWidth=1/zoom;for(const [l,p] of Object.entries(lc)){const g=measurementGeometry(),nx=-g.vy,ny=g.vx,h=70;ctx.beginPath();ctx.moveTo(p.x-nx*h,p.y-ny*h);ctx.lineTo(p.x+nx*h,p.y+ny*h);ctx.stroke();ctx.font=(12/zoom)+'px sans-serif';ctx.fillText((Number(l)>=0?'+':'')+l+' mm',p.x+5/zoom,p.y-5/zoom)}ctx.restore();
-  const fr=fixedLevelResults(),g2=measurementGeometry();if(g2){const n2={x:-g2.vy,y:g2.vx};ctx.save();ctx.fillStyle='#a855f7';for(const l of levels){const p=lc[l],fw=(annotation.femur_medial.length&&annotation.femur_lateral.length)?pairedWidth(annotation.femur_medial,annotation.femur_lateral,p,n2):widthAt(annotation.femur_mask,p,n2,annotationClosed.femur_mask),cw=(annotation.canal_medial.length&&annotation.canal_lateral.length)?pairedWidth(annotation.canal_medial,annotation.canal_lateral,p,n2):widthAt(annotation.canal_mask,p,n2,annotationClosed.canal_mask);for(const w of [fw,cw])if(w)for(const q of [w.a,w.b]){ctx.beginPath();ctx.arc(q.x,q.y,4/zoom,0,Math.PI*2);ctx.fill()}}ctx.restore()}
+function getRenderedContour(name){
+  const a=orderedContour(name);
+  return (a.length>=3&&name!=='osteotomy_line')?smoothGuidePath(a):a;
 }
- if(autoStemInfo){
-   ctx.save();
-   if(autoStemInfo.edgeLeft&&autoStemInfo.edgeRight){
-     const drawEdge=(arr,col)=>{ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=3/zoom;ctx.setLineDash([]);if(autoStemInfo.diagnostic){arr.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,2.5/zoom,0,Math.PI*2);ctx.fill()})}else{ctx.beginPath();arr.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke()}};
-     drawEdge(autoStemInfo.edgeLeft,'#c084fc');drawEdge(autoStemInfo.edgeRight,'#a3e635');
-   }
-   if(!autoStemInfo.prox||!autoStemInfo.dist){ctx.restore();}else{
-   ctx.strokeStyle='#fde047';ctx.lineWidth=3/zoom;ctx.setLineDash([7/zoom,5/zoom]);
-   const ax=autoStemInfo.prox,ay=autoStemInfo.dist,L=Math.max(cv.width,cv.height)*2;
-   const dx=ay.x-ax.x,dy=ay.y-ax.y,ll=Math.hypot(dx,dy)||1,vx=dx/ll,vy=dy/ll;
-   ctx.beginPath();ctx.moveTo(ax.x-vx*L,ax.y-vy*L);ctx.lineTo(ax.x+vx*L,ax.y+vy*L);ctx.stroke();
-   ctx.setLineDash([]);ctx.fillStyle='#fde047';ctx.font=(13/zoom)+'px sans-serif';ctx.fillText('AUTO Stem axis',ax.x+10/zoom,ax.y-12/zoom);
-   for(const p of [ax,ay]){ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fill()}
-   ctx.restore();
-   const gg=measurementGeometry(),llc=levelCenters();
-   if(gg&&Object.keys(llc).length){
-     const nn={x:-gg.vy,y:gg.vx},rows=calculateProfiles();
-     ctx.save();ctx.font=(11/zoom)+'px sans-serif';
-     for(const lev of levels){
-       const pp=llc[lev],aw=autoStemWidthAt(pp,nn),rr=rows.find(z=>z.distance_from_LT_mm===lev);
-       if(!aw)continue;
-       ctx.strokeStyle='#22d3ee';ctx.lineWidth=3/zoom;ctx.setLineDash([]);
-       ctx.beginPath();ctx.moveTo(aw.a.x,aw.a.y);ctx.lineTo(aw.b.x,aw.b.y);ctx.stroke();
-       ctx.fillStyle='#22d3ee';for(const q of [aw.a,aw.b]){ctx.beginPath();ctx.arc(q.x,q.y,5/zoom,0,Math.PI*2);ctx.fill()}
-       if(rr&&rr.delta_stem_mm!=null&&Math.abs(rr.delta_stem_mm)>2){
-         ctx.strokeStyle='#ef4444';ctx.lineWidth=2/zoom;
-         for(const q of [aw.a,aw.b]){ctx.beginPath();ctx.arc(q.x,q.y,9/zoom,0,Math.PI*2);ctx.stroke()}
-         ctx.fillStyle='#ef4444';ctx.fillText('Δ '+rr.delta_stem_mm.toFixed(1)+' mm',aw.b.x+7/zoom,aw.b.y-5/zoom);
-       }
-     }
-     ctx.restore();
-   }}
- }
- drawAnnotation();Object.entries(pts).forEach(([k,p])=>{ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fillStyle='#38bdf8';ctx.fill();ctx.fillStyle='white';ctx.font=(13/zoom)+'px sans-serif';ctx.fillText(k,p.x+8/zoom,p.y-8/zoom)});ctx.restore();calc()}function syncHeadAnnotation(){const a=pts.head1,b=pts.head2,d=pts.head3;if(!a||!b||!d)return;const cc=circle3(a,b,d);if(cc)annotation.head={center:{x:cc.cx,y:cc.cy},radius_px:cc.r,source:'3-point-circle'}}function lineSegIntersection(p,n,a,b){
+
+function drawAnnotation(){
+  if(Array.isArray(annotation._head_points)&&annotation._head_points.length){
+    ctx.save();ctx.fillStyle='#00e5ff';
+    for(const p of annotation._head_points){ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fill()}
+    ctx.restore();
+  }
+  if(annotation.head){
+    ctx.save();ctx.strokeStyle='#22c55e';ctx.lineWidth=2/zoom;
+    ctx.beginPath();ctx.arc(annotation.head.center.x,annotation.head.center.y,annotation.head.radius_px,0,Math.PI*2);ctx.stroke();
+    ctx.restore();
+  }
+  if(annotation.lt_midpoint){
+    ctx.save();ctx.fillStyle='#eab308';ctx.beginPath();ctx.arc(annotation.lt_midpoint.x,annotation.lt_midpoint.y,6/zoom,0,Math.PI*2);ctx.fill();ctx.restore();
+  }
+  if(Array.isArray(annotation.stem_interface_anchors)){
+    ctx.save();ctx.fillStyle='#fb7185';ctx.strokeStyle='#fff';ctx.lineWidth=2/zoom;ctx.font=(13/zoom)+'px sans-serif';
+    annotation.stem_interface_anchors.forEach((p,i)=>{
+      ctx.beginPath();ctx.arc(p.x,p.y,7/zoom,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.fillStyle='#fb7185';ctx.fillText('A'+(i+1),p.x+9/zoom,p.y-9/zoom);
+    });
+    ctx.restore();
+  }
+  const names=['femur_medial','femur_lateral','canal_medial','canal_lateral','osteotomy_line','femur_mask','canal_mask','stem_mask','lt_region'];
+  if($('annotationTarget').value!=='stem_interface_anchors')names.splice(4,0,'stem_medial','stem_lateral');
+  const contourColor=n=>(n==='stem_medial'||n==='stem_lateral')?'#22c55e':(n==='canal_medial'||n==='canal_lateral')?'#f97316':(n==='femur_medial'||n==='femur_lateral')?'#22d3ee':(n==='osteotomy_line')?'#f43f5e':'#00e5ff';
+  ctx.save();ctx.lineWidth=2/zoom;
+  for(const n of names){
+    const a=orderedContour(n);if(!a.length)continue;
+    const col=contourColor(n);ctx.strokeStyle=col;ctx.fillStyle=col;
+    if(a.length>=2){
+      const sp=getRenderedContour(n);
+      ctx.beginPath();ctx.moveTo(sp[0].x,sp[0].y);for(let i=1;i<sp.length;i++)ctx.lineTo(sp[i].x,sp[i].y);ctx.stroke();
+    }
+    for(const p of a){if(p._auto)continue;ctx.beginPath();ctx.arc(p.x,p.y,5.5/zoom,0,Math.PI*2);ctx.fill()}
+  }
+  ctx.restore();
+}
+
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);ctx.save();ctx.setTransform(zoom,0,0,zoom,panX,panY);
+  if(img)ctx.drawImage(img,0,0,cv.width,cv.height);
+  let hc=circle3(pts.head1,pts.head2,pts.head3);
+  if(!hc&&annotation.head&&annotation.head.center&&Number.isFinite(annotation.head.radius_px))hc={x:annotation.head.center.x,y:annotation.head.center.y,r:annotation.head.radius_px};
+  if(hc){ctx.beginPath();ctx.arc(hc.x,hc.y,hc.r,0,Math.PI*2);ctx.strokeStyle='#22c55e';ctx.lineWidth=3/zoom;ctx.stroke()}
+  if(pts.sap&&pts.sad){
+    ctx.save();ctx.strokeStyle='#ef4444';ctx.fillStyle='#ef4444';ctx.lineWidth=3/zoom;ctx.setLineDash([10/zoom,6/zoom]);
+    ctx.beginPath();ctx.moveTo(pts.sap.x,pts.sap.y);ctx.lineTo(pts.sad.x,pts.sad.y);ctx.stroke();
+    for(const p of [pts.sap,pts.sad]){ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fill()}
+    ctx.font=(13/zoom)+'px sans-serif';ctx.fillText('Shaft axis',pts.sap.x+8/zoom,pts.sap.y-8/zoom);ctx.restore();
+  }
+  const sg=measurementGeometry();
+  if(sg){
+    if(sg.ltMedial&&$('ltVisibility').value!=='occluded_unidentifiable'){
+      ctx.save();ctx.strokeStyle='#22c55e';ctx.lineWidth=1.5/zoom;ctx.setLineDash([5/zoom,4/zoom]);
+      ctx.beginPath();ctx.moveTo(sg.ltMedial.x,sg.ltMedial.y);ctx.lineTo(sg.lt.x,sg.lt.y);ctx.stroke();
+      ctx.setLineDash([]);ctx.beginPath();ctx.arc(sg.lt.x,sg.lt.y,4/zoom,0,Math.PI*2);ctx.fillStyle='#22c55e';ctx.fill();ctx.restore();
+    }
+    ctx.save();ctx.strokeStyle='#ef4444';ctx.lineWidth=2/zoom;ctx.setLineDash([10/zoom,6/zoom]);
+    const L=Math.max(cv.width,cv.height)*2;ctx.beginPath();const axisAnchor=pts.sap||sg.lt;
+    ctx.moveTo(axisAnchor.x-sg.vx*L,axisAnchor.y-sg.vy*L);ctx.lineTo(axisAnchor.x+sg.vx*L,axisAnchor.y+sg.vy*L);ctx.stroke();ctx.restore();
+  }
+  const lc=levelCenters();
+  if(Object.keys(lc).length&&$('ltVisibility').value!=='occluded_unidentifiable'){
+    ctx.save();ctx.strokeStyle='#f59e0b';ctx.fillStyle='#f59e0b';ctx.lineWidth=1/zoom;
+    for(const [l,p] of Object.entries(lc)){
+      const g=measurementGeometry(),nx=-g.vy,ny=g.vx,h=70;
+      ctx.beginPath();ctx.moveTo(p.x-nx*h,p.y-ny*h);ctx.lineTo(p.x+nx*h,p.y+ny*h);ctx.stroke();
+      ctx.font=(12/zoom)+'px sans-serif';ctx.fillText((Number(l)>=0?'+':'')+l+' mm',p.x+5/zoom,p.y-5/zoom);
+    }
+    ctx.restore();
+    const g2=measurementGeometry();
+    if(g2){
+      const n2={x:-g2.vy,y:g2.vx};ctx.save();ctx.fillStyle='#a855f7';
+      for(const l of levels){
+        const p=lc[l];if(!p)continue;
+        const fw=(annotation.femur_medial.length&&annotation.femur_lateral.length)?pairedWidth(annotation.femur_medial,annotation.femur_lateral,p,n2):widthAt(annotation.femur_mask,p,n2,annotationClosed.femur_mask);
+        const cw=(annotation.canal_medial.length&&annotation.canal_lateral.length)?pairedWidth(annotation.canal_medial,annotation.canal_lateral,p,n2):widthAt(annotation.canal_mask,p,n2,annotationClosed.canal_mask);
+        for(const w of [fw,cw])if(w)for(const q of [w.a,w.b]){ctx.beginPath();ctx.arc(q.x,q.y,4/zoom,0,Math.PI*2);ctx.fill()}
+      }
+      ctx.restore();
+    }
+  }
+  if(autoStemInfo){
+    ctx.save();
+    if(autoStemInfo.edgeLeft&&autoStemInfo.edgeRight){
+      const drawEdge=(arr,col)=>{ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=3/zoom;ctx.setLineDash([]);if(autoStemInfo.diagnostic){arr.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,2.5/zoom,0,Math.PI*2);ctx.fill()})}else{ctx.beginPath();arr.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke()}};
+      drawEdge(autoStemInfo.edgeLeft,'#c084fc');drawEdge(autoStemInfo.edgeRight,'#a3e635');
+    }
+    if(!autoStemInfo.prox||!autoStemInfo.dist){ctx.restore();}else{
+      ctx.strokeStyle='#fde047';ctx.lineWidth=3/zoom;ctx.setLineDash([7/zoom,5/zoom]);
+      const ax=autoStemInfo.prox,ay=autoStemInfo.dist,L=Math.max(cv.width,cv.height)*2;
+      const dx=ay.x-ax.x,dy=ay.y-ax.y,ll=Math.hypot(dx,dy)||1,vx=dx/ll,vy=dy/ll;
+      ctx.beginPath();ctx.moveTo(ax.x-vx*L,ax.y-vy*L);ctx.lineTo(ax.x+vx*L,ax.y+vy*L);ctx.stroke();
+      ctx.setLineDash([]);ctx.fillStyle='#fde047';ctx.font=(13/zoom)+'px sans-serif';ctx.fillText('AUTO Stem axis',ax.x+10/zoom,ax.y-12/zoom);
+      for(const p of [ax,ay]){ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fill()}
+      ctx.restore();
+    }
+  }
+  drawAnnotation();
+  Object.entries(pts).forEach(([k,p])=>{
+    ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fillStyle='#38bdf8';ctx.fill();
+    ctx.fillStyle='white';ctx.font=(13/zoom)+'px sans-serif';ctx.fillText(k,p.x+8/zoom,p.y-8/zoom);
+  });
+  ctx.restore();
+  calc();
+}
+
+function syncHeadAnnotation(){
+  const a=pts.head1,b=pts.head2,d=pts.head3;if(!a||!b||!d)return;
+  const cc=fitCircleLeastSquares([a,b,d]);
+  if(cc)annotation.head={center:{x:cc.x,y:cc.y},radius_px:cc.r,rmse_px:cc.rmse||0,source:'3-point-circle'};
+}
+
+function lineSegIntersection(p,n,a,b){
   const sx=b.x-a.x,sy=b.y-a.y,den=n.x*sy-n.y*sx;
   if(Math.abs(den)<1e-9)return null;
   const ax=a.x-p.x,ay=a.y-p.y;
@@ -111,83 +367,622 @@ function widthAt(contour,p,n,closed=true){
   const h=contourHits(contour,p,n,closed);if(h.length<2)return null;
   const a=h[0],b=h[h.length-1];return{width_px:Math.hypot(b.x-a.x,b.y-a.y),a,b,hits:h.length};
 }
-function measurementGeometry(){const m=pts.ltm||annotation.lt_midpoint,p=pts.sap,d=pts.sad;if(!m||!p||!d)return null;let vx=d.x-p.x,vy=d.y-p.y,L=Math.hypot(vx,vy);if(!L)return null;vx/=L;vy/=L;const proj=(m.x-p.x)*vx+(m.y-p.y)*vy;const lt={x:p.x+proj*vx,y:p.y+proj*vy};let s=parseFloat($('scale').value)||null;if(!s&&$('calMode').value==='head'&&annotation.head&&Number.isFinite(annotation.head.radius_px)&&annotation.head.radius_px>0){const hd=parseFloat($('headSize').value)||32;s=hd/(2*annotation.head.radius_px);$('scale').value=s.toFixed(5)}if(!s)return null;return{lt,ltMedial:m,vx,vy,pxPerMm:1/s}}function levelCenters(){const g=measurementGeometry();if(!g)return{};const out={};for(const l of levels)out[l]={x:g.lt.x+g.vx*l*g.pxPerMm,y:g.lt.y+g.vy*l*g.pxPerMm};return out}function autoStemWidthAt(p,n){
- if(!autoStemInfo||!autoStemInfo.edgeLeft||!autoStemInfo.edgeRight)return null;
- const hit=(arr)=>{let best=null;for(let i=1;i<arr.length;i++){const q=lineSegIntersection(p,n,arr[i-1],arr[i]);if(!q)continue;const t=(q.x-p.x)*n.x+(q.y-p.y)*n.y;if(!best||Math.abs(t)<Math.abs(best.t))best={...q,t}}return best};
- const a=hit(autoStemInfo.edgeLeft),b=hit(autoStemInfo.edgeRight);if(!a||!b)return null;
- return{width_px:Math.hypot(b.x-a.x,b.y-a.y),a,b};
+
+function computeAxesAndAlignment(g){
+  let canalAngle=null, stemAngle=null, alignDeg=null;
+  if(g){canalAngle=Math.atan2(g.vx,g.vy)*180/Math.PI;}
+  if(annotation.stem_medial.length>=2&&annotation.stem_lateral.length>=2){
+    const sm=annotation.stem_medial, sl=annotation.stem_lateral;
+    const pTop={x:(sm[0].x+sl[0].x)/2, y:(sm[0].y+sl[0].y)/2};
+    const pBot={x:(sm[sm.length-1].x+sl[sl.length-1].x)/2, y:(sm[sm.length-1].y+sl[sl.length-1].y)/2};
+    const dx=pBot.x-pTop.x, dy=pBot.y-pTop.y;
+    if(Math.hypot(dx,dy)>10)stemAngle=Math.atan2(dx,dy)*180/Math.PI;
+  }else if(autoStemInfo&&autoStemInfo.prox&&autoStemInfo.dist){
+    const dx=autoStemInfo.dist.x-autoStemInfo.prox.x, dy=autoStemInfo.dist.y-autoStemInfo.prox.y;
+    if(Math.hypot(dx,dy)>10)stemAngle=Math.atan2(dx,dy)*180/Math.PI;
+  }
+  if(canalAngle!=null&&stemAngle!=null){
+    const sideSign=($('side').value==='R')?1:-1;
+    alignDeg=(stemAngle-canalAngle)*sideSign;
+  }
+  return {canalAngle,stemAngle,alignDeg};
 }
+
+function measurementGeometry(){
+  let m=pts.ltm||annotation.lt_midpoint;
+  const p=pts.sap,d=pts.sad;
+  if(!p||!d)return null;
+  if(!m && $('ltVisibility').value==='occluded_unidentifiable') m={x:p.x,y:p.y};
+  if(!m)return null;
+  let vx=d.x-p.x,vy=d.y-p.y,L=Math.hypot(vx,vy);if(!L)return null;vx/=L;vy/=L;
+  const proj=(m.x-p.x)*vx+(m.y-p.y)*vy;
+  const lt={x:p.x+proj*vx,y:p.y+proj*vy};
+  let s=parseFloat($('scale').value)||null;
+  if(!s&&$('calMode').value==='head'&&annotation.head&&Number.isFinite(annotation.head.radius_px)&&annotation.head.radius_px>0){
+    const hd=parseFloat($('headSize').value)||32;
+    s=hd/(2*annotation.head.radius_px);$('scale').value=s.toFixed(5);
+  }
+  if(!s)return null;
+  return{lt,ltMedial:m,vx,vy,pxPerMm:1/s,mmPerPx:s};
+}
+
+function levelCenters(){
+  const g=measurementGeometry();if(!g)return{};
+  const out={};for(const l of levels)out[l]={x:g.lt.x+g.vx*l*g.pxPerMm,y:g.lt.y+g.vy*l*g.pxPerMm};
+  return out;
+}
+
+function autoStemWidthAt(p,n){
+  if(!autoStemInfo||!autoStemInfo.edgeLeft||!autoStemInfo.edgeRight)return null;
+  const hit=(arr)=>{let best=null;for(let i=1;i<arr.length;i++){const q=lineSegIntersection(p,n,arr[i-1],arr[i]);if(!q)continue;const t=(q.x-p.x)*n.x+(q.y-p.y)*n.y;if(!best||Math.abs(t)<Math.abs(best.t))best={...q,t}}return best};
+  const a=hit(autoStemInfo.edgeLeft),b=hit(autoStemInfo.edgeRight);if(!a||!b)return null;
+  return{width_px:Math.hypot(b.x-a.x,b.y-a.y),a,b};
+}
+
 function calculateProfiles(){
   const g=measurementGeometry();if(!g)return[];
   const n={x:-g.vy,y:g.vx},rows=[];
-  for(let mm=-10;mm<=120;mm+=1){
+  for(let mm=-20;mm<=120;mm+=1){
     const p={x:g.lt.x+g.vx*mm*g.pxPerMm,y:g.lt.y+g.vy*mm*g.pxPerMm};
     const ow=(annotation.femur_medial.length&&annotation.femur_lateral.length)?pairedWidth(annotation.femur_medial,annotation.femur_lateral,p,n):widthAt(annotation.femur_mask,p,n,annotationClosed.femur_mask);
     const cw=(annotation.canal_medial.length&&annotation.canal_lateral.length)?pairedWidth(annotation.canal_medial,annotation.canal_lateral,p,n):widthAt(annotation.canal_mask,p,n,annotationClosed.canal_mask);
     const sw=(annotation.stem_medial.length&&annotation.stem_lateral.length)?pairedWidth(annotation.stem_medial,annotation.stem_lateral,p,n):widthAt(annotation.stem_mask,p,n,annotationClosed.stem_mask);
     const asw=autoStemWidthAt(p,n);
-    rows.push({distance_from_LT_mm:mm,outer_width_px:ow?ow.width_px:null,canal_width_px:cw?cw.width_px:null,stem_width_px:sw?sw.width_px:null,auto_stem_width_px:asw?asw.width_px:null,outer_width_mm:ow?ow.width_px/g.pxPerMm:null,canal_width_mm:cw?cw.width_px/g.pxPerMm:null,stem_width_mm:sw?sw.width_px/g.pxPerMm:null,auto_stem_width_mm:asw?asw.width_px/g.pxPerMm:null,delta_stem_mm:(sw&&asw)?(asw.width_px-sw.width_px)/g.pxPerMm:null,CTI:ow&&cw?(ow.width_px-cw.width_px)/ow.width_px:null,CFR:cw&&sw?sw.width_px/cw.width_px:null,auto_CFR:cw&&asw?asw.width_px/cw.width_px:null});
+    const effSw=sw||asw;
+    rows.push({
+      distance_from_LT_mm:mm,
+      outer_width_px:ow?ow.width_px:null,
+      canal_width_px:cw?cw.width_px:null,
+      stem_width_px:sw?sw.width_px:null,
+      auto_stem_width_px:asw?asw.width_px:null,
+      outer_width_mm:ow?ow.width_px/g.pxPerMm:null,
+      canal_width_mm:cw?cw.width_px/g.pxPerMm:null,
+      stem_width_mm:sw?sw.width_px/g.pxPerMm:null,
+      auto_stem_width_mm:asw?asw.width_px/g.pxPerMm:null,
+      delta_stem_mm:(sw&&asw)?(asw.width_px-sw.width_px)/g.pxPerMm:null,
+      CTI:ow&&cw?(ow.width_px-cw.width_px)/ow.width_px:null,
+      CFR:cw&&sw?sw.width_px/cw.width_px:null,
+      auto_CFR:cw&&asw?asw.width_px/cw.width_px:null,
+      eff_CFR:cw&&effSw?effSw.width_px/cw.width_px:null
+    });
   }
-  profileRows=rows;return rows;
+  profileRows=rows;
+  computeContinuousNormalizedProfile(rows);
+  return rows;
 }
-function fixedLevelResults(){const rows=calculateProfiles(),out={};for(const l of levels)out[l]=rows.find(r=>r.distance_from_LT_mm===l)||null;return out}
-function setProfileRows(rows){profileRows=Array.isArray(rows)?rows.map(r=>({...r})):[]}function applyPrediction(pred){aiInitial=JSON.parse(JSON.stringify(pred||{}));for(const[k,p]of Object.entries(pred||{})){if(p&&Number.isFinite(p.x)&&Number.isFinite(p.y))pts[k]={x:p.x,y:p.y}}aiLoaded=Object.keys(aiInitial).length>0;while(step<steps.length&&pts[steps[step][1]])step++;accepted=false;draw();guide()}function guide(){
+
+function computeContinuousNormalizedProfile(rows){
+  const valid=rows.filter(r=>r.canal_width_mm!=null && (r.stem_width_mm!=null || r.auto_stem_width_mm!=null));
+  if(valid.length<5){continuousSlices=[];continuousSummary={};return;}
+  const mmStart=valid[0].distance_from_LT_mm, mmEnd=valid[valid.length-1].distance_from_LT_mm;
+  const span=Math.max(1,mmEnd-mmStart);
+  const slices=[];
+  for(let pct=0;pct<=100;pct+=2){
+    const targetMm=Math.round(mmStart+(span*pct/100));
+    const r=rows.find(x=>x.distance_from_LT_mm===targetMm)||valid[0];
+    const fill=r.CFR!=null?r.CFR:r.auto_CFR;
+    slices.push({
+      s_pct:pct,
+      s_mm_from_prox:targetMm-mmStart,
+      s_mm_from_lt:$('ltVisibility').value==='occluded_unidentifiable'?null:targetMm,
+      outer_width_mm:r.outer_width_mm,
+      canal_width_mm:r.canal_width_mm,
+      stem_width_mm:r.stem_width_mm!=null?r.stem_width_mm:r.auto_stem_width_mm,
+      cti_s:r.CTI,
+      stem_fill_s:fill
+    });
+  }
+  continuousSlices=slices;
+  const fills=slices.map(s=>s.stem_fill_s).filter(Number.isFinite);
+  const prox=slices.filter(s=>s.s_pct<=33).map(s=>s.stem_fill_s).filter(Number.isFinite);
+  const mid=slices.filter(s=>s.s_pct>33&&s.s_pct<=67).map(s=>s.stem_fill_s).filter(Number.isFinite);
+  const dist=slices.filter(s=>s.s_pct>67).map(s=>s.stem_fill_s).filter(Number.isFinite);
+  const avg=arr=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;
+  let maxVal=null,maxLoc=null;
+  slices.forEach(s=>{if(Number.isFinite(s.stem_fill_s)&&(maxVal===null||s.stem_fill_s>maxVal)){maxVal=s.stem_fill_s;maxLoc=s.s_pct}});
+  continuousSummary={
+    valid_span_length_mm:span,
+    mean_stem_fill_total:avg(fills),
+    auc_stem_fill_total:avg(fills)!=null?avg(fills)*100:null,
+    mean_fill_prox_third:avg(prox),
+    mean_fill_mid_third:avg(mid),
+    mean_fill_dist_third:avg(dist),
+    max_stem_fill_val:maxVal,
+    max_stem_fill_loc_pct:maxLoc
+  };
+}
+
+// Compare corresponding AI control points even after manual points have been inserted.
+// Additional manual anchors contribute their distance from the original AI polyline.
+function computeObserverCanalShiftMm(){
+  if(!aiLoaded||!aiInitial||!aiInitial.annotation)return null;
+  const g=measurementGeometry();if(!g)return null;
+  let sumPx=0,cnt=0;
+  for(const k of ['canal_medial','canal_lateral']){
+    const initArr=aiInitial.annotation[k],curArr=annotation[k];
+    if(!Array.isArray(initArr)||!Array.isArray(curArr)||!initArr.length)continue;
+    const aiPoints=curArr.filter(q=>q._aiControl);
+    if(aiPoints.length!==initArr.length)continue; // no unverified point correspondence
+    for(let i=0;i<initArr.length;i++){
+      sumPx+=Math.hypot(aiPoints[i].x-initArr[i].x,aiPoints[i].y-initArr[i].y);
+      cnt++;
+    }
+    for(const q of curArr.filter(q=>q._manual)){
+      let best=Infinity;
+      for(let i=0;i<initArr.length-1;i++){
+        const a=initArr[i],b=initArr[i+1],dx=b.x-a.x,dy=b.y-a.y;
+        const den=dx*dx+dy*dy;
+        const u=den>0?Math.max(0,Math.min(1,((q.x-a.x)*dx+(q.y-a.y)*dy)/den)):0;
+        best=Math.min(best,Math.hypot(q.x-(a.x+u*dx),q.y-(a.y+u*dy)));
+      }
+      if(Number.isFinite(best)){sumPx+=best;cnt++}
+    }
+  }
+  return cnt>0?(sumPx/cnt)*g.mmPerPx:null;
+}
+
+function guide(){
   const mode=$('workMode').value;
   if(mode==='annotation'){
     const t=$('annotationTarget').value;
-    if(t==='head'){const n=(annotation._head_points||[]).length;$('guide').innerHTML='<span class="status">Annotation / Head: 人工骨頭外周を3点クリック ('+n+'/3)</span>';return}
-    if(t==='lt_midpoint'){$('guide').innerHTML='<span class="status">Annotation / LT medial-most point projection pilot: LT基準点を1回クリック</span>';return}if(t==='stem_interface_anchors'){const n=(annotation.stem_interface_anchors||[]).length;$('guide').innerHTML='<span class="status">Stem/cortex境界のズレている場所をクリックして補正点を追加してください（現在 '+n+' 点／上限なし）。納得するまで追加できます。Collarありでは最初の近位点をカラー基部遠位側に置くのがおすすめです。</span>';return}
-    if(t==='lt_region'){$('guide').innerHTML='<span class="status">Annotation / LT region pilot: 小転子領域を囲って Close contour</span>';return}
-    const label={femur_medial:'Outer cortex - medial',femur_lateral:'Outer cortex - lateral',canal_medial:'Canal - medial',canal_lateral:'Canal - lateral',stem_medial:'Stem - medial',stem_lateral:'Stem - lateral',femur_mask:'Femur contour (legacy)',canal_mask:'Canal contour (legacy)',stem_mask:'Stem contour'}[t]||t;
-    const guidedNames=['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral'];const count=guidedNames.includes(t)?((((annotation._manualAnchors||{})[t])||[]).length):(annotation[t]||[]).length;$('guide').innerHTML='<span class="status">Annotation / '+label+': '+count+'点。クリックした順番のまま開いた輪郭線を作ります。皮質に沿って順番にクリックしてください。ずれた場所を追加クリック → 納得したら「次へ」。</span>';return;
+    if(t==='head'){const n=(annotation._head_points||[]).length;$('guide').innerHTML='<span class="status">Annotation / Head or Ball: 外周を3点以上クリック ('+n+' pts)。カップ重なり時は見える円弧のみでOK。</span>';return}
+    if(t==='lt_midpoint'){$('guide').innerHTML='<span class="status">Annotation / LT medial-most point: 小転子頂点(または中点基準)を1回クリック（内旋で不明ならLT VisibilityをOccludedへ）</span>';return}
+    if(t==='osteotomy_line'){$('guide').innerHTML='<span class="status">Annotation / Osteotomy line: 内側Calcar切断端から外側大転子基部へクリック</span>';return}
+    if(t==='stem_interface_anchors'){const n=(annotation.stem_interface_anchors||[]).length;$('guide').innerHTML='<span class="status">Stem/cortex境界のズレている場所をクリックして補正点を追加（現在 '+n+' 点）。</span>';return}
+    if(t==='lt_region'){$('guide').innerHTML='<span class="status">Annotation / LT region: 小転子領域を囲んでください</span>';return}
+    const label={femur_medial:'Outer cortex - medial',femur_lateral:'Outer cortex - lateral',canal_medial:'Canal - medial (二重線注意: 粗線を除外)',canal_lateral:'Canal - lateral (二重線注意)',stem_medial:'Stem - medial (カラーは除外)',stem_lateral:'Stem - lateral'}[t]||t;
+    const guidedNames=['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral'];
+    const count=guidedNames.includes(t)?((((annotation._manualAnchors||{})[t])||[]).length):(annotation[t]||[]).length;
+    const nAi=aiLoaded&&Array.isArray(annotation[t])?annotation[t].filter(q=>q._aiControl).length:0;
+    if(nAi){
+      $('guide').innerHTML='<span class="status">Annotation / '+label+': AI制御点 '+nAi+'点＋追加 '+count+'点。既存点はShift+ドラッグ、追加点はクリック。「1点戻す」で追加点のみ削除。</span>';return;
+    }
+    $('guide').innerHTML='<span class="status">Annotation / '+label+': '+count+'点。皮質に沿って順番にクリック → 完了したら「次へ ▶」。</span>';return;
   }
   if(step<steps.length)$('guide').innerHTML=(step+1)+'/'+steps.length+': <b>'+steps[step][0]+'</b> をクリック';
   else $('guide').innerHTML='<span class="status">Measurement基準入力完了。オレンジ線がLT基準の自動measurement levelsです。</span>';
-}cv.addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault()});cv.addEventListener('mousedown',e=>{if(e.button===1)e.preventDefault()});cv.addEventListener('pointerdown',e=>{if(e.button===1||e.altKey){isPanning=true;panStart={...screenPos(e),panX,panY};cv.setPointerCapture(e.pointerId);return}if($('workMode').value==='annotation'){let p=pos(e);const t=$('annotationTarget').value;if(t==='head'){let hp=annotation._head_points||(annotation._head_points=[]);if(e.shiftKey&&hp.length){let hi=-1,hd=(18/zoom)*(18/zoom);for(let i=0;i<hp.length;i++){const d=(hp[i].x-p.x)**2+(hp[i].y-p.y)**2;if(d<hd){hd=d;hi=i}}if(hi>=0){annotationDrag={target:'_head_points',index:hi,head:true};cv.setPointerCapture(e.pointerId);return}}if(hp.length>=3){hp=[];annotation._head_points=hp;annotation.head=null}hp.push(p);if(hp.length===3){const cc=circle3(hp[0],hp[1],hp[2]);if(cc)annotation.head={center:{x:cc.x,y:cc.y},radius_px:cc.r,source:'3-point-circle'}}draw();saveWork();guide();return}if(t==='lt_midpoint'){annotation.lt_midpoint=p;pts.ltm={x:p.x,y:p.y};draw();guide();return}if(t==='stem_interface_anchors'){if(!Array.isArray(annotation.stem_interface_anchors))annotation.stem_interface_anchors=[];annotation.stem_interface_anchors.push(p);draw();saveWork();guide();return}if(!Array.isArray(annotation[t]))annotation[t]=[];
-let bi=-1,bd=(14/zoom)*(14/zoom);
-for(let i=0;i<annotation[t].length;i++){const q=annotation[t][i];if(q._auto)continue;const d=(q.x-p.x)**2+(q.y-p.y)**2;if(d<bd){bd=d;bi=i}}
-if(e.shiftKey&&bi>=0){annotationDrag={target:t,index:bi};cv.setPointerCapture(e.pointerId);return}
-if(!annotationClosed[t]){
- const guided=['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral'];
- if(guided.includes(t)){
-   p._manual=true;
-   if(!annotation._manualAnchors)annotation._manualAnchors={};
-   if(!Array.isArray(annotation._manualAnchors[t]))annotation._manualAnchors[t]=[];
-   const m=annotation._manualAnchors[t];m.push({x:p.x,y:p.y,_manual:true});
-   // Keep the user's click sequence. The displayed contour is reconstructed from anchors.
-   annotation[t]=m.map(q=>({x:q.x,y:q.y,_manual:true}));
-   draw();saveWork();guide();return
- }
- const arr=annotation[t];arr.push(p);draw();saveWork();guide();return
 }
-if(bi>=0){annotationDrag={target:t,index:bi};cv.setPointerCapture(e.pointerId);return}
-return}const p=pos(e);
-if($('annotationTarget').value==='stem_interface_anchors'){
-  if(!Array.isArray(annotation.stem_interface_anchors))annotation.stem_interface_anchors=[];
-  annotation.stem_interface_anchors.push(p);
-  draw();saveWork();
-  const n=annotation.stem_interface_anchors.length;
-  $('guide').innerHTML='<span class="status">Stem/cortex補正点 '+n+' 点。必要なだけ追加し、Stem自動検出で曲線を更新してください。</span>';
-  return;
+
+cv.addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault()});
+cv.addEventListener('mousedown',e=>{if(e.button===1)e.preventDefault()});
+function nearestContourInsertIndex(arr,p){
+  if(arr.length<2)return arr.length;
+  let bestIndex=arr.length,bestDist=Infinity;
+  for(let i=0;i<arr.length-1;i++){
+    const a=arr[i],b=arr[i+1],dx=b.x-a.x,dy=b.y-a.y;
+    const den=dx*dx+dy*dy;
+    const u=den>0?Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/den)):0;
+    const ex=a.x+u*dx,ey=a.y+u*dy;
+    const dist=(p.x-ex)**2+(p.y-ey)**2;
+    if(dist<bestDist){bestDist=dist;bestIndex=i+1}
+  }
+  return bestIndex;
 }
-let best=null,d=18;for(const[k,q]of Object.entries(pts)){let z=Math.hypot(p.x-q.x,p.y-q.y);if(z<d){d=z;best=k}}if(best&&e.shiftKey){drag=best;accepted=false;correctionCount++;cv.setPointerCapture(e.pointerId);return}if(step>=steps.length)return;if(!start)start=Date.now();const currentKey=steps[step][1];pts[currentKey]=p;step++;if(['head1','head2','head3'].includes(currentKey))syncHeadAnnotation();draw();guide();saveWork()});cv.addEventListener('pointermove',e=>{if(isPanning&&panStart){const p=screenPos(e);panX=panStart.panX+p.x-panStart.x;panY=panStart.panY+p.y-panStart.y;draw();return}if(annotationDrag){annotation[annotationDrag.target][annotationDrag.index]=pos(e);if(annotationDrag.head){const hp=annotation._head_points;if(hp&&hp.length===3){const cc=circle3(hp[0],hp[1],hp[2]);if(cc)annotation.head={center:{x:cc.x,y:cc.y},radius_px:cc.r,source:'3-point-circle'}}syncHeadAnnotation()}draw();return}if(drag){pts[drag]=pos(e);draw()}});cv.addEventListener('pointerup',()=>{if(annotationDrag)saveWork();drag=null;annotationDrag=null;isPanning=false;panStart=null});cv.addEventListener('wheel',e=>{e.preventDefault();const p=screenPos(e);setZoom(zoom*(e.deltaY<0?1.15:1/1.15),p.x,p.y)},{passive:false});
-$('exportProfile').onclick=()=>{const rows=calculateProfiles();if(!rows.length){alert('Head/LT/shaft axisとcontourを確認してください');return}const hdr=['Distance_from_LT_mm','Outer_width_px','Canal_width_px','Stem_width_px','Outer_width_mm','Canal_width_mm','Stem_width_mm','CTI','CFR'];const lines=[hdr.join(',')].concat(rows.map(r=>[r.distance_from_LT_mm,r.outer_width_px,r.canal_width_px,r.stem_width_px,r.outer_width_mm,r.canal_width_mm,r.stem_width_mm,r.CTI,r.CFR].map(v=>v==null?'':v).join(',')));const b=new Blob([lines.join('\n')],{type:'text/csv'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=ensureCaseId()+'_profile.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
-function measurementMissingReport(){calc();const by=new Map((profileRows||[]).map(r=>[Number(r.distance_from_LT_mm),r]));const miss=[];const needCanal=[-10,0,20,30,70,100];for(const lv of needCanal){const r=by.get(lv);if(!r||!Number.isFinite(r.canal_width_mm))miss.push((lv>0?'+':'')+lv+' mm: endosteal cortex不足')}const r100=by.get(100);if(!r100||!Number.isFinite(r100.outer_width_mm))miss.push('+100 mm: outer cortex不足');const postop=$('imageType').value==='postop'||/postop/i.test($('imageType').value);if(postop){for(const lv of [-10,0,20,30,70,100]){const r=by.get(lv);if(!r||!Number.isFinite(r.stem_width_mm))miss.push((lv>0?'+':'')+lv+' mm: Stem輪郭不足')}}return[...new Set(miss)]}
-function confirmMissingBeforeSave(action){const miss=measurementMissingReport();if(!miss.length)return true;return confirm('⚠ 必須データに欠損があります。\n\n・'+miss.join('\n・')+'\n\n'+action+'しますか？\n［キャンセル］で計測画面に戻って修正できます。')}
-$('saveCase').onclick=async()=>{
- const id=ensureCaseId();
- if(!id){alert('⚠ Study IDが入力されていません。\n\nStudy IDを入力してから保存してください。');$('studyId').focus();return}
- if(step<steps.length){alert('Measurement入力が完了していません。必要なら「戻る」で修正してください。');return}
- if(!confirmMissingBeforeSave('欠損のまま保存'))return;
- const res=await saveCaseFilesToFolder(id);if(!res.ok)return;
- localStorage.setItem('FMA_last_saved_case',id);
- $('guide').innerHTML='<span class="status">'+id+' を保存しました ✓　6ファイルを'+(res.folder?'選択フォルダに保存しました。次回Saveも同じフォルダを使用します。':'ダウンロードしました。')+'</span>';
- $('studyId').value='';
+
+cv.addEventListener('pointerdown',e=>{
+  if(e.button===1||e.altKey){isPanning=true;panStart={...screenPos(e),panX,panY};cv.setPointerCapture(e.pointerId);return}
+  if(!start&&img)start=Date.now();
+  if($('workMode').value==='annotation'){
+    let p=pos(e);const t=$('annotationTarget').value;
+    if(t==='head'){
+      let hp=annotation._head_points||(annotation._head_points=[]);
+      if(e.shiftKey&&hp.length){
+        let hi=-1,hd=(18/zoom)*(18/zoom);
+        for(let i=0;i<hp.length;i++){const d=(hp[i].x-p.x)**2+(hp[i].y-p.y)**2;if(d<hd){hd=d;hi=i}}
+        if(hi>=0){annotationDrag={target:'_head_points',index:hi,head:true};cv.setPointerCapture(e.pointerId);return}
+      }
+      if(e.shiftKey)return; // Do not add a new head point after a missed Shift+drag
+      if(hp.length>=6){hp=[];annotation._head_points=hp;annotation.head=null}
+      hp.push(p);
+      if(hp.length>=3){
+        const cc=fitCircleLeastSquares(hp);
+        if(cc){
+          annotation.head={center:{x:cc.x,y:cc.y},radius_px:cc.r,rmse_px:cc.rmse||0,source:'least-squares-circle'};
+          pts.head1=hp[0];pts.head2=hp[1];pts.head3=hp[2];
+        }
+      }
+      draw();saveWork();guide();return;
+    }
+    if(t==='lt_midpoint'){annotation.lt_midpoint=p;pts.ltm={x:p.x,y:p.y};draw();guide();return}
+    if(t==='stem_interface_anchors'){if(!Array.isArray(annotation.stem_interface_anchors))annotation.stem_interface_anchors=[];annotation.stem_interface_anchors.push(p);draw();saveWork();guide();return}
+    if(!Array.isArray(annotation[t]))annotation[t]=[];
+    let bi=-1,bd=(14/zoom)*(14/zoom);
+    for(let i=0;i<annotation[t].length;i++){const q=annotation[t][i];if(q._auto)continue;const d=(q.x-p.x)**2+(q.y-p.y)**2;if(d<bd){bd=d;bi=i}}
+    if(e.shiftKey){
+      if(bi>=0){annotationDrag={target:t,index:bi};annotationCorrectionCount++;cv.setPointerCapture(e.pointerId)}
+      return; // Shift+ドラッグ以外ではAIの点を変更しない
+    }
+    const guided=['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral','osteotomy_line'];
+    const hasAiContour=aiLoaded&&annotation[t].some(q=>q._aiControl);
+    if(guided.includes(t)&&hasAiContour&&bi>=0){
+      $('guide').textContent='既存のAI制御点はShift+ドラッグで移動。新しい点は線の近くをクリックして追加します。';
+      return;
+    }
+    if(!annotationClosed[t]||hasAiContour){
+      if(guided.includes(t)){
+        const id=annotation._nextManualId=(annotation._nextManualId||0)+1;
+        const q={x:p.x,y:p.y,_manual:true,_manualId:id};
+        if(!annotation._manualAnchors)annotation._manualAnchors={};
+        if(!Array.isArray(annotation._manualAnchors[t]))annotation._manualAnchors[t]=[];
+        annotation._manualAnchors[t].push({id,x:p.x,y:p.y});
+        if(hasAiContour)annotation[t].splice(nearestContourInsertIndex(annotation[t],p),0,q);
+        else annotation[t].push(q);
+        if(hasAiContour)annotationCorrectionCount++;
+        accepted=false;draw();saveWork();guide();return;
+      }
+      annotation[t].push(p);draw();saveWork();guide();return;
+    }
+    if(bi>=0){annotationDrag={target:t,index:bi};annotationCorrectionCount++;cv.setPointerCapture(e.pointerId);return}
+    return;
+  }
+  const p=pos(e);
+  if($('annotationTarget').value==='stem_interface_anchors'){
+    if(!Array.isArray(annotation.stem_interface_anchors))annotation.stem_interface_anchors=[];
+    annotation.stem_interface_anchors.push(p);draw();saveWork();
+    $('guide').innerHTML='<span class="status">Stem/cortex補正点 '+annotation.stem_interface_anchors.length+' 点。Stem自動検出で曲線を更新してください。</span>';
+    return;
+  }
+  let best=null,d=18;
+  for(const[k,q]of Object.entries(pts)){let z=Math.hypot(p.x-q.x,p.y-q.y);if(z<d){d=z;best=k}}
+  if(best&&e.shiftKey){drag=best;accepted=false;correctionCount++;cv.setPointerCapture(e.pointerId);return}
+  if(step>=steps.length)return;
+  const currentKey=steps[step][1];pts[currentKey]=p;step++;
+  if(['head1','head2','head3'].includes(currentKey))syncHeadAnnotation();
+  draw();guide();saveWork();
+});
+
+cv.addEventListener('pointermove',e=>{
+  if(isPanning&&panStart){const p=screenPos(e);panX=panStart.panX+p.x-panStart.x;panY=panStart.panY+p.y-panStart.y;draw();return}
+  if(annotationDrag){
+    annotation[annotationDrag.target][annotationDrag.index]={...annotation[annotationDrag.target][annotationDrag.index],...pos(e)};
+    if(annotationDrag.head){
+      const hp=annotation._head_points;
+      if(hp&&hp.length>=3){const cc=fitCircleLeastSquares(hp);if(cc)annotation.head={center:{x:cc.x,y:cc.y},radius_px:cc.r,rmse_px:cc.rmse||0,source:'least-squares-circle'}}
+      syncHeadAnnotation();
+    }
+    draw();return;
+  }
+  if(drag){pts[drag]=pos(e);draw()}
+});
+cv.addEventListener('pointerup',()=>{if(annotationDrag)saveWork();drag=null;annotationDrag=null;isPanning=false;panStart=null});
+cv.addEventListener('wheel',e=>{e.preventDefault();const p=screenPos(e);setZoom(zoom*(e.deltaY<0?1.15:1/1.15),p.x,p.y)},{passive:false});
+
+// 1-D median smoothing: protect the first/last two control points, especially stem tips.
+function smooth1DAnchored(list,radius=1){
+  if(!Array.isArray(list)||list.length<=4)return list;
+  return list.map((p,i)=>{
+    if(i<2||i>=list.length-2)return {...p};
+    const xs=[];
+    for(let k=-radius;k<=radius;k++)xs.push(list[i+k].x);
+    xs.sort((a,b)=>a-b);
+    return {x:xs[Math.floor(xs.length/2)],y:p.y};
+  });
+}
+$('aiMaskFile').onchange=e=>{
+  const f=e.target.files&&e.target.files[0];if(!f)return;
+  if(!img){alert('先に元画像（1. 画像選択）を読み込んでください');return}
+  const u=URL.createObjectURL(f),mImg=new Image();
+  mImg.onload=()=>{
+    const mc=document.createElement('canvas');mc.width=512;mc.height=512;
+    const mx=mc.getContext('2d',{willReadFrequently:true});mx.imageSmoothingEnabled=false;
+    mx.drawImage(mImg,0,0,512,512);
+    const md=mx.getImageData(0,0,512,512).data;
+    const s=Math.min(512/cv.width,512/cv.height),ox=(512-cv.width*s)/2,oy=(512-cv.height*s)/2;
+    const toCanvas=(px,py)=>({x:(px-ox)/s,y:(py-oy)/s});
+    const isR=($('side').value==='R');
+    // Keep the longest contiguous run per row, avoiding disconnected AI false positives.
+    function getMainRun(y,minClass){
+      let bestLen=0,bestL=512,bestR=-1,curL=-1;
+      for(let x=4;x<=508;x++){
+        let cls=0;
+        if(x<508){
+          const v=md[(y*512+x)*4];
+          cls=(v===1||v===2||v===3)?v:(v>200?3:v>120?2:v>40?1:0);
+        }
+        if(cls>=minClass){if(curL<0)curL=x}
+        else if(curL>=0){
+          const len=x-curL;
+          if(len>bestLen){bestLen=len;bestL=curL;bestR=x-1}
+          curL=-1;
+        }
+      }
+      return bestLen>0?{l:bestL,r:bestR,w:bestLen}:null;
+    }
+    const rawRows=[];
+    for(let y=4;y<508;y+=2)rawRows.push({y,fRun:getMainRun(y,1),cRun:getMainRun(y,2),sRun:getMainRun(y,3)});
+    const sValid=rawRows.filter(r=>r.sRun&&r.sRun.w>=2);
+    let stemMedStartY=sValid.length?sValid[0].y:0;
+    if(sValid.length>=8){
+      const topN=Math.min(Math.floor(sValid.length*0.35),25);
+      let maxW=-1,peakIdx=0;
+      for(let i=0;i<topN;i++)if(sValid[i].sRun.w>maxW){maxW=sValid[i].sRun.w;peakIdx=i}
+      for(let i=0;i<=peakIdx;i++)if(sValid[i].sRun.w>=maxW*0.85){stemMedStartY=sValid[i].y;break}
+    }
+    const femL=[],femR=[],canL=[],canR=[],stmL=[],stmR=[];
+    for(const r of rawRows){
+      const y=r.y;
+      let fl=r.fRun?r.fRun.l:512,fr=r.fRun?r.fRun.r:-1;
+      let cl=r.cRun?r.cRun.l:512,cr=r.cRun?r.cRun.r:-1;
+      const sl=r.sRun?r.sRun.l:512,sr=r.sRun?r.sRun.r:-1;
+      const hasF=(fr-fl>=6),hasC=(cr-cl>=4),hasS=(r.sRun&&r.sRun.w>=1);
+      const medStemValid=hasS&&y>=stemMedStartY;
+      if(hasC&&hasS){
+        if(isR){cl=Math.min(cl,sl);if(medStemValid)cr=Math.max(cr,sr)}
+        else{cr=Math.max(cr,sr);if(medStemValid)cl=Math.min(cl,sl)}
+      }
+      if(hasF&&hasC){fl=Math.min(fl,cl);fr=Math.max(fr,cr)}
+      if(hasF){femL.push(toCanvas(fl,y));femR.push(toCanvas(fr,y))}
+      if(hasC){canL.push(toCanvas(cl,y));canR.push(toCanvas(cr,y))}
+      if(hasS){
+        if(isR){stmL.push(toCanvas(sl,y));if(medStemValid)stmR.push(toCanvas(sr,y))}
+        else{stmR.push(toCanvas(sr,y));if(medStemValid)stmL.push(toCanvas(sl,y))}
+      }
+    }
+    const sFemL=smooth1DAnchored(femL),sFemR=smooth1DAnchored(femR);
+    const sCanL=smooth1DAnchored(canL),sCanR=smooth1DAnchored(canR);
+    const sStmL=smooth1DAnchored(stmL),sStmR=smooth1DAnchored(stmR);
+    const pred={annotation:{
+      femur_medial:isR?sFemR:sFemL,femur_lateral:isR?sFemL:sFemR,
+      canal_medial:isR?sCanR:sCanL,canal_lateral:isR?sCanL:sCanR,
+      stem_medial:isR?sStmR:sStmL,stem_lateral:isR?sStmL:sStmR
+    }};
+    if(sCanL.length>=6&&(!pts.sap||!pts.sad)){
+      const i0=Math.floor(sCanL.length*0.3),i1=Math.floor(sCanL.length*0.85);
+      pts.sap={x:(sCanL[i0].x+sCanR[i0].x)/2,y:(sCanL[i0].y+sCanR[i0].y)/2};
+      pts.sad={x:(sCanL[i1].x+sCanR[i1].x)/2,y:(sCanL[i1].y+sCanR[i1].y)/2};
+    }
+    applyFullPrediction(pred);
+    URL.revokeObjectURL(u);
+    $('guide').innerHTML='<span class="status">mask512.pngを読み込み、飛び地除去・近位斜め境界の除外・端点保護平滑化を適用しました ✓</span>';
+  };
+  mImg.onerror=()=>{URL.revokeObjectURL(u);alert('マスク画像を読み込めませんでした')};
+  mImg.src=u;
 };
-$('zoomIn').onclick=()=>setZoom(zoom*1.25);$('zoomOut').onclick=()=>setZoom(zoom/1.25);$('zoomReset').onclick=()=>{zoom=1;panX=0;panY=0;$('zoomLabel').textContent='100%';draw()};$('file').onchange=e=>{window._fmaFile=e.target.files&&e.target.files[0]?e.target.files[0]:null;const f=e.target.files[0];if(!f)return;const u=URL.createObjectURL(f);img=new Image();img.onload=()=>{const ratio=img.height/img.width;cv.width=1200;cv.height=Math.round(1200*ratio);buildGrayCache();pts={};step=0;start=Date.now();elapsedSec=null;zoom=1;panX=0;panY=0;$('zoomLabel').textContent='100%';accepted=false;correctionCount=0;aiInitial={};aiLoaded=false;autoStemInfo=null;profileRows=[];annotation={version:'2.1-training',head:null,lt_midpoint:null,stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};annotationCorrectionCount=0;if($('workMode').value==='annotation')$('annotationTarget').value='head';clearSavedWork();guidedStage=0;$('workMode').value='annotation';$('annotationTarget').value='head';if(!$('studyId').value.trim())draw();guide();$('guide').innerHTML='<span class="status">新しい画像を読み込みました。前症例の点・ラインはクリアしました。Step 1/9：Headから開始してください。</span>';URL.revokeObjectURL(u)};img.src=u};$('undo').onclick=()=>{if(step){step--;delete pts[steps[step][1]];draw();guide()}};$('reset').onclick=()=>{clearSavedWork();pts={};step=0;start=img?Date.now():null;elapsedSec=null;accepted=false;correctionCount=0;aiInitial={};aiLoaded=false;profileRows=[];draw();guide()};function setGuidedStage(i){guidedStage=Math.max(0,Math.min(guidedStages.length-1,i));const k=guidedStages[guidedStage];if(k==='shaft_adjust'){if(annotation.lt_midpoint)pts.ltm={x:annotation.lt_midpoint.x,y:annotation.lt_midpoint.y};$('workMode').value='measurement';step=4;$('guide').innerHTML='<span class="status">Step 9/9：Stem軸を最終調整。Shaft axis proximal → distal をクリックしてください。</span>';draw();saveWork();return}$('workMode').value='annotation';$('annotationTarget').value=k;if(Array.isArray(annotation[k]))annotationClosed[k]=false;guide();saveWork()}
-$('workflowBack').onclick=()=>{if(guidedStage<=0){$('guide').innerHTML='<span class="status">最初のStepです。</span>';return}if(guidedStages[guidedStage]==='shaft_adjust'){step=(pts.sap&&pts.sad)?6:4;accepted=false}const prev=guidedStage-1;const pk=guidedStages[prev];if(pk!=='head'&&pk!=='lt_midpoint'&&pk!=='shaft_adjust'&&Array.isArray(annotation[pk]))annotationClosed[pk]=false;setGuidedStage(prev);$('guide').innerHTML='<span class="status">1つ前のStepに戻りました。必要なら修正して「次へ」を押してください。既存のStem軸は保持されます。</span>';draw();saveWork()};
-$('workflowNext').onclick=()=>{const k=guidedStages[guidedStage];if(k==='shaft_adjust'&&(!pts.sap||!pts.sad)){$('guide').innerHTML='<span class="status" style="color:#fbbf24">Stem軸が未入力です。Shaft axis proximal → distal の2点をクリックしてください。前工程へ戻る場合は「戻る」。</span>';return}if(k!=='head'&&k!=='lt_midpoint'&&k!=='shaft_adjust'&&Array.isArray(annotation[k]))annotationClosed[k]=true;if(guidedStage<guidedStages.length-1)setGuidedStage(guidedStage+1);else{$('guide').innerHTML='<span class="status">入力完了 ✓　Accept measurementへ進めます。</span>';saveWork()}};
-$('undoAnnotation').onclick=()=>{const t=$('annotationTarget').value;if(t==='head'){if(annotation._head_points&&annotation._head_points.length)annotation._head_points.pop();annotation.head=null;if(annotation._head_points&&annotation._head_points.length===3){const hp=annotation._head_points,cc=circle3(hp[0],hp[1],hp[2]);if(cc)annotation.head={center:{x:cc.x,y:cc.y},radius_px:cc.r,source:'3-point-circle'}}}else if(t==='lt_midpoint'){annotation.lt_midpoint=null;delete pts.ltm}else{const guided=['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral'];if(guided.includes(t)){if(annotation._manualAnchors&&Array.isArray(annotation._manualAnchors[t])&&annotation._manualAnchors[t].length)annotation._manualAnchors[t].pop();annotation[t]=(((annotation._manualAnchors||{})[t])||[]).map(q=>({x:q.x,y:q.y,_manual:true}))}else if(Array.isArray(annotation[t]))annotation[t].pop();annotationClosed[t]=false}draw();guide();saveWork()};$('clearStemAnchors').onclick=()=>{annotation.stem_interface_anchors=[];draw();saveWork();if($('annotationTarget').value==='stem_interface_anchors')guide();};$('closeAnnotation').onclick=()=>{const t=$('annotationTarget').value;if(annotation[t].length<2){alert('2点以上必要です');return}annotationClosed[t]=true;draw();saveWork()};let lastSaveDirectoryHandle=null;
+
+function buildDataDictionaryV11Record(){
+  calc();
+  const rid=ensureCaseId()||'UNASSIGNED';
+  const pid=$('patientId').value.trim()||rid.replace(/_[RL]$/i,'');
+  const g=measurementGeometry();
+  const axes=computeAxesAndAlignment(g);
+  const by=new Map((profileRows||[]).map(r=>[Number(r.distance_from_LT_mm),r]));
+  const gVal=(lv,key)=>{const r=by.get(lv);return (r&&r[key]!=null&&Number.isFinite(r[key]))?Number(r[key].toFixed(4)):null};
+
+  const ew_p20=gVal(-20,'canal_width_mm'), ew_0=gVal(0,'canal_width_mm'), ew_m20=gVal(20,'canal_width_mm'), ew_m70=gVal(70,'canal_width_mm'), ew_m100=gVal(100,'canal_width_mm');
+  const cw_p20=gVal(-20,'outer_width_mm'), cw_0=gVal(0,'outer_width_mm'), cw_m20=gVal(20,'outer_width_mm'), cw_m70=gVal(70,'outer_width_mm'), cw_m100=gVal(100,'outer_width_mm');
+
+  const ccr=(ew_m100&&ew_0)?Number((ew_m100/ew_0).toFixed(4)):null;
+  const cfi=(ew_p20&&ew_m100)?Number((ew_p20/ew_m100).toFixed(4)):null;
+  const mci_jang=(cw_m20&&ew_m70)?Number((cw_m20/ew_m70).toFixed(4)):null;
+  const cbr=(ew_m100&&cw_m100)?Number((ew_m100/cw_m100).toFixed(4)):null;
+  const cti_100=gVal(100,'CTI');
+  const mmi_p20=(ew_p20&&cw_p20)?Number((ew_p20/cw_p20).toFixed(4)):null;
+  const mmi_0=(ew_0&&cw_0)?Number((ew_0/cw_0).toFixed(4)):null;
+  const mmi_m20=(ew_m20&&cw_m20)?Number((ew_m20/cw_m20).toFixed(4)):null;
+  const mmi_arr=[mmi_p20,mmi_0,mmi_m20].filter(Number.isFinite);
+  const mmi_avg=mmi_arr.length===3?Number(((mmi_p20+mmi_0+mmi_m20)/3).toFixed(4)):null;
+
+  const isLtOccluded=$('ltVisibility').value==='occluded_unidentifiable';
+  const maskIfOccluded=v=>isLtOccluded?null:v;
+  const totalEditCount=correctionCount+annotationCorrectionCount;
+  const canalShiftMm=computeObserverCanalShiftMm();
+
+  return {
+    meta_input:{
+      image_stage:$('imageType').value==='postop_THA'?'postop_ap':'preop_ap',
+      stem_family:$('stemFamily').value.trim()||'NA',
+      collar_status:$('implantCollar').value==='yes'?'collared':($('implantCollar').value==='no'?'collarless':'NA'),
+      exclusion_flag:$('exclusionFlag').value
+    },
+    provenance_and_split:{
+      research_id:rid,
+      patient_id:pid,
+      observer_id:$('observerId').value.trim()||'observer',
+      dataset_partition:$('exclusionFlag').value==='legacy_pilot'?'legacy_pilot':'unassigned',
+      timestamp_utc:new Date().toISOString(),
+      model_version:aiLoaded?'fma_jang_resnet34_unet_v1':'manual_teacher_v1',
+      preprocess_version:'canvas_highres_v2.1',
+      annotation_rule_ver:'v1.0',
+      algorithm_git_hash:'v2.1.2-cloud',
+      mask_source_type:aiLoaded?(totalEditCount>0?'ai_observer_corrected':'ai_raw'):'teacher_gt'
+    },
+    calibration_metrics:{
+      orig_width_px:cv.width,
+      orig_height_px:cv.height,
+      calib_target_type:$('imageType').value==='postop_THA'?'femoral_head':'marker_ball',
+      calib_known_mm:parseFloat($('headSize').value)||32.0,
+      calib_measured_px:annotation.head&&annotation.head.radius_px?Number((annotation.head.radius_px*2).toFixed(3)):null,
+      calib_fit_rmse_px:annotation.head&&annotation.head.rmse_px!=null?Number(annotation.head.rmse_px.toFixed(4)):0,
+      calibrated_mm_per_px:g?Number(g.mmPerPx.toFixed(6)):(parseFloat($('scale').value)||null)
+    },
+    segmentation_qc:{
+      qc_overall_status:g?'measurable':'review_required',
+      lt_visibility_status:$('ltVisibility').value,
+      double_cortex_grade:$('doubleCortex').value,
+      observer_correction_count:totalEditCount,
+      observer_mod_canal_mm:canalShiftMm!=null?Number(canalShiftMm.toFixed(3)):null,
+      observer_edit_time_sec:elapsedSec!=null?elapsedSec:(start?Math.round((Date.now()-start)/1000):null)
+    },
+    discrete_parameters:{
+      canal_axis_angle_deg:axes.canalAngle!=null?Number(axes.canalAngle.toFixed(2)):null,
+      stem_axis_angle_deg:axes.stemAngle!=null?Number(axes.stemAngle.toFixed(2)):null,
+      stem_alignment_deg:axes.alignDeg!=null?Number(axes.alignDeg.toFixed(2)):null,
+      lt_midpoint_xy_px:annotation.lt_midpoint?[annotation.lt_midpoint.x,annotation.lt_midpoint.y]:null,
+      cw_plus20_lt_mm:maskIfOccluded(cw_p20),
+      cw_0_lt_mm:maskIfOccluded(cw_0),
+      cw_minus20_lt_mm:maskIfOccluded(cw_m20),
+      cw_minus70_lt_mm:maskIfOccluded(cw_m70),
+      cw_minus100_lt_mm:maskIfOccluded(cw_m100),
+      ew_plus20_lt_mm:maskIfOccluded(ew_p20),
+      ew_0_lt_mm:maskIfOccluded(ew_0),
+      ew_minus20_lt_mm:maskIfOccluded(ew_m20),
+      ew_minus70_lt_mm:maskIfOccluded(ew_m70),
+      ew_minus100_lt_mm:maskIfOccluded(ew_m100),
+      cti_minus100:maskIfOccluded(cti_100),
+      ccr:maskIfOccluded(ccr),
+      cfi:maskIfOccluded(cfi),
+      mci:maskIfOccluded(mci_jang),
+      cbr:maskIfOccluded(cbr),
+      mmi_plus20:maskIfOccluded(mmi_p20),
+      mmi_0:maskIfOccluded(mmi_0),
+      mmi_minus20:maskIfOccluded(mmi_m20),
+      mmi_average:maskIfOccluded(mmi_avg),
+      ldr_alpha:maskIfOccluded($('ldra').textContent.split('/')[0]?.trim()),
+      ldr_beta:maskIfOccluded($('ldrb').textContent)
+    },
+    continuous_profile:{
+      valid_span_length_mm:continuousSummary.valid_span_length_mm||null,
+      sampling_step_pct:2.0,
+      exploratory_summary:continuousSummary,
+      profile_slices:continuousSlices
+    },
+    raw_annotations:annotationPayload()
+  };
+}
+
+$('saveCloud').onclick=async()=>{
+  const id=ensureCaseId();
+  if(!id){alert('⚠ Research ID (Study ID) を入力してください。');$('studyId').focus();return}
+  if(!confirmMissingBeforeSave('Googleクラウドへ保存'))return;
+  if(start&&elapsedSec==null)elapsedSec=Math.round((Date.now()-start)/1000);
+  const payload=buildDataDictionaryV11Record();
+  try{payload.overlay_png_base64=cv.toDataURL('image/png');}catch(e){}
+  const maskBlob=await trainingMaskPngBlob();
+  const maskBase64=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(maskBlob)});
+  payload.mask512_png_base64=maskBase64;
+  payload.profile_csv_text=profileCsvText();
+
+  if(window.google && google.script && google.script.run){
+    $('saveCloud').disabled=true;$('saveCloud').textContent='☁ 保存中...';
+    google.script.run
+      .withSuccessHandler(res=>{
+        $('saveCloud').disabled=false;$('saveCloud').textContent='☁ Cloud Save (Drive+Sheet)';
+        $('guide').innerHTML='<span class="status">☁ Googleドライブに5ファイル（fma_record.json / annotation.json / mask512.png / profile.csv / overlay.png）を保存し、台帳を更新しました ✓</span>';
+      })
+      .withFailureHandler(err=>{
+        $('saveCloud').disabled=false;$('saveCloud').textContent='☁ Cloud Save (Drive+Sheet)';
+        alert('クラウド保存エラー: '+err.message);
+      })
+      .saveFmaRecordToCloud(payload);
+  }else{
+    delete payload.overlay_png_base64;
+    delete payload.mask512_png_base64;
+    delete payload.profile_csv_text;
+    downloadBlob(JSON.stringify(payload,null,2),'application/json',id+'_fma_record.json');
+    downloadBlob(maskBlob,'image/png',id+'_mask512.png');
+    downloadBlob(profileCsvText(),'text/csv;charset=utf-8',id+'_profile.csv');
+    $('guide').innerHTML='<span class="status">ローカル環境のため fma_record.json / mask512.png / profile.csv をダウンロードしました。</span>';
+  }
+};
+
+function measurementMissingReport(){
+  calc();
+  const by=new Map((profileRows||[]).map(r=>[Number(r.distance_from_LT_mm),r]));
+  const miss=[];
+  if($('ltVisibility').value!=='occluded_unidentifiable'){
+    for(const lv of [-10,0,20,30,70,100]){
+      const r=by.get(lv);if(!r||!Number.isFinite(r.canal_width_mm))miss.push((lv>0?'+':'')+lv+' mm: endosteal cortex不足');
+    }
+    const r100=by.get(100);if(!r100||!Number.isFinite(r100.outer_width_mm))miss.push('+100 mm: outer cortex不足');
+  }
+  return[...new Set(miss)];
+}
+function confirmMissingBeforeSave(action){
+  const miss=measurementMissingReport();if(!miss.length)return true;
+  return confirm('⚠ 一部スライスに未計測があります。\n\n・'+miss.join('\n・')+'\n\nこのまま'+action+'しますか？');
+}
+
+$('saveCase').onclick=async()=>{
+  const id=ensureCaseId();
+  if(!id){alert('⚠ Research ID (Study ID) が入力されていません。');$('studyId').focus();return}
+  if(!confirmMissingBeforeSave('ローカル保存'))return;
+  const res=await saveCaseFilesToFolder(id);if(!res.ok)return;
+  localStorage.setItem('FMA_last_saved_case',id);
+  $('guide').innerHTML='<span class="status">'+id+' をローカル保存しました ✓（7ファイル：v2.1 fma_record.json, mask512.png, profile.csv含む）</span>';
+};
+
+$('zoomIn').onclick=()=>setZoom(zoom*1.25);
+$('zoomOut').onclick=()=>setZoom(zoom/1.25);
+$('zoomReset').onclick=()=>{zoom=1;panX=0;panY=0;$('zoomLabel').textContent='100%';draw()};
+
+$('file').onchange=e=>{
+  window._fmaFile=e.target.files&&e.target.files[0]?e.target.files[0]:null;
+  const f=e.target.files[0];if(!f)return;
+  if(!$('studyId').value.trim()){
+    const base=f.name.replace(/\.[^.]+$/,'').replace(/_source$/i,'');
+    $('studyId').value=base;
+  }
+  const u=URL.createObjectURL(f);img=new Image();
+  img.onload=()=>{
+    const ratio=img.height/img.width;cv.width=1200;cv.height=Math.round(1200*ratio);
+    buildGrayCache();pts={};step=0;start=Date.now();elapsedSec=null;zoom=1;panX=0;panY=0;$('zoomLabel').textContent='100%';
+    accepted=false;correctionCount=0;aiInitial={};aiLoaded=false;autoStemInfo=null;profileRows=[];continuousSlices=[];continuousSummary={};
+    annotation={version:'2.1-training',head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};
+    annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,osteotomy_line:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};
+    annotationCorrectionCount=0;clearSavedWork();guidedStage=0;$('workMode').value='annotation';$('annotationTarget').value='head';
+    draw();guide();
+    $('guide').innerHTML='<span class="status">新しい画像を読み込みました。Step 1/9：Head(または25mm鉄球)から開始、またはAI Mask512 PNGを読み込んでください。</span>';
+    URL.revokeObjectURL(u);
+  };
+  img.src=u;
+};
+
+function setGuidedStage(i){
+  guidedStage=Math.max(0,Math.min(guidedStages.length-1,i));
+  const k=guidedStages[guidedStage];
+  if(k==='shaft_adjust'){
+    if(annotation.lt_midpoint)pts.ltm={x:annotation.lt_midpoint.x,y:annotation.lt_midpoint.y};
+    $('workMode').value='measurement';step=4;
+    $('guide').innerHTML='<span class="status">Step 9/9：Shaft axis proximal → distal の2点をクリックして髄腔軸を確定してください。</span>';
+    draw();saveWork();return;
+  }
+  $('workMode').value='annotation';$('annotationTarget').value=k;
+  if(Array.isArray(annotation[k]))annotationClosed[k]=false;
+  guide();saveWork();
+}
+$('workflowBack').onclick=()=>{
+  if(guidedStage<=0){$('guide').innerHTML='<span class="status">最初のStepです。</span>';return}
+  if(guidedStages[guidedStage]==='shaft_adjust'){step=(pts.sap&&pts.sad)?6:4;accepted=false}
+  const prev=guidedStage-1, pk=guidedStages[prev];
+  if(pk!=='head'&&pk!=='lt_midpoint'&&pk!=='shaft_adjust'&&Array.isArray(annotation[pk]))annotationClosed[pk]=false;
+  setGuidedStage(prev);draw();saveWork();
+};
+$('workflowNext').onclick=()=>{
+  const k=guidedStages[guidedStage];
+  if(k==='shaft_adjust'&&(!pts.sap||!pts.sad)){$('guide').innerHTML='<span class="status" style="color:#fbbf24">Shaft axis proximal → distal の2点をクリックしてください。</span>';return}
+  if(k!=='head'&&k!=='lt_midpoint'&&k!=='shaft_adjust'&&Array.isArray(annotation[k]))annotationClosed[k]=true;
+  if(guidedStage<guidedStages.length-1)setGuidedStage(guidedStage+1);
+  else{$('guide').innerHTML='<span class="status">全ステップ完了 ✓ 「☁ Cloud Save」または「Local Save」で保存できます。</span>';saveWork()}
+};
+$('undoAnnotation').onclick=()=>{
+  const t=$('annotationTarget').value;
+  if(t==='head'){
+    if(annotation._head_points&&annotation._head_points.length)annotation._head_points.pop();
+    annotation.head=null;
+    if(annotation._head_points&&annotation._head_points.length>=3){
+      const cc=fitCircleLeastSquares(annotation._head_points);
+      if(cc)annotation.head={center:{x:cc.x,y:cc.y},radius_px:cc.r,rmse_px:cc.rmse||0,source:'least-squares-circle'};
+    }
+  }else if(t==='lt_midpoint'){annotation.lt_midpoint=null;delete pts.ltm}
+  else{
+    const guided=['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral','osteotomy_line'];
+    if(guided.includes(t)){
+      const anchors=annotation._manualAnchors?.[t];
+      const last=Array.isArray(anchors)&&anchors.length?anchors.pop():null;
+      if(last&&Array.isArray(annotation[t])){
+        const idx=last.id!=null
+          ?annotation[t].findIndex(q=>q._manualId===last.id)
+          :annotation[t].findLastIndex(q=>q._manual); // 旧形式の作業データにも対応
+        if(idx>=0)annotation[t].splice(idx,1);
+      }
+      // AI予測由来の制御点には一切触れない
+    }else if(Array.isArray(annotation[t]))annotation[t].pop();
+    annotationClosed[t]=false;
+  }
+  draw();guide();saveWork();
+};
+
+let lastSaveDirectoryHandle=null;
 async function writeBlobToDirectory(dir,content,type,filename){
   const b=content instanceof Blob?content:new Blob([content],{type});
   const fh=await dir.getFileHandle(filename,{create:true});const w=await fh.createWritable();await w.write(b);await w.close();
@@ -197,584 +992,336 @@ function downloadBlob(content,type,filename){
   a.href=URL.createObjectURL(b);a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
 }
 function trainingManifestText(){
- const p=annotationPayload(), rows=[
- ['Study_ID','Image_type','Side','Implant_collar','Image_width_px','Image_height_px','Annotation_version','Training_schema','Has_head','Has_LT','Femur_medial_n','Femur_lateral_n','Canal_medial_n','Canal_lateral_n','Stem_medial_n','Stem_lateral_n','Timestamp'],
- [p.study_id,p.image_type,p.side,p.implant_collar,cv.width,cv.height,p.annotation_version,'AP_multiclass_v1',p.head?1:0,p.lt_midpoint?1:0,(p.femur_medial||[]).length,(p.femur_lateral||[]).length,(p.canal_medial||[]).length,(p.canal_lateral||[]).length,(p.stem_medial||[]).length,(p.stem_lateral||[]).length,p.timestamp]
- ]; return rows.map(r=>r.map(esc).join(',')).join('\n');
+  const p=annotationPayload(), rows=[
+    ['Study_ID','Patient_ID','Image_type','Side','Implant_collar','Image_width_px','Image_height_px','Annotation_version','Training_schema','Has_head','Has_LT','LT_visibility','Double_cortex','Femur_medial_n','Femur_lateral_n','Canal_medial_n','Canal_lateral_n','Stem_medial_n','Stem_lateral_n','Timestamp'],
+    [p.study_id,$('patientId').value||p.study_id,p.image_type,p.side,p.implant_collar,cv.width,cv.height,p.annotation_version,'AP_multiclass_v2.1',p.head?1:0,p.lt_midpoint?1:0,$('ltVisibility').value,$('doubleCortex').value,(p.femur_medial||[]).length,(p.femur_lateral||[]).length,(p.canal_medial||[]).length,(p.canal_lateral||[]).length,(p.stem_medial||[]).length,(p.stem_lateral||[]).length,p.timestamp]
+  ];
+  return rows.map(r=>r.map(esc).join(',')).join('\n');
 }
 function trainingMaskPngBlob(){
- return new Promise(resolve=>{
-  const m=document.createElement('canvas');m.width=512;m.height=512;const x=m.getContext('2d');
-  x.fillStyle='rgb(0,0,0)';x.fillRect(0,0,512,512);
-  const s=Math.min(512/cv.width,512/cv.height),sx=s,sy=s,ox=(512-cv.width*s)/2,oy=(512-cv.height*s)/2;
-  function poly(points,fill){if(!Array.isArray(points)||points.length<2)return;x.beginPath();points.forEach((p,i)=>{const xx=p.x*sx+ox,yy=p.y*sy+oy;i?x.lineTo(xx,yy):x.moveTo(xx,yy)});x.strokeStyle=fill;x.lineWidth=3;x.stroke()}
-  function fillBetween(a,b,fill){if(!Array.isArray(a)||!Array.isArray(b)||a.length<2||b.length<2)return;const aa=orderedContour(a===annotation.femur_medial?'femur_medial':a===annotation.canal_medial?'canal_medial':a===annotation.stem_medial?'stem_medial':'');const bb=orderedContour(b===annotation.femur_lateral?'femur_lateral':b===annotation.canal_lateral?'canal_lateral':b===annotation.stem_lateral?'stem_lateral':'');const A=aa.length?aa:a,B=bb.length?bb:b;x.beginPath();A.forEach((p,i)=>{i?x.lineTo(p.x*sx+ox,p.y*sy+oy):x.moveTo(p.x*sx+ox,p.y*sy+oy)});B.slice().reverse().forEach(p=>x.lineTo(p.x*sx+ox,p.y*sy+oy));x.closePath();x.fillStyle=fill;x.fill()}
-  // label map: 0 background, 1 femur envelope, 2 medullary canal, 3 stem. LT remains a landmark target in JSON.
-  fillBetween(annotation.femur_medial,annotation.femur_lateral,'rgb(1,1,1)');
-  fillBetween(annotation.canal_medial,annotation.canal_lateral,'rgb(2,2,2)');
-  if($('imageType').value==='postop_THA')fillBetween(annotation.stem_medial,annotation.stem_lateral,'rgb(3,3,3)');
-  m.toBlob(resolve,'image/png');
- });
+  return new Promise(resolve=>{
+    const m=document.createElement('canvas');m.width=512;m.height=512;
+    const x=m.getContext('2d');x.imageSmoothingEnabled=false;
+    x.fillStyle='rgb(0,0,0)';x.fillRect(0,0,512,512);
+    const s=Math.min(512/cv.width,512/cv.height),ox=(512-cv.width*s)/2,oy=(512-cv.height*s)/2;
+    function fillBetweenRendered(medialName,lateralName,color){
+      const A=getRenderedContour(medialName),B=getRenderedContour(lateralName);
+      if(A.length<2||B.length<2)return;
+      x.beginPath();
+      A.forEach((p,i)=>i?x.lineTo(p.x*s+ox,p.y*s+oy):x.moveTo(p.x*s+ox,p.y*s+oy));
+      B.slice().reverse().forEach(p=>x.lineTo(p.x*s+ox,p.y*s+oy));
+      x.closePath();x.fillStyle=color;x.fill();
+    }
+    fillBetweenRendered('femur_medial','femur_lateral','rgb(1,1,1)');
+    fillBetweenRendered('canal_medial','canal_lateral','rgb(2,2,2)');
+    if($('imageType').value==='postop_THA')fillBetweenRendered('stem_medial','stem_lateral','rgb(3,3,3)');
+    m.toBlob(resolve,'image/png');
+  });
 }
 async function saveCaseFilesToFolder(id){
- const maskBlob=await trainingMaskPngBlob();
- const src=window._fmaFile;
- const ext=(src&&src.name&&src.name.includes('.'))?src.name.split('.').pop().toLowerCase():'jpg';
- const files=[
-  [JSON.stringify(annotationPayload(),null,2),'application/json',id+'_annotation.json'],
-  [profileCsvText(),'text/csv;charset=utf-8',id+'_profile.csv'],
-  [measurementCsvText(),'text/csv;charset=utf-8','FMA_'+id+'_'+($('observerId').value||'observer')+'.csv'],
-  [trainingManifestText(),'text/csv;charset=utf-8',id+'_training_manifest.csv'],
-  [maskBlob,'image/png',id+'_mask512.png'],
-  [src,src&&src.type?src.type:'image/jpeg',id+'_source.'+ext]
- ];
- if(window.showDirectoryPicker){
-   try{
-     let dir=lastSaveDirectoryHandle;
-     if(!dir)dir=await window.showDirectoryPicker({id:'fma-case-save',mode:'readwrite'});
-     lastSaveDirectoryHandle=dir;
-     for(const [content,type,name] of files)await writeBlobToDirectory(dir,content,type,name);
-     return {ok:true,folder:true};
-   }catch(e){if(e&&e.name==='AbortError')return {ok:false,cancelled:true};lastSaveDirectoryHandle=null;console.warn(e)}
- }
- for(const [content,type,name] of files)downloadBlob(content,type,name);
- return {ok:true,folder:false};
+  const maskBlob=await trainingMaskPngBlob();
+  const fmaRecord=buildDataDictionaryV11Record();
+  const src=window._fmaFile;
+  const ext=(src&&src.name&&src.name.includes('.'))?src.name.split('.').pop().toLowerCase():'jpg';
+  const files=[
+    [JSON.stringify(fmaRecord,null,2),'application/json',id+'_fma_record.json'],
+    [JSON.stringify(annotationPayload(),null,2),'application/json',id+'_annotation.json'],
+    [profileCsvText(),'text/csv;charset=utf-8',id+'_profile.csv'],
+    [measurementCsvText(),'text/csv;charset=utf-8','FMA_'+id+'_'+($('observerId').value||'observer')+'.csv'],
+    [trainingManifestText(),'text/csv;charset=utf-8',id+'_training_manifest.csv'],
+    [maskBlob,'image/png',id+'_mask512.png']
+  ];
+  if(src)files.push([src,src.type||'image/jpeg',id+'_source.'+ext]);
+  if(window.showDirectoryPicker){
+    try{
+      let dir=lastSaveDirectoryHandle;
+      if(!dir)dir=await window.showDirectoryPicker({id:'fma-case-save',mode:'readwrite'});
+      lastSaveDirectoryHandle=dir;
+      for(const [content,type,name] of files)await writeBlobToDirectory(dir,content,type,name);
+      return {ok:true,folder:true};
+    }catch(e){if(e&&e.name==='AbortError')return {ok:false,cancelled:true};lastSaveDirectoryHandle=null}
+  }
+  for(const [content,type,name] of files)downloadBlob(content,type,name);
+  return {ok:true,folder:false};
 }
+
 function ensureCaseId(){return $('studyId').value.trim()}
-function advanceCaseId(id){/* Study ID is manually entered; no automatic increment. */}
 function annotationPayload(){
- return {annotation_version:annotation.version,training_schema:'AP_multiclass_v1',coordinate_space:'canvas_px',source_image_filename:(window._fmaFile&&window._fmaFile.name)||'',study_id:ensureCaseId(),image_type:$('imageType').value,side:$('side').value,implant_collar:$('implantCollar').value,
- head:annotation.head,measurement_points:pts,lt_midpoint:annotation.lt_midpoint,stem_interface_anchors:annotation.stem_interface_anchors,lt_region:annotation.lt_region,
- femur_mask:annotation.femur_mask,canal_mask:annotation.canal_mask,stem_mask:annotation.stem_mask,
- femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,
- stem_medial:annotation.stem_medial,stem_lateral:annotation.stem_lateral,contour_closed:annotationClosed,
- annotation_correction_count:annotationCorrectionCount,ai_loaded:aiLoaded,ai_initial_prediction:aiLoaded?aiInitial:null,app_version:'v2.1.0-dev.11',timestamp:new Date().toISOString()};
+  return {
+    annotation_version:annotation.version,training_schema:'AP_multiclass_v2.1',coordinate_space:'canvas_px',
+    source_image_filename:(window._fmaFile&&window._fmaFile.name)||'',study_id:ensureCaseId(),
+    patient_id:$('patientId').value.trim()||ensureCaseId(),image_type:$('imageType').value,
+    stem_family:$('stemFamily').value,side:$('side').value,implant_collar:$('implantCollar').value,
+    lt_visibility:$('ltVisibility').value,double_cortex:$('doubleCortex').value,
+    head:annotation.head,measurement_points:pts,lt_midpoint:annotation.lt_midpoint,osteotomy_line:annotation.osteotomy_line,
+    stem_interface_anchors:annotation.stem_interface_anchors,lt_region:annotation.lt_region,
+    femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,
+    canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,
+    stem_medial:annotation.stem_medial,stem_lateral:annotation.stem_lateral,
+    contour_closed:annotationClosed,annotation_correction_count:annotationCorrectionCount,
+    ai_loaded:aiLoaded,ai_initial_prediction:aiLoaded?aiInitial:null,
+    app_version:'v2.1.2-cloud',timestamp:new Date().toISOString()
+  };
 }
 function profileCsvText(){
- const rows=calculateProfiles(),hdr=['Distance_from_LT_mm','Outer_width_px','Canal_width_px','Stem_width_px','Outer_width_mm','Canal_width_mm','Stem_width_mm','CTI','CFR'];
- return [hdr.join(',')].concat(rows.map(r=>[r.distance_from_LT_mm,r.outer_width_px,r.canal_width_px,r.stem_width_px,r.outer_width_mm,r.canal_width_mm,r.stem_width_mm,r.CTI,r.CFR].map(v=>v==null?'':v).join(','))).join('\n');
+  const rows=calculateProfiles(),hdr=['Distance_from_LT_mm','Outer_width_px','Canal_width_px','Stem_width_px','Outer_width_mm','Canal_width_mm','Stem_width_mm','CTI','CFR'];
+  return [hdr.join(',')].concat(rows.map(r=>[r.distance_from_LT_mm,r.outer_width_px,r.canal_width_px,r.stem_width_px,r.outer_width_mm,r.canal_width_mm,r.stem_width_mm,r.CTI,r.CFR].map(v=>v==null?'':v).join(','))).join('\n');
 }
 function measurementCsvText(){
- let s=parseFloat($('scale').value)||'',rows=[['Study_ID','Observer_ID','Image_type','Session','Side','Implant_collar','Landmark_name','X_px','Y_px','Image_width_px','Image_height_px','Scale_mm_per_px','Head_diameter_mm','Calibration_source','AP_CTI','LDR_alpha','LDR_beta','Modified_MCI','P10_D20','P10_D30','Measurement_time_sec','AI_initial_prediction','AI_landmark_count','Profile_point_count','Profile_interval_mm','Human_corrected','Correction_count','Accepted','App_version','Timestamp']];
- for(const[name,k]of steps){let p=pts[k];if(!p)continue;rows.push([ensureCaseId(),$('observerId').value,$('imageType').value,$('session').value,$('side').value,$('implantCollar').value,k,p.x.toFixed(3),p.y.toFixed(3),cv.width,cv.height,s,$('headSize').value,$('calMode').value,$('cti').textContent,$('ldra').textContent,$('ldrb').textContent,$('mci').textContent,$('p20d20').textContent,$('p20d30').textContent,elapsedSec!=null?elapsedSec:(start?Math.round((Date.now()-start)/1000):''),aiLoaded?'true':'false',Object.keys(aiInitial).length,profileRows.length,profileRows.length?'1':'',correctionCount>0?'true':'false',correctionCount,accepted?'true':'false','2.0.0-dev.103',new Date().toISOString()])}
- return rows.map(r=>r.map(esc).join(',')).join('\n');
+  let s=parseFloat($('scale').value)||'',rows=[['Study_ID','Patient_ID','Observer_ID','Image_type','Stem_family','Side','Implant_collar','Landmark_name','X_px','Y_px','Image_width_px','Image_height_px','Scale_mm_per_px','Head_diameter_mm','Calibration_source','AP_CTI','CFI','CCR','CBR','Stem_Align_deg','Mean_Stem_Fill','Measurement_time_sec','AI_loaded','Correction_count','App_version','Timestamp']];
+  for(const[name,k]of steps){
+    let p=pts[k];if(!p)continue;
+    rows.push([ensureCaseId(),$('patientId').value||ensureCaseId(),$('observerId').value,$('imageType').value,$('stemFamily').value,$('side').value,$('implantCollar').value,k,p.x.toFixed(3),p.y.toFixed(3),cv.width,cv.height,s,$('headSize').value,$('calMode').value,$('cti').textContent,$('cfiVal').textContent,$('ccrVal').textContent,$('cbrVal').textContent,$('alignVal').textContent,$('meanFillVal').textContent,elapsedSec!=null?elapsedSec:(start?Math.round((Date.now()-start)/1000):''),aiLoaded?'true':'false',correctionCount+annotationCorrectionCount,'v2.1.2-cloud',new Date().toISOString()]);
+  }
+  return rows.map(r=>r.map(esc).join(',')).join('\n');
 }
-$('saveAnnotation').onclick=()=>{const payload={annotation_version:annotation.version,study_id:ensureCaseId(),image_type:$('imageType').value,side:$('side').value,implant_collar:$('implantCollar').value,head:annotation.head,lt_midpoint:annotation.lt_midpoint,lt_region:annotation.lt_region,femur_mask:annotation.femur_mask,canal_mask:annotation.canal_mask,stem_mask:annotation.stem_mask,femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,stem_medial:annotation.stem_medial,stem_lateral:annotation.stem_lateral,contour_closed:annotationClosed,annotation_correction_count:annotationCorrectionCount,app_version:'v2.1.0-dev.11',timestamp:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=ensureCaseId()+'_annotation.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};let pendingAiPrediction=null;
+
 function rdpPolyline(points,eps){
- if(points.length<3)return points.slice();
- const a=points[0],b=points[points.length-1],dx=b.x-a.x,dy=b.y-a.y,den=Math.hypot(dx,dy)||1;
- let im=-1,dm=-1;
- for(let i=1;i<points.length-1;i++){const p=points[i],d=Math.abs(dy*p.x-dx*p.y+b.x*a.y-b.y*a.x)/den;if(d>dm){dm=d;im=i}}
- if(dm>eps&&im>0){const l=rdpPolyline(points.slice(0,im+1),eps),r=rdpPolyline(points.slice(im),eps);return l.slice(0,-1).concat(r)}
- return [a,b];
+  if(points.length<3)return points.slice();
+  const a=points[0],b=points[points.length-1],dx=b.x-a.x,dy=b.y-a.y,den=Math.hypot(dx,dy)||1;
+  let im=-1,dm=-1;
+  for(let i=1;i<points.length-1;i++){const p=points[i],d=Math.abs(dy*p.x-dx*p.y+b.x*a.y-b.y*a.x)/den;if(d>dm){dm=d;im=i}}
+  if(dm>eps&&im>0){const l=rdpPolyline(points.slice(0,im+1),eps),r=rdpPolyline(points.slice(im),eps);return l.slice(0,-1).concat(r)}
+  return [a,b];
 }
-function reduceAIControlPoints(points,maxPts=12){
- if(!Array.isArray(points)||points.length<=maxPts)return (points||[]).map(q=>({...q,_aiControl:true}));
- let eps=2,best=points;
- for(let n=0;n<14;n++){const q=rdpPolyline(points,eps);best=q;if(q.length<=maxPts)break;eps*=1.45}
- if(best.length>maxPts){const out=[];for(let i=0;i<maxPts;i++)out.push(best[Math.round(i*(best.length-1)/(maxPts-1))]);best=out}
- return best.map(q=>({...q,_aiControl:true}));
+function reduceAIControlPoints(points,maxPts=16,initEps=1.0){
+  if(!Array.isArray(points)||points.length<=maxPts)return (points||[]).map(q=>({...q,_aiControl:true}));
+  let eps=initEps,best=points;
+  for(let n=0;n<14;n++){const q=rdpPolyline(points,eps);best=q;if(q.length<=maxPts)break;eps*=1.35}
+  if(best.length>maxPts){
+    const out=[best[0]];
+    for(let i=1;i<maxPts-1;i++)out.push(best[Math.round(i*(best.length-1)/(maxPts-1))]);
+    out.push(best[best.length-1]);
+    best=out;
+  }
+  return best.map(q=>({...q,_aiControl:true}));
 }
 function normalizePrediction(j){
- const p=j.prediction||j;
- const out={points:p.measurement_points||p.points||{},annotation:{}};
- const a=p.annotation||p;
- for(const k of ['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral']){
-   if(Array.isArray(a[k])){
-     const dense=a[k].map(q=>({x:Number(q.x),y:Number(q.y)})).filter(q=>Number.isFinite(q.x)&&Number.isFinite(q.y));
-     out.annotation[k]=reduceAIControlPoints(dense,12);
-   }
- }
- if(a.head)out.annotation.head=a.head;
- if(a.lt_midpoint)out.annotation.lt_midpoint=a.lt_midpoint;
- return out;
+  const p=j.prediction||j;
+  const out={points:p.measurement_points||p.points||{},annotation:{}};
+  const a=p.annotation||p;
+  for(const k of ['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral']){
+    if(Array.isArray(a[k])){
+      const dense=a[k].map(q=>({x:Number(q.x),y:Number(q.y)})).filter(q=>Number.isFinite(q.x)&&Number.isFinite(q.y));
+      const stem=k.startsWith('stem_');
+      out.annotation[k]=reduceAIControlPoints(dense,stem?18:14,stem?0.8:1.2);
+    }
+  }
+  if(a.head)out.annotation.head=a.head;
+  if(a.lt_midpoint)out.annotation.lt_midpoint=a.lt_midpoint;
+  return out;
 }
 function applyFullPrediction(pred){
- if(!pred)return;
- const n=normalizePrediction(pred);aiInitial=JSON.parse(JSON.stringify(n));aiLoaded=true;
- for(const[k,p]of Object.entries(n.points||{}))if(p&&Number.isFinite(Number(p.x))&&Number.isFinite(Number(p.y)))pts[k]={x:Number(p.x),y:Number(p.y)};
- for(const[k,a]of Object.entries(n.annotation||{})){
-   if(Array.isArray(a)){annotation[k]=a.map(q=>({...q}));annotationClosed[k]=true}
-   else annotation[k]=JSON.parse(JSON.stringify(a));
- }
- while(step<steps.length&&pts[steps[step][1]])step++;
- accepted=false;correctionCount=0;annotationCorrectionCount=0;draw();guide();saveWork();
- $('guide').innerHTML='<span class="status">AI候補を少数の制御点＋滑らかなラインに変換しました。ずれた制御点をドラッグして必要な部分だけ修正してください。</span>';
+  if(!pred)return;
+  const n=normalizePrediction(pred);aiInitial=JSON.parse(JSON.stringify(n));aiLoaded=true;
+  annotation._manualAnchors={};annotation._nextManualId=0;
+  for(const[k,p]of Object.entries(n.points||{}))if(p&&Number.isFinite(Number(p.x))&&Number.isFinite(Number(p.y)))pts[k]={x:Number(p.x),y:Number(p.y)};
+  for(const[k,a]of Object.entries(n.annotation||{})){
+    if(Array.isArray(a)){annotation[k]=a.map(q=>({...q}));annotationClosed[k]=true}
+    else annotation[k]=JSON.parse(JSON.stringify(a));
+  }
+  while(step<steps.length&&pts[steps[step][1]])step++;
+  accepted=false;correctionCount=0;annotationCorrectionCount=0;draw();guide();saveWork();
+  $('guide').innerHTML='<span class="status">AI候補を制御点＋滑らかなラインに変換しました。Shift+ドラッグで必要な箇所のみ微修正してください。</span>';
 }
-$('autoStem').onclick=()=>{autoDetectStem();guide();};$('autoHead').onclick=()=>{autoDetectHead();guidedStage=0;$('workMode').value='annotation';$('annotationTarget').value='head';guide();};
-$('aiJsonFile').onchange=async e=>{
- const f=e.target.files&&e.target.files[0];if(!f)return;
- try{pendingAiPrediction=JSON.parse(await f.text());$('guide').innerHTML='<span class="status">AI候補JSONを読み込みました。「AI候補を適用」を押してください。</span>'}
- catch(err){pendingAiPrediction=null;alert('JSONを読み込めませんでした: '+err.message)}
-};
-$('aiSuggest').onclick=()=>{if(!img){alert('先に画像を選択してください');return}if(!pendingAiPrediction){alert('先に「AI候補JSON」から候補ファイルを選択してください');return}applyFullPrediction(pendingAiPrediction)};$('accept').onclick=()=>{if(step<steps.length){alert('測定が完了していません');return}if(!confirmMissingBeforeSave('Accept'))return;if(start&&elapsedSec==null)elapsedSec=Math.round((Date.now()-start)/1000);accepted=true;calc();const g=measurementGeometry();saveWork();$('guide').innerHTML=g?'<span class="status">Accepted ✓　総測定時間 '+(elapsedSec!=null?elapsedSec+' s':'--')+'。CSV exportできます。</span>':'<span class="status" style="color:#fbbf24">Accepted。ただし計測geometryを作れません。Head calibration・LT・shaft axisを確認してください。</span>'};$('scale').oninput=calc;$('headSize').oninput=calc;$('calMode').onchange=calc;
-function dist(a,b){return a&&b?Math.hypot(a.x-b.x,a.y-b.y):null}let autoStemInfo=null;
-function autoDetectStem(){
- if(!img){alert('先に画像を選択してください');return}
- autoStemInfo=null;aiInitial.stem_edges=null;aiInitial.stem_axis=null;draw();
- const W=cv.width,H=cv.height,sw=Math.min(460,W),sh=Math.round(H*sw/W),sx=W/sw,sy=H/sh;
- const oc=document.createElement('canvas');oc.width=sw;oc.height=sh;const ox=oc.getContext('2d',{willReadFrequently:true});
- ox.drawImage(img,0,0,sw,sh);const d=ox.getImageData(0,0,sw,sh).data,g=new Float32Array(sw*sh);
- for(let q=0,k=0;q<d.length;q+=4,k++)g[k]=0.299*d[q]+0.587*d[q+1]+0.114*d[q+2];
- // Find the long bright metallic stem first, then recover its left/right boundaries row by row.
- const hist=new Uint32Array(256);for(const v of g)hist[Math.max(0,Math.min(255,Math.round(v)))]++;
- let cum=0,thr=220,target=g.length*.88;for(let v=0;v<256;v++){cum+=hist[v];if(cum>=target){thr=Math.max(165,v);break}}
- const yA=Math.round(sh*.28),yB=Math.round(sh*.92),xA=Math.round(sw*.08),xB=Math.round(sw*.92);
- // dev47: metal-region detector. Build a bright mask, connect small gaps, seed in the distal stem,
- // flood-fill the long component, then derive left/right boundaries from the component envelope.
- const mask=new Uint8Array(sw*sh);
- const mthr=Math.max(150,thr-18);
- for(let y=yA;y<yB;y++)for(let x=xA;x<xB;x++)if(g[y*sw+x]>=mthr)mask[y*sw+x]=1;
- // Horizontal/vertical one-pixel closing helps screen-photo moire without changing display zoom.
- const closed=mask.slice();
- for(let y=yA+1;y<yB-1;y++)for(let x=xA+1;x<xB-1;x++){
-   const q=y*sw+x;if(mask[q])continue;
-   if((mask[q-1]&&mask[q+1])||(mask[q-sw]&&mask[q+sw]))closed[q]=1;
- }
- // Seed = brightest narrow run in lower-middle image, favoring persistence near the femoral stem.
- let seedPix=-1,bestSeed=-1;
- for(let y=Math.round(sh*.60);y<Math.round(sh*.90);y+=2){
-   let st=-1;
-   for(let x=xA;x<=xB;x++){
-     const on=x<xB&&closed[y*sw+x];
-     if(on&&st<0)st=x;
-     if((!on||x===xB)&&st>=0){
-       const en=x-1,w=en-st+1,cx=(st+en)>>1;
-       if(w>=4&&w<=sw*.14){
-         let local=0;for(let yy=Math.max(yA,y-8);yy<=Math.min(yB-1,y+8);yy+=2)for(let xx=Math.max(xA,cx-3);xx<=Math.min(xB-1,cx+3);xx++)local+=closed[yy*sw+xx];
-         const score=local*5+w;
-         if(score>bestSeed){bestSeed=score;seedPix=y*sw+cx}
-       } st=-1;
-     }
-   }
- }
- if(seedPix>=0){
-   const vis=new Uint8Array(sw*sh),Q=new Int32Array(sw*sh);let qh=0,qt=0;Q[qt++]=seedPix;vis[seedPix]=1;
-   while(qh<qt){
-     const q=Q[qh++],y=(q/sw)|0,x=q-y*sw;
-     const nb=[q-1,q+1,q-sw,q+sw];
-     for(const z of nb){if(z<0||z>=vis.length||vis[z]||!closed[z])continue;const zy=(z/sw)|0,zx=z-zy*sw;if(zx<xA||zx>=xB||zy<yA||zy>=yB)continue;vis[z]=1;Q[qt++]=z}
-   }
-   const env=[];
-   for(let y=yA;y<yB;y+=2){let l=sw,r=-1,count=0;for(let x=xA;x<xB;x++)if(vis[y*sw+x]){l=Math.min(l,x);r=Math.max(r,x);count++}
-     if(count>=4&&r-l<=sw*.30)env.push({y,l,r,c:(l+r)/2,w:r-l});
-   }
-   // Keep the vertically continuous portion containing the distal seed row; tolerate short missing stretches.
-   if(env.length>=12){
-     const sy0=(seedPix/sw)|0;let si=0,bd=1e9;env.forEach((e,i)=>{const dd=Math.abs(e.y-sy0);if(dd<bd){bd=dd;si=i}});
-     let lo=si,hi=si,gap=0;
-     for(let i=si-1;i>=0;i--){if(env[i+1].y-env[i].y<=8){lo=i;gap=0}else if(++gap>2)break}
-     gap=0;for(let i=si+1;i<env.length;i++){if(env[i].y-env[i-1].y<=8){hi=i;gap=0}else if(++gap>2)break}
-     let comp=env.slice(lo,hi+1);
-     // dev48: keep only the elongated stem body. Starting from the distal seed and moving proximally,
-     // detect the first sustained expansion relative to the distal stem width. Everything proximal to
-     // that shoulder is excluded from edge display and axis fitting (neck/head/cup may be one metal component).
-     if(comp.length>=16){
-       const distalPool=comp.slice(Math.floor(comp.length*.58)).map(e=>e.w).sort((x,y)=>x-y);
-       const baseW=distalPool[Math.floor(distalPool.length/2)]||comp[comp.length-1].w;
-       let shoulder=-1,wideRun=0;
-       for(let i=comp.length-1;i>=0;i--){
-         const wide=comp[i].w>Math.max(baseW*2.15,baseW+18);
-         if(wide){wideRun++; if(wideRun>=5){shoulder=i+4;break}} else wideRun=0;
-       }
-       if(shoulder>0 && comp.length-shoulder>=14)comp=comp.slice(shoulder);
-     }
-     const span=comp.length?(comp[comp.length-1].y-comp[0].y)/sh:0;
-     if(comp.length>=16&&span>=.16){
-       // First-pass centerline from the component envelope, then independently re-search each edge
-       // from that axis outward. This is more robust when one metal boundary is fragmented by bone overlap/moire.
-       const rawCenters=comp.map(r=>({x:r.c,y:r.y}));
-       const rn=rawCenters.length,rSy=rawCenters.reduce((s,p)=>s+p.y,0),rSx=rawCenters.reduce((s,p)=>s+p.x,0),rSyy=rawCenters.reduce((s,p)=>s+p.y*p.y,0),rSyx=rawCenters.reduce((s,p)=>s+p.y*p.x,0);
-       const rDen=rn*rSyy-rSy*rSy||1,rK=(rn*rSyx-rSy*rSx)/rDen,rB=(rSx-rK*rSy)/rn;
-       const edgeAt=(row,dir,prev,isMedial)=>{
-         const ax=rK*row.y+rB,maxD=Math.min(sw*.18,Math.max(row.w*1.8,24));
-         let best=null,firstMetalDark=null;
-         for(let dd=3;dd<=maxD;dd++){
-           const x=Math.round(ax+dir*dd);if(x<=xA+2||x>=xB-2)break;
-           const xin=Math.round(x-dir*2),xout2=Math.round(x+dir*2),xout5=Math.round(x+dir*5);
-           const inside=g[row.y*sw+xin],edge=g[row.y*sw+x],outside=g[row.y*sw+xout2],farOutside=g[row.y*sw+xout5];
-           const grad=inside-outside;
-           // dev64 medial rule: starting at the stem axis, prefer the FIRST credible bright-metal -> darker-gap
-           // transition. This prevents the search from skipping the stem edge and locking onto the medial cortex.
-           if(isMedial && firstMetalDark==null){
-             const metalInside=(inside>=mthr-8)||(edge>=mthr-5);
-             const darkGap=(outside<=inside-10)&&(farOutside<=inside-7);
-             const continuity=prev==null||Math.abs(x-prev)<=Math.max(10,row.w*.45);
-             if(metalInside&&darkGap&&continuity)firstMetalDark=x;
-           }
-           const score=grad*1.8+(inside>=mthr?18:0)-(prev!=null?Math.abs(x-prev)*1.4:0);
-           if(!best||score>best.score)best={x,score};
-         }
-         if(isMedial&&firstMetalDark!=null)return firstMetalDark;
-         return best&&best.score>8?best.x:null;
-       };
-       const Lraw=[],Rraw=[];let lp=null,rp=null;
-       // Work distal -> proximal so the reliable distal stem anchors both boundaries.
-       const sideForEdges=($('side')&&$('side').value)||'R';
-       for(let ii=comp.length-1;ii>=0;ii--){
-         const row=comp[ii],leftIsMedial=sideForEdges==='L',rightIsMedial=sideForEdges==='R';
-         const lx=edgeAt(row,-1,lp,leftIsMedial),rx=edgeAt(row,1,rp,rightIsMedial);
-         if(lx!=null)lp=lx;if(rx!=null)rp=rx;
-         Lraw[ii]=lx!=null?lx:(lp!=null?lp:row.l);
-         Rraw[ii]=rx!=null?rx:(rp!=null?rp:row.r);
-       }
-       // Remove isolated edge excursions ("bumps"). A real stem edge changes gradually; a short local
-       // detour caused by moire/bone overlap is replaced by interpolation between stable neighbors.
-       const deBump=(arr,fallback)=>{
-         const out=arr.slice();
-         for(let i=2;i<out.length-2;i++){
-           const pred=(out[i-2]+out[i+2])/2;
-           if(Math.abs(out[i]-pred)>Math.max(7,comp[i].w*.22)){
-             const n1=out[i-1],n2=out[i+1];
-             if(Math.abs(n1-pred)<8&&Math.abs(n2-pred)<8)out[i]=(n1+n2)/2;
-           }
-           // Do not let re-search jump far beyond the connected metal envelope.
-           const lo=fallback(i)-Math.max(5,comp[i].w*.18),hi=fallback(i)+Math.max(5,comp[i].w*.18);
-           out[i]=Math.max(lo,Math.min(hi,out[i]));
-         }
-         return out;
-       };
-       const Lfix=deBump(Lraw,i=>comp[i].l),Rfix=deBump(Rraw,i=>comp[i].r);
-       const left=[],right=[];
-       for(let i=0;i<comp.length;i++){
-         const lo2=Math.max(0,i-4),hi2=Math.min(comp.length,i+5);
-         const ls=Lfix.slice(lo2,hi2).filter(Number.isFinite).sort((x,y)=>x-y),rs=Rfix.slice(lo2,hi2).filter(Number.isFinite).sort((x,y)=>x-y);
-         let lx=ls.length?ls[Math.floor(ls.length/2)]:comp[i].l,rx=rs.length?rs[Math.floor(rs.length/2)]:comp[i].r;
-         // Continuity limiter: radiographic stem borders may taper, but should not make one-row horizontal steps.
-         if(i>0){
-           const pl=left[i-1].x/sx,pr=right[i-1].x/sx;
-           const maxStep=Math.max(2.2,comp[i].w*.055);
-           lx=Math.max(pl-maxStep,Math.min(pl+maxStep,lx));
-           rx=Math.max(pr-maxStep,Math.min(pr+maxStep,rx));
-         }
-         left.push({x:lx*sx,y:comp[i].y*sy});right.push({x:rx*sx,y:comp[i].y*sy});
-       }
-       // Bidirectional light smoothing removes residual stair-steps while preserving the overall taper.
-       for(let i=left.length-2;i>0;i--){
-         left[i].x=(left[i].x*2+left[i-1].x+left[i+1].x)/4;
-         right[i].x=(right[i].x*2+right[i-1].x+right[i+1].x)/4;
-       }
-       // dev54: side-aware medial edge model.
-       // Preserve the measured lateral contour. Fit the entire medial border as one smooth, curved arc-like
-       // function instead of forcing a distal straight segment. Robust rejection prevents moire/bone overlap
-       // from pulling the curve away from the metal boundary.
-       const sideVal=($('side')&&$('side').value)||'R';
-       const medialArr=sideVal==='L'?left:right;
-       const fitMedialCurve=(arr)=>{
-         const y0=arr.reduce((s,p)=>s+p.y,0)/arr.length;
-         const sc=Math.max(1,(Math.max(...arr.map(p=>p.y))-Math.min(...arr.map(p=>p.y)))/2);
-         const solve3=(pts,k,cc)=>{
-           const M=Array.from({length:3},()=>Array(4).fill(0));
-           for(const p of pts){const t=(p.y-y0)/sc,kSide=t<cc?1.0:5.5,g=1/(1+Math.exp(-kSide*(t-cc))),v=[1,t,g];
-             for(let r=0;r<3;r++){for(let q=0;q<3;q++)M[r][q]+=v[r]*v[q];M[r][3]+=v[r]*p.x}}
-           for(let i=0;i<3;i++){let m=i;for(let j=i+1;j<3;j++)if(Math.abs(M[j][i])>Math.abs(M[m][i]))m=j;[M[i],M[m]]=[M[m],M[i]];const d=M[i][i]||1e-9;for(let z=i;z<4;z++)M[i][z]/=d;for(let j=0;j<3;j++)if(j!==i){const q=M[j][i];for(let z=i;z<4;z++)M[j][z]-=q*M[i][z]}}
-           const co=M.map(r=>r[3]),fun=y=>{const t=(y-y0)/sc,kSide=t<cc?1.0:5.5,g=1/(1+Math.exp(-kSide*(t-cc)));return co[0]+co[1]*t+co[2]*g};
-           let sse=0;for(const p of pts){const e=p.x-fun(p.y);sse+=e*e}
-           return {fun,sse,co,k,cc};
-         };
-         const search=(pts)=>{
-           let best=null;
-           // Use asymmetric sigmoid steepness: proximal a=1.0, distal a=5.5; the image still selects the best inflection location.
-           for(const k of [3.5])for(let cc=-0.55;cc<=0.551;cc+=0.10){
-             const m=solve3(pts,k,cc);
-             // Reject a sigmoid whose derivative reverses direction over the fitted interval.
-             let prev=null,mono=true,sgn=0;
-             for(let t=-1;t<=1.001;t+=0.1){const y=y0+t*sc,x=m.fun(y);if(prev!==null){const d=x-prev;if(Math.abs(d)>0.05){const s=Math.sign(d);if(!sgn)sgn=s;else if(s!==sgn){mono=false;break}}}prev=x}
-             if(mono&&(!best||m.sse<best.sse))best=m;
-           }
-           return best;
-         };
-         let use=arr.slice(),model=search(use);
-         if(!model)return y=>arr[Math.max(0,Math.min(arr.length-1,Math.round((y-arr[0].y)/(arr[arr.length-1].y-arr[0].y)*(arr.length-1))))].x;
-         for(let it=0;it<3&&use.length>=10;it++){
-           const rr=use.map(p=>Math.abs(p.x-model.fun(p.y))).sort((x,y)=>x-y),med=rr[Math.floor(rr.length/2)]||1,lim=Math.max(3,med*2.8);
-           use=use.filter(p=>Math.abs(p.x-model.fun(p.y))<=lim);
-           const next=search(use);if(next)model=next;
-         }
-         return model.fun;
-       };
-       if(medialArr.length>=10){
-         // The rounded distal stem tip bends sharply toward the axis and should not define the medial shaft curve.
-         // Fit on the proximal ~88% of the detected border, then extrapolate the fitted curve across the ignored tip.
-         const tipIgnore=Math.max(3,Math.round(medialArr.length*.14));
-         const collarPresent=$('implantCollar')&&$('implantCollar').value==='yes';
-         // With a collared implant, ignore the proximal collar/shoulder portion when fitting the medial stem body.
-         // The sigmoid is estimated from the shaft/body and extrapolated proximally across the ignored collar.
-         const collarIgnore=collarPresent?Math.max(4,Math.round(medialArr.length*.16)):0;
-         const fitEnd=Math.max(collarIgnore+8,medialArr.length-tipIgnore);
-         let fitPts=medialArr.slice(collarIgnore,fitEnd);
-         // dev66: when a collar is present, recover one proximal stem-body anchor immediately below the
-         // ignored collar.  Search the ignored proximal rows from the stem axis outward and keep the
-         // first credible metal->dark boundary closest to the fit start.  Give this anchor extra weight
-         // so the sigmoid reaches the true stem/cortex interface without fitting the collar itself.
-         const manualAnchors=(annotation.stem_interface_anchors||[]).filter(p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y)).sort((a,b)=>a.y-b.y);
-         let manualCurve=null;
-         if(manualAnchors.length>=3){
-           // Human-in-the-loop correction curve: pass EXACTLY through every clicked point.
-           // Piecewise monotone cubic Hermite interpolation (PCHIP-like) avoids the global-circle/sigmoid
-           // behavior where the first 3 points dominate and later points appear to do nothing.
-           const A=[];
-           for(const p of manualAnchors){
-             if(A.length&&Math.abs(p.y-A[A.length-1].y)<1){A[A.length-1]={x:p.x,y:p.y};}
-             else A.push({x:p.x,y:p.y});
-           }
-           if(A.length>=3){
-             const nA=A.length,h=[],d=[],m=Array(nA).fill(0);
-             for(let i=0;i<nA-1;i++){h[i]=Math.max(1e-6,A[i+1].y-A[i].y);d[i]=(A[i+1].x-A[i].x)/h[i];}
-             m[0]=d[0];m[nA-1]=d[nA-2];
-             for(let i=1;i<nA-1;i++){
-               if(d[i-1]*d[i]<=0)m[i]=0;
-               else{const w1=2*h[i]+h[i-1],w2=h[i]+2*h[i-1];m[i]=(w1+w2)/(w1/d[i-1]+w2/d[i]);}
-             }
-             manualCurve=y=>{
-               if(y<=A[0].y)return A[0].x+m[0]*(y-A[0].y);
-               if(y>=A[nA-1].y)return A[nA-1].x+m[nA-1]*(y-A[nA-1].y);
-               let i=0;while(i<nA-2&&y>A[i+1].y)i++;
-               const hh=A[i+1].y-A[i].y,t=(y-A[i].y)/hh,t2=t*t,t3=t2*t;
-               return (2*t3-3*t2+1)*A[i].x+(t3-2*t2+t)*hh*m[i]+(-2*t3+3*t2)*A[i+1].x+(t3-t2)*hh*m[i+1];
-             };
-           }
-         } else if(manualAnchors.length){
-           // With only 1-2 points, keep the automatic model but use them as strong anchors.
-           const weighted=[];for(const a of manualAnchors)for(let rr=0;rr<12;rr++)weighted.push({x:a.x,y:a.y});
-           fitPts=[...weighted,...fitPts];
-         } else if(collarPresent&&collarIgnore>1){
-           // Fallback only: automatically estimate the DISTAL BASE of the collar as the proximal stem-body anchor.
-           // Search a wider proximal band, collect credible metal->dark transitions, then choose the
-           // most distal one. This is more anatomical than letting the mathematical sigmoid decide
-           // where the collar ends and the stem body begins.
-           const probeStart=Math.max(0,collarIgnore-Math.max(5,Math.round(medialArr.length*.12)));
-           const collarCandidates=[];
-           for(let jj=probeStart;jj<collarIgnore;jj++){
-             const p=medialArr[jj],yy=Math.max(2,Math.min(sh-3,Math.round(p.y/sy)));
-             const ax=rK*yy+rB,dir=sideVal==='R'?1:-1,maxD=Math.min(sw*.16,Math.max(22,comp[Math.min(comp.length-1,jj)]?.w*1.7||28));
-             for(let dd=3;dd<=maxD;dd++){
-               const xx=Math.round(ax+dir*dd);if(xx<3||xx>=sw-3)break;
-               const xin=Math.round(xx-dir*2),xout=Math.round(xx+dir*2),xout5=Math.round(xx+dir*5);
-               const inside=g[yy*sw+xin],outside=g[yy*sw+xout],farOutside=g[yy*sw+xout5];
-               if(inside>=mthr-8&&outside<=inside-10&&farOutside<=inside-7){
-                 collarCandidates.push({x:xx*sx,y:yy*sy,jj});break;
-               }
-             }
-           }
-           let proxAnchor=null;
-           if(collarCandidates.length){
-             // Image y increases distally, therefore the candidate with greatest y is the distal collar base.
-             collarCandidates.sort((a,b)=>b.y-a.y);
-             proxAnchor=collarCandidates[0];
-           }
-           if(proxAnchor){
-             // Strong anatomical anchor: repeat it so the proximal end of the fit is pulled to collar base.
-             fitPts=[proxAnchor,proxAnchor,proxAnchor,proxAnchor,proxAnchor,...fitPts];
-           }
-         }
-         const autoMf=fitMedialCurve(fitPts),mf=manualCurve||autoMf;
-         if(manualCurve&&manualAnchors.length>=3){
-           const yMin=manualAnchors[0].y,yMax=manualAnchors[manualAnchors.length-1].y;
-           for(const p of medialArr)if(p.y>=yMin&&p.y<=yMax)p.x=mf(p.y);else p.x=autoMf(p.y);
-         }else{
-           for(const p of medialArr)p.x=mf(p.y);
-         }
-       }
-       const centers=left.map((p,i)=>({x:(p.x+right[i].x)/2,y:p.y}));
-       const n=centers.length,Sy=centers.reduce((s,p)=>s+p.y,0),Sx=centers.reduce((s,p)=>s+p.x,0),Syy=centers.reduce((s,p)=>s+p.y*p.y,0),Syx=centers.reduce((s,p)=>s+p.y*p.x,0);
-       const den=n*Syy-Sy*Sy||1,kk=(n*Syx-Sy*Sx)/den,b0=(Sx-kk*Sy)/n,y0=centers[0].y,y1=centers[n-1].y;
-       autoStemInfo={prox:{x:kk*y0+b0,y:y0},dist:{x:kk*y1+b0,y:y1},vx:kk,threshold:mthr,score:qt,edgeLeft:left,edgeRight:right,passUsed:'region',coverage:span};
-       aiLoaded=true;aiInitial.stem_edges={left,right};aiInitial.stem_axis={prox:autoStemInfo.prox,dist:autoStemInfo.dist,vx:kk};
-       draw();saveWork();
-       $('guide').innerHTML='<span class="status">Lateral edgeは従来輪郭を保持し、medial edgeは軸から最初のmetal→dark transitionを優先し、近位a=1.0・遠位a=5.5・遠位tip約14%除外。手動Stem/cortex補正点はMeasurement modeでも上限なく追加でき、3点以上なら全点を必ず通るshape-preserving曲線に切替えます。補正点範囲外は自動edgeを維持します。1-2点では強いanchorsとして使用し、Collar「あり」では1点目をカラー基部遠位側に置きます（未入力時のみ自動推定）（coverage '+Math.round(span*100)+'%）。骨頭・カップ側はAUTO Stem axis計算から除外しています。</span>';
-       return;
-     }
-   }
- }
- // Region method failed: continue to the dev46 row-tracking fallback below.
- // For each row, collect contiguous bright runs. A stem run should persist vertically with slowly changing center.
- const runsByY=[];
- for(let y=yA;y<yB;y+=2){let runs=[],st=-1;for(let x=xA;x<=xB;x++){const on=x<xB&&g[y*sw+x]>=thr;if(on&&st<0)st=x;if((!on||x===xB)&&st>=0){const en=x-1;if(en-st>=4)runs.push({l:st,r:en,c:(st+en)/2,w:en-st});st=-1}}runsByY.push({y,runs})}
- // Distal-first strategy: identify the metallic stem in the distal third, where head/cup cannot contaminate the search.
- const distalRows=runsByY.filter(z=>z.y>=sh*.62&&z.y<=sh*.88);
- const candidates=[];
- for(const row of distalRows)for(const r of row.runs)if(r.w>=3&&r.w<=sw*.16)candidates.push({...r,y:row.y});
- if(candidates.length<4){autoStemInfo=null;saveWork();draw();alert('遠位ステム候補を十分に検出できませんでした');return}
- // Score each distal candidate by persistence of a similarly centered run in neighboring distal rows.
- let seed=null;
- for(const q of candidates){let support=0;
-   for(const row of distalRows){let md=1e9;for(const r of row.runs)if(r.w>=3&&r.w<=sw*.18)md=Math.min(md,Math.abs(r.c-q.c));if(md<Math.max(8,q.w*.8))support++}
-   const val=support*20-q.w*.15;
-   if(!seed||val>seed.val)seed={...q,val,support};
- }
- // Track from the distal seed. If the first conservative pass is too short, retry with progressively
- // more permissive proximal taper/gap settings rather than accepting a short distal fragment as success.
- const runPass=(maxWFrac,centerBase,centerFrac,ratioHi,ratioLo,maxMiss,widthCost)=>{
-   let cur={c:seed.c,w:seed.w},up=[],miss=0;
-   let idx=runsByY.findIndex(z=>z.y>=seed.y);if(idx<0)idx=runsByY.length-1;
-   for(let ii=idx;ii>=0;ii--){
-     const row=runsByY[ii];let best=null;
-     for(const r of row.runs){
-       if(r.w<3||r.w>sw*maxWFrac)continue;
-       const dc=Math.abs(r.c-cur.c),ratio=r.w/Math.max(1,cur.w);
-       if(dc>Math.max(centerBase,cur.w*centerFrac)||ratio>ratioHi||ratio<ratioLo)continue;
-       const cost=dc+widthCost*Math.abs(r.w-cur.w);
-       if(!best||cost<best.cost)best={...r,y:row.y,cost};
-     }
-     if(best){up.push(best);cur.c=.70*cur.c+.30*best.c;cur.w=.72*cur.w+.28*best.w;miss=0}
-     else if(++miss>maxMiss)break;
-   }
-   cur={c:seed.c,w:seed.w};let down=[];miss=0;
-   for(let ii=idx;ii<runsByY.length;ii++){
-     const row=runsByY[ii];let best=null;
-     for(const r of row.runs){
-       if(r.w<3||r.w>sw*maxWFrac)continue;
-       const dc=Math.abs(r.c-cur.c),ratio=r.w/Math.max(1,cur.w);
-       if(dc>Math.max(centerBase,cur.w*centerFrac)||ratio>ratioHi||ratio<ratioLo)continue;
-       const cost=dc+widthCost*Math.abs(r.w-cur.w);
-       if(!best||cost<best.cost)best={...r,y:row.y,cost};
-     }
-     if(best){down.push(best);cur.c=.70*cur.c+.30*best.c;cur.w=.72*cur.w+.28*best.w;miss=0}
-     else if(++miss>maxMiss)break;
-   }
-   const out=[...up,...down];out.sort((u,v)=>u.y-v.y);return out;
- };
- const spanFrac=(arr)=>arr.length?(arr[arr.length-1].y-arr[0].y)/sh:0;
- let passUsed=1,rr=runPass(.20,14,.75,1.55,.55,10,.35);
- // A valid stem trace should cover a meaningful fraction of image height. Short distal-only traces trigger retry.
- if(spanFrac(rr)<.24||rr.length<18){passUsed=2;rr=runPass(.23,18,1.05,1.85,.42,16,.24)}
- if(spanFrac(rr)<.24||rr.length<18){passUsed=3;rr=runPass(.26,24,1.35,2.20,.32,24,.16)}
- // de-duplicate rows and reject abrupt width jumps typical of cup/head or unrelated bright structures
- const seen=new Set(),clean=[];let last=null;for(const r of rr){if(seen.has(r.y))continue;seen.add(r.y);if(last&&Math.abs(r.c-last.c)>18)continue;clean.push(r);last=r}
- const cleanSpan=clean.length?(clean[clean.length-1].y-clean[0].y)/sh:0;
- if(clean.length<6||cleanSpan<.18){
-   // Diagnostic fallback: a short distal fragment is not accepted as successful stem detection.
 
-   const cand=[];
-   for(const row of runsByY)for(const r of row.runs)if(r.w>=3&&r.w<=sw*.28)cand.push({l:{x:r.l*sx,y:row.y*sy},r:{x:r.r*sx,y:row.y*sy}});
-   autoStemInfo={prox:null,dist:null,vx:0,threshold:thr,score:clean.length,
-     edgeLeft:cand.map(z=>z.l),edgeRight:cand.map(z=>z.r),diagnostic:true};
-   aiLoaded=true;draw();saveWork();
-   $('guide').innerHTML='<span class="status">今回のStem辺縁追跡は未成立です。前回結果は消去し、今回拾えた候補点だけを表示しています。</span>';
-   return;
- }
- // Smooth boundaries with local median-like averaging.
- const medial=[],lateral=[];for(let k=0;k<clean.length;k++){const lo=Math.max(0,k-2),hi=Math.min(clean.length,k+3),seg=clean.slice(lo,hi);const L=seg.reduce((s,r)=>s+r.l,0)/seg.length,R=seg.reduce((s,r)=>s+r.r,0)/seg.length;medial.push({x:L*sx,y:clean[k].y*sy});lateral.push({x:R*sx,y:clean[k].y*sy})}
- // Which image side is anatomical medial depends on R/L hip; preserve image-left/image-right edges and derive center axis independent of naming.
- const centers=medial.map((p,k)=>({x:(p.x+lateral[k].x)/2,y:p.y}));
- const n=centers.length,Sy=centers.reduce((s,p)=>s+p.y,0),Sx=centers.reduce((s,p)=>s+p.x,0),Syy=centers.reduce((s,p)=>s+p.y*p.y,0),Syx=centers.reduce((s,p)=>s+p.y*p.x,0);
- const den=n*Syy-Sy*Sy||1,k=(n*Syx-Sy*Sx)/den,b0=(Sx-k*Sy)/n,y0=centers[0].y,y1=centers[centers.length-1].y;
- autoStemInfo={prox:{x:k*y0+b0,y:y0},dist:{x:k*y1+b0,y:y1},vx:k,threshold:thr,score:clean.length,edgeLeft:medial,edgeRight:lateral,passUsed,coverage:cleanSpan};
- aiLoaded=true;aiInitial.stem_edges={left:medial,right:lateral};aiInitial.stem_axis={prox:autoStemInfo.prox,dist:autoStemInfo.dist,vx:k};
- draw();saveWork();
- $('guide').innerHTML='<span class="status">Stem辺縁候補を自動検出しました（pass '+passUsed+' / coverage '+Math.round(cleanSpan*100)+'%）。水色の短線が各measurement levelのAUTO Stem幅です。手動との差が2 mmを超える箇所は赤で警告します。</span>';
+let pendingAiPrediction=null;
+$('aiJsonFile').onchange=async e=>{
+  const f=e.target.files&&e.target.files[0];if(!f)return;
+  try{pendingAiPrediction=JSON.parse(await f.text());$('guide').innerHTML='<span class="status">AI候補JSONを読み込みました。「AI候補を適用」を押してください。</span>'}
+  catch(err){pendingAiPrediction=null;alert('JSON読込エラー: '+err.message)}
+};
+$('aiSuggest').onclick=()=>{if(!img){alert('先に画像を選択してください');return}if(!pendingAiPrediction){alert('先に「AI候補JSON」を選択してください');return}applyFullPrediction(pendingAiPrediction)};
+$('accept').onclick=()=>{
+  if(start&&elapsedSec==null)elapsedSec=Math.round((Date.now()-start)/1000);
+  accepted=true;calc();saveWork();
+  $('guide').innerHTML='<span class="status">Accepted ✓ 総測定時間 '+(elapsedSec!=null?elapsedSec+' s':'--')+'。「☁ Cloud Save」または「Local Save」で保存できます。</span>';
+};
+$('scale').oninput=calc;$('headSize').oninput=calc;$('calMode').onchange=calc;$('ltVisibility').onchange=()=>{draw();calc()};
+
+let autoStemInfo=null;
+function autoDetectStem(){
+  if(!img){alert('先に画像を選択してください');return}
+  autoStemInfo=null;aiInitial.stem_edges=null;aiInitial.stem_axis=null;draw();
+  const W=cv.width,H=cv.height,sw=Math.min(460,W),sh=Math.round(H*sw/W),sx=W/sw,sy=H/sh;
+  const oc=document.createElement('canvas');oc.width=sw;oc.height=sh;const ox=oc.getContext('2d',{willReadFrequently:true});
+  ox.drawImage(img,0,0,sw,sh);const d=ox.getImageData(0,0,sw,sh).data,g=new Float32Array(sw*sh);
+  for(let q=0,k=0;q<d.length;q+=4,k++)g[k]=0.299*d[q]+0.587*d[q+1]+0.114*d[q+2];
+  const hist=new Uint32Array(256);for(const v of g)hist[Math.max(0,Math.min(255,Math.round(v)))]++;
+  let cum=0,thr=220,target=g.length*.88;for(let v=0;v<256;v++){cum+=hist[v];if(cum>=target){thr=Math.max(165,v);break}}
+  const yA=Math.round(sh*.28),yB=Math.round(sh*.92),xA=Math.round(sw*.08),xB=Math.round(sw*.92);
+  const mask=new Uint8Array(sw*sh),mthr=Math.max(150,thr-18);
+  for(let y=yA;y<yB;y++)for(let x=xA;x<xB;x++)if(g[y*sw+x]>=mthr)mask[y*sw+x]=1;
+  const closed=mask.slice();
+  for(let y=yA+1;y<yB-1;y++)for(let x=xA+1;x<xB-1;x++){
+    const q=y*sw+x;if(mask[q])continue;
+    if((mask[q-1]&&mask[q+1])||(mask[q-sw]&&mask[q+sw]))closed[q]=1;
+  }
+  let seedPix=-1,bestSeed=-1;
+  for(let y=Math.round(sh*.60);y<Math.round(sh*.90);y+=2){
+    let st=-1;
+    for(let x=xA;x<=xB;x++){
+      const on=x<xB&&closed[y*sw+x];
+      if(on&&st<0)st=x;
+      if((!on||x===xB)&&st>=0){
+        const en=x-1,w=en-st+1,cx=(st+en)>>1;
+        if(w>=4&&w<=sw*.14){
+          let local=0;for(let yy=Math.max(yA,y-8);yy<=Math.min(yB-1,y+8);yy+=2)for(let xx=Math.max(xA,cx-3);xx<=Math.min(xB-1,cx+3);xx++)local+=closed[yy*sw+xx];
+          const score=local*5+w;if(score>bestSeed){bestSeed=score;seedPix=y*sw+cx}
+        }st=-1;
+      }
+    }
+  }
+  if(seedPix>=0){
+    const vis=new Uint8Array(sw*sh),Q=new Int32Array(sw*sh);let qh=0,qt=0;Q[qt++]=seedPix;vis[seedPix]=1;
+    while(qh<qt){
+      const q=Q[qh++],y=(q/sw)|0,x=q-y*sw;
+      for(const z of [q-1,q+1,q-sw,q+sw]){if(z<0||z>=vis.length||vis[z]||!closed[z])continue;const zy=(z/sw)|0,zx=z-zy*sw;if(zx<xA||zx>=xB||zy<yA||zy>=yB)continue;vis[z]=1;Q[qt++]=z}
+    }
+    const env=[];
+    for(let y=yA;y<yB;y+=2){
+      let l=sw,r=-1,count=0;for(let x=xA;x<xB;x++)if(vis[y*sw+x]){l=Math.min(l,x);r=Math.max(r,x);count++}
+      if(count>=4&&r-l<=sw*.30)env.push({y,l,r,c:(l+r)/2,w:r-l});
+    }
+    if(env.length>=12){
+      const sy0=(seedPix/sw)|0;let si=0,bd=1e9;env.forEach((e,i)=>{const dd=Math.abs(e.y-sy0);if(dd<bd){bd=dd;si=i}});
+      let lo=si,hi=si,gap=0;
+      for(let i=si-1;i>=0;i--){if(env[i+1].y-env[i].y<=8){lo=i;gap=0}else if(++gap>2)break}
+      gap=0;for(let i=si+1;i<env.length;i++){if(env[i].y-env[i-1].y<=8){hi=i;gap=0}else if(++gap>2)break}
+      let comp=env.slice(lo,hi+1);
+      if(comp.length>=16){
+        const distalPool=comp.slice(Math.floor(comp.length*.58)).map(e=>e.w).sort((x,y)=>x-y);
+        const baseW=distalPool[Math.floor(distalPool.length/2)]||comp[comp.length-1].w;
+        let shoulder=-1,wideRun=0;
+        for(let i=comp.length-1;i>=0;i--){
+          const wide=comp[i].w>Math.max(baseW*2.15,baseW+18);
+          if(wide){wideRun++;if(wideRun>=5){shoulder=i+4;break}}else wideRun=0;
+        }
+        if(shoulder>0&&comp.length-shoulder>=14)comp=comp.slice(shoulder);
+      }
+      const span=comp.length?(comp[comp.length-1].y-comp[0].y)/sh:0;
+      if(comp.length>=16&&span>=.16){
+        const left=comp.map(r=>({x:r.l*sx,y:r.y*sy})),right=comp.map(r=>({x:r.r*sx,y:r.y*sy}));
+        const centers=left.map((p,i)=>({x:(p.x+right[i].x)/2,y:p.y}));
+        const n=centers.length,Sy=centers.reduce((s,p)=>s+p.y,0),Sx=centers.reduce((s,p)=>s+p.x,0),Syy=centers.reduce((s,p)=>s+p.y*p.y,0),Syx=centers.reduce((s,p)=>s+p.y*p.x,0);
+        const den=n*Syy-Sy*Sy||1,kk=(n*Syx-Sy*Sx)/den,b0=(Sx-kk*Sy)/n,y0=centers[0].y,y1=centers[n-1].y;
+        autoStemInfo={prox:{x:kk*y0+b0,y:y0},dist:{x:kk*y1+b0,y:y1},vx:kk,threshold:mthr,score:qt,edgeLeft:left,edgeRight:right,passUsed:'region',coverage:span};
+        aiLoaded=true;aiInitial.stem_edges={left,right};aiInitial.stem_axis={prox:autoStemInfo.prox,dist:autoStemInfo.dist,vx:kk};
+        draw();saveWork();
+        $('guide').innerHTML='<span class="status">Stem辺縁およびStem軸を自動検出しました（coverage '+Math.round(span*100)+'%）。</span>';
+        return;
+      }
+    }
+  }
+  alert('Stem自動検出が成立しませんでした。AI Mask512 PNGまたは手動トレースを使用してください。');
 }
+
 function autoDetectHead(){
- if(!img){alert('先に画像を選択してください');return}
- if(!autoStemInfo){alert('先にStem自動検出を実行してください');return}
- const W=cv.width,H=cv.height,sw=Math.min(460,W),sh=Math.round(H*sw/W),sx=W/sw,sy=H/sh;
- const oc=document.createElement('canvas');oc.width=sw;oc.height=sh;const ox=oc.getContext('2d',{willReadFrequently:true});
- ox.drawImage(img,0,0,sw,sh);const d=ox.getImageData(0,0,sw,sh).data,g=new Float32Array(sw*sh);
- for(let q=0,k=0;q<d.length;q+=4,k++)g[k]=0.299*d[q]+0.587*d[q+1]+0.114*d[q+2];
- function pix(x,y){x=Math.max(1,Math.min(sw-2,Math.round(x)));y=Math.max(1,Math.min(sh-2,Math.round(y)));return g[y*sw+x]}
- // Stem-connected partial-rim fit: search only proximal neighborhood and score visible arcs, not a complete circle.
- const px=autoStemInfo.prox.x/sx,py=autoStemInfo.prox.y/sy;
- const rMin=Math.max(12,Math.round(55/sx)),rMax=Math.max(rMin+5,Math.round(125/sx));
- const searchR=Math.max(100,rMax*5.5);
- let best=null;
- // 48 angular samples; a true head may have cup overlap, so only strongest ~45% of rim samples contribute.
- const ang=[];for(let a=0;a<Math.PI*2;a+=Math.PI/24)ang.push([Math.cos(a),Math.sin(a),a]);
- function arcScore(cx,cy,r){
-   const vals=[];let bright=0;
-   for(const[ca,sa,a]of ang){
-     const i1=pix(cx+ca*(r-2),cy+sa*(r-2)),o1=pix(cx+ca*(r+2),cy+sa*(r+2));
-     const e=Math.abs(i1-o1);vals.push(e);bright+=i1;
-   }
-   vals.sort((a,b)=>b-a);const keep=Math.max(14,Math.floor(vals.length*.46));
-   const edge=vals.slice(0,keep).reduce((a,b)=>a+b,0)/keep;
-   return edge+0.10*(bright/ang.length);
- }
- // Centers must be proximal to stem; proximity to proximal stem/neck is favored, but partial arcs drive the fit.
- for(let r=rMin;r<=rMax;r+=3){
-   const st=Math.max(4,Math.round(r/5));
-   for(let cy=Math.max(r+2,Math.round(py-searchR));cy<Math.min(py+r*.2,sh-r-2);cy+=st)
-   for(let cx=Math.max(r+2,Math.round(px-searchR));cx<Math.min(sw-r-2,Math.round(px+searchR));cx+=st){
-     const pd=Math.hypot(cx-px,cy-py);if(pd>searchR)continue;
-     let score=arcScore(cx,cy,r);
-     // favor a head-sized circle that is the first circular expansion connected to proximal stem
-     score+=18*Math.max(0,1-pd/searchR)+8*((r-rMin)/Math.max(1,rMax-rMin));
-     if(!best||score>best.score)best={cx,cy,r,score};
-   }
- }
- if(!best){alert('Head候補を検出できませんでした');return}
- let b=best;
- for(let r=Math.max(rMin,b.r-5);r<=Math.min(rMax,b.r+5);r++)
- for(let cy=Math.max(r+2,b.cy-7);cy<=Math.min(sh-r-2,b.cy+7);cy++)
- for(let cx=Math.max(r+2,b.cx-7);cx<=Math.min(sw-r-2,b.cx+7);cx++){
-   const pd=Math.hypot(cx-px,cy-py);if(pd>searchR||cy>=py+r*.25)continue;
-   const score=arcScore(cx,cy,r)+18*Math.max(0,1-pd/searchR)+8*((r-rMin)/Math.max(1,rMax-rMin));
-   if(score>b.score)b={cx,cy,r,score};
- }
- const C={x:b.cx*sx,y:b.cy*sy},R=b.r*(sx+sy)/2;
- pts.head1={x:C.x+R,y:C.y};pts.head2={x:C.x-R*0.5,y:C.y+R*Math.sqrt(3)/2};pts.head3={x:C.x-R*0.5,y:C.y-R*Math.sqrt(3)/2};
- annotation.head={center:C,radius_px:R,source:'stem-connected-partial-rim-v1',score:b.score};
- aiLoaded=true;aiInitial.head={center:{...C},radius_px:R,source:'stem-connected-partial-rim-v1',score:b.score};
- step=Math.max(step,3);calc();draw();saveWork();
- $('guide').innerHTML='<span class="status">Stemから連続する部分円弧でHead候補を推定しました。緑円を確認してください。</span>';
+  if(!img){alert('先に画像を選択してください');return}
+  if(!autoStemInfo){alert('先にStem自動検出を実行してください');return}
+  const W=cv.width,H=cv.height,sw=Math.min(460,W),sh=Math.round(H*sw/W),sx=W/sw,sy=H/sh;
+  const oc=document.createElement('canvas');oc.width=sw;oc.height=sh;const ox=oc.getContext('2d',{willReadFrequently:true});
+  ox.drawImage(img,0,0,sw,sh);const d=ox.getImageData(0,0,sw,sh).data,g=new Float32Array(sw*sh);
+  for(let q=0,k=0;q<d.length;q+=4,k++)g[k]=0.299*d[q]+0.587*d[q+1]+0.114*d[q+2];
+  function pix(x,y){x=Math.max(1,Math.min(sw-2,Math.round(x)));y=Math.max(1,Math.min(sh-2,Math.round(y)));return g[y*sw+x]}
+  const px=autoStemInfo.prox.x/sx,py=autoStemInfo.prox.y/sy;
+  const rMin=Math.max(12,Math.round(55/sx)),rMax=Math.max(rMin+5,Math.round(125/sx)),searchR=Math.max(100,rMax*5.5);
+  let best=null;const ang=[];for(let a=0;a<Math.PI*2;a+=Math.PI/24)ang.push([Math.cos(a),Math.sin(a),a]);
+  function arcScore(cx,cy,r){
+    const vals=[];let bright=0;
+    for(const[ca,sa]of ang){const i1=pix(cx+ca*(r-2),cy+sa*(r-2)),o1=pix(cx+ca*(r+2),cy+sa*(r+2));vals.push(Math.abs(i1-o1));bright+=i1}
+    vals.sort((a,b)=>b-a);const keep=Math.max(14,Math.floor(vals.length*.46));
+    return vals.slice(0,keep).reduce((a,b)=>a+b,0)/keep+0.10*(bright/ang.length);
+  }
+  for(let r=rMin;r<=rMax;r+=3){
+    const st=Math.max(4,Math.round(r/5));
+    for(let cy=Math.max(r+2,Math.round(py-searchR));cy<Math.min(py+r*.2,sh-r-2);cy+=st)
+      for(let cx=Math.max(r+2,Math.round(px-searchR));cx<Math.min(sw-r-2,Math.round(px+searchR));cx+=st){
+        const pd=Math.hypot(cx-px,cy-py);if(pd>searchR)continue;
+        let score=arcScore(cx,cy,r)+18*Math.max(0,1-pd/searchR)+8*((r-rMin)/Math.max(1,rMax-rMin));
+        if(!best||score>best.score)best={cx,cy,r,score};
+      }
+  }
+  if(!best){alert('Head候補を検出できませんでした');return}
+  const C={x:best.cx*sx,y:best.cy*sy},R=best.r*(sx+sy)/2;
+  pts.head1={x:C.x+R,y:C.y};pts.head2={x:C.x-R*0.5,y:C.y+R*Math.sqrt(3)/2};pts.head3={x:C.x-R*0.5,y:C.y-R*Math.sqrt(3)/2};
+  annotation.head={center:C,radius_px:R,rmse_px:0,source:'stem-connected-partial-rim-v1',score:best.score};
+  step=Math.max(step,3);calc();draw();saveWork();
+  $('guide').innerHTML='<span class="status">Head候補を自動推定しました。緑円を確認してください。</span>';
 }
-function circle3(a,b,c){if(!a||!b||!c)return null;let d=2*(a.x*(b.y-c.y)+b.x*(c.y-a.y)+c.x*(a.y-b.y));if(Math.abs(d)<1e-6)return null;let aa=a.x*a.x+a.y*a.y,bb=b.x*b.x+b.y*b.y,cc=c.x*c.x+c.y*c.y;let x=(aa*(b.y-c.y)+bb*(c.y-a.y)+cc*(a.y-b.y))/d,y=(aa*(c.x-b.x)+bb*(a.x-c.x)+cc*(b.x-a.x))/d;return{x,y,r:Math.hypot(a.x-x,a.y-y)}}function canal(l){return dist(pts['m'+l],pts['l'+l])}function calc(){
+$('autoStem').onclick=()=>{autoDetectStem();guide()};
+$('autoHead').onclick=()=>{autoDetectHead();guidedStage=0;$('workMode').value='annotation';$('annotationTarget').value='head';guide()};
+
+function circle3(a,b,c){
+  if(!a||!b||!c)return null;
+  let d=2*(a.x*(b.y-c.y)+b.x*(c.y-a.y)+c.x*(a.y-b.y));if(Math.abs(d)<1e-6)return null;
+  let aa=a.x*a.x+a.y*a.y,bb=b.x*b.x+b.y*b.y,cc=c.x*c.x+c.y*c.y;
+  let x=(aa*(b.y-c.y)+bb*(c.y-a.y)+cc*(a.y-b.y))/d,y=(aa*(c.x-b.x)+bb*(a.x-c.x)+cc*(b.x-a.x))/d;
+  return{x,y,r:Math.hypot(a.x-x,a.y-y)};
+}
+
+function calc(){
   let s=parseFloat($('scale').value)||null;
-  if($('calMode').value==='head'){let hd=parseFloat($('headSize').value)||32,hc=circle3(pts.head1,pts.head2,pts.head3),hp=hc?2*hc.r:(annotation.head&&Number.isFinite(annotation.head.radius_px)?2*annotation.head.radius_px:null);if(hp){s=hd/hp;$('scale').value=s.toFixed(5)}}
+  if($('calMode').value==='head'){
+    let hd=parseFloat($('headSize').value)||32,hc=circle3(pts.head1,pts.head2,pts.head3);
+    let hp=hc?2*hc.r:(annotation.head&&Number.isFinite(annotation.head.radius_px)?2*annotation.head.radius_px:null);
+    if(hp){s=hd/hp;$('scale').value=s.toFixed(5)}
+  }
   const g=measurementGeometry(),fixed={};
   if(g){const rows=calculateProfiles();for(const l of levels)fixed[l]=rows.find(r=>r.distance_from_LT_mm===l)||null}
-  const r100=fixed[100],c100=r100&&r100.canal_width_px,o100=r100&&r100.outer_width_px;
+  const r100=fixed[100];
   $('cti').textContent=r100&&r100.CTI!=null?r100.CTI.toFixed(3):'--';
   const cw=l=>fixed[l]&&fixed[l].canal_width_px;
-  let p10=cw(-10),c0=cw(0),d20=cw(20),d30=cw(30),d70=cw(70);
-  $('ldra').textContent=c0&&d20?(c0/d20).toFixed(3):'--';
-  $('ldrb').textContent=c0&&d30?(c0/d30).toFixed(3):'--';
-  $('mci').textContent=c0&&d70?(c0/d70).toFixed(3):'--';
+  const ow=l=>fixed[l]&&fixed[l].outer_width_px;
+  let p20=cw(-20),p10=cw(-10),c0=cw(0),d20=cw(20),d30=cw(30),d70=cw(70),d100=cw(100),o100=ow(100);
+  const la=c0&&d20?(c0/d20).toFixed(2):'--', lb=c0&&d30?(c0/d30).toFixed(2):'--';
+  $('ldra').textContent=la+' / '+lb;
+  $('ldrb').textContent=lb;
+  $('mci').textContent=(c0&&d70?(c0/d70).toFixed(2):'--')+' / '+(p10&&d20?(p10/d20).toFixed(2):'--');
   $('p20d20').textContent=p10&&d20?(p10/d20).toFixed(3):'--';
   $('p20d30').textContent=p10&&d30?(p10/d30).toFixed(3):'--';
-  $('time').textContent=elapsedSec!=null?elapsedSec+' s':(start?Math.round((Date.now()-start)/1000)+' s':'--');
-  $('tbl').innerHTML=levels.map(l=>{const r=fixed[l];return '<tr><td>'+(l>=0?'+':'')+l+'</td><td>'+(r&&r.canal_width_px!=null?r.canal_width_px.toFixed(2):'')+'</td><td>'+(r&&r.canal_width_mm!=null?r.canal_width_mm.toFixed(2):'')+'</td><td>'+(r&&r.outer_width_px!=null?r.outer_width_px.toFixed(2):'')+'</td><td>'+(r&&r.outer_width_mm!=null?r.outer_width_mm.toFixed(2):'')+'</td><td>'+(r&&r.stem_width_mm!=null?r.stem_width_mm.toFixed(2):'')+'</td><td>'+(r&&r.auto_stem_width_mm!=null?r.auto_stem_width_mm.toFixed(2):'')+'</td><td'+(r&&r.delta_stem_mm!=null&&Math.abs(r.delta_stem_mm)>2?' style="background:#7f1d1d;color:#fff;font-weight:700"':'')+'>'+(r&&r.delta_stem_mm!=null?r.delta_stem_mm.toFixed(2):'')+'</td><td>'+(r&&r.CTI!=null?r.CTI.toFixed(3):'')+'</td><td>'+(r&&r.CFR!=null?r.CFR.toFixed(3):'')+'</td><td>'+(r&&r.auto_CFR!=null?r.auto_CFR.toFixed(3):'')+'</td></tr>'}).join('');;
+
+  $('cfiVal').textContent=(p20&&d100)?(p20/d100).toFixed(2):'--';
+  $('ccrVal').textContent=(d100&&c0)?(d100/c0).toFixed(2):'--';
+  $('cbrVal').textContent=(d100&&o100)?(d100/o100).toFixed(2):'--';
+  const axes=computeAxesAndAlignment(g);
+  $('alignVal').textContent=axes.alignDeg!=null?(axes.alignDeg>=0?'+':'')+axes.alignDeg.toFixed(1)+'°':'--';
+  $('meanFillVal').textContent=continuousSummary.mean_stem_fill_total!=null?continuousSummary.mean_stem_fill_total.toFixed(3):'--';
+  if(continuousSummary.mean_fill_prox_third!=null){
+    $('zoneFillVal').textContent=[continuousSummary.mean_fill_prox_third,continuousSummary.mean_fill_mid_third,continuousSummary.mean_fill_dist_third].map(v=>v!=null?v.toFixed(2):'-').join('/');
+  }else $('zoneFillVal').textContent='--';
+
+  const shiftMm=computeObserverCanalShiftMm();
+  const tStr=elapsedSec!=null?elapsedSec+'s':(start?Math.round((Date.now()-start)/1000)+'s':'--');
+  $('time').textContent=tStr+(shiftMm!=null?' / Δ'+shiftMm.toFixed(2)+'mm':'');
+
+  $('tbl').innerHTML=levels.map(l=>{
+    const r=fixed[l];
+    return '<tr><td>'+(l>=0?'+':'')+l+' mm</td><td>'+(r&&r.canal_width_px!=null?r.canal_width_px.toFixed(1):'')+'</td><td>'+(r&&r.canal_width_mm!=null?r.canal_width_mm.toFixed(2):'')+'</td><td>'+(r&&r.outer_width_px!=null?r.outer_width_px.toFixed(1):'')+'</td><td>'+(r&&r.outer_width_mm!=null?r.outer_width_mm.toFixed(2):'')+'</td><td>'+(r&&r.stem_width_mm!=null?r.stem_width_mm.toFixed(2):'')+'</td><td>'+(r&&r.auto_stem_width_mm!=null?r.auto_stem_width_mm.toFixed(2):'')+'</td><td'+(r&&r.delta_stem_mm!=null&&Math.abs(r.delta_stem_mm)>2?' style="background:#7f1d1d;color:#fff;font-weight:700"':'')+'>'+(r&&r.delta_stem_mm!=null?r.delta_stem_mm.toFixed(2):'')+'</td><td>'+(r&&r.CTI!=null?r.CTI.toFixed(3):'')+'</td><td>'+(r&&r.CFR!=null?r.CFR.toFixed(3):'')+'</td><td>'+(r&&r.auto_CFR!=null?r.auto_CFR.toFixed(3):'')+'</td></tr>';
+  }).join('');
 }
-function imageWorkKey(file){
-  if(!file)return null;
-  return 'FMA_work_v2_'+[file.name,file.size].join('_');
-}
+
+function imageWorkKey(file){return file?'FMA_work_v21_'+[file.name,file.size].join('_'):null}
 function saveWork(){
   if(!window._fmaFile)return;
   const key=imageWorkKey(window._fmaFile);if(!key)return;
   const data={pts,step,zoom,panX,panY,annotation,annotationClosed,annotationCorrectionCount,profileRows,autoStemInfo,start,elapsedSec,
-    fields:{studyId:$('studyId').value,observerId:$('observerId').value,imageType:$('imageType').value,session:$('session').value,side:$('side').value,implantCollar:$('implantCollar').value,headSize:$('headSize').value,calMode:$('calMode').value,scale:$('scale').value},
-    savedAt:new Date().toISOString(),appVersion:'2.0.0-dev.103'};
+    fields:{studyId:$('studyId').value,patientId:$('patientId').value,observerId:$('observerId').value,imageType:$('imageType').value,stemFamily:$('stemFamily').value,side:$('side').value,implantCollar:$('implantCollar').value,headSize:$('headSize').value,calMode:$('calMode').value,scale:$('scale').value,ltVisibility:$('ltVisibility').value,doubleCortex:$('doubleCortex').value,exclusionFlag:$('exclusionFlag').value},
+    savedAt:new Date().toISOString(),appVersion:'v2.1.2-cloud'};
   try{localStorage.setItem(key,JSON.stringify(data))}catch(e){}
 }
-function restoreWork(file){
-  const key=imageWorkKey(file);if(!key)return false;
-  const legacy='FMA_work_v1_'+[file.name,file.size,file.lastModified].join('_');
-  let raw=null;try{raw=localStorage.getItem(key)||localStorage.getItem(legacy)}catch(e){}
-  let d=null;try{d=JSON.parse(raw||'null')}catch(e){}
-  if(!d)return false;
-  pts=d.pts||{};
-  const validKeys=steps.map(x=>x[1]);let n=0;while(n<validKeys.length&&pts[validKeys[n]])n++;
-  step=n;
-  start=d.start||Date.now();elapsedSec=d.elapsedSec!=null?d.elapsedSec:null;
-  zoom=d.zoom||1;panX=d.panX||0;panY=d.panY||0;
-  annotation=d.annotation||{};
-  annotation.version=annotation.version||'1.0-pilot';
-  for(const k of ['lt_region','femur_mask','canal_mask','stem_mask','femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral','stem_interface_anchors'])if(!Array.isArray(annotation[k]))annotation[k]=[];
-  if(!('head' in annotation))annotation.head=null;if(!('lt_midpoint' in annotation))annotation.lt_midpoint=null;if(!Array.isArray(annotation.stem_interface_anchors))annotation.stem_interface_anchors=[];if(annotation.collar_base&&annotation.stem_interface_anchors.length===0)annotation.stem_interface_anchors=[annotation.collar_base];
-  annotationClosed=d.annotationClosed||{femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};
-  annotationCorrectionCount=d.annotationCorrectionCount||0;profileRows=d.profileRows||[];autoStemInfo=d.autoStemInfo||null;
-  if(d.fields)for(const [k,v] of Object.entries(d.fields)){if($(k)&&v!=null)$(k).value=v}
-  $('zoomLabel').textContent=Math.round(zoom*100)+'%';
-  try{localStorage.setItem(key,JSON.stringify({...d,pts,step,appVersion:'2.0.0-dev.103'}))}catch(e){}
-  return true;
-}
 function clearSavedWork(){if(window._fmaFile){const k=imageWorkKey(window._fmaFile);if(k)localStorage.removeItem(k)}}
-function esc(v){v=String(v??'');return '"'+v.replaceAll('"','""')+'"'}$('export').onclick=()=>{if(!confirmMissingBeforeSave('CSV出力'))return;if(step<steps.length){alert('測定が完了していません');return}let s=parseFloat($('scale').value)||'';let rows=[['Study_ID','Observer_ID','Image_type','Session','Side','Implant_collar','Landmark_name','X_px','Y_px','Image_width_px','Image_height_px','Scale_mm_per_px','Head_diameter_mm','Calibration_source','AP_CTI','LDR_alpha','LDR_beta','Modified_MCI','P10_D20','P10_D30','Measurement_time_sec','AI_initial_prediction','AI_landmark_count','Profile_point_count','Profile_interval_mm','Human_corrected','Correction_count','Accepted','App_version','Timestamp']];for(const[name,k]of steps){let p=pts[k];rows.push([$ ('studyId').value,$('observerId').value,$('imageType').value,$('session').value,$('side').value,$('implantCollar').value,k,p.x.toFixed(3),p.y.toFixed(3),cv.width,cv.height,s,$('headSize').value,$('calMode').value,$('cti').textContent,$('ldra').textContent,$('ldrb').textContent,$('mci').textContent,$('p20d20').textContent,$('p20d30').textContent,elapsedSec!=null?elapsedSec:(start?Math.round((Date.now()-start)/1000):''),aiLoaded?'true':'false',Object.keys(aiInitial).length,profileRows.length,profileRows.length?'1':'',correctionCount>0?'true':'false',correctionCount,accepted?'true':'false','2.0.0-dev.103',new Date().toISOString()])}let csv=rows.map(r=>r.map(esc).join(',')).join('\n');let b=new Blob([csv],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`FMA_${$('studyId').value||'case'}_${$('observerId').value||'observer'}.csv`;a.click();URL.revokeObjectURL(a.href)};guide();draw();
-$('workMode').onchange=()=>{guide();saveWork();};$('annotationTarget').onchange=()=>{$('workMode').value='annotation';guide();saveWork();};
+function esc(v){v=String(v??'');return '"'+v.replaceAll('"','""')+'"'}
 
+$('export').onclick=()=>{
+  if(!confirmMissingBeforeSave('CSV出力'))return;
+  let csv=measurementCsvText();
+  downloadBlob(csv,'text/csv;charset=utf-8',`FMA_${ensureCaseId()||'case'}_${$('observerId').value||'observer'}.csv`);
+};
+$('workMode').onchange=()=>{guide();saveWork()};
+$('annotationTarget').onchange=()=>{$('workMode').value='annotation';guide();saveWork()};
 ['pointerup'].forEach(ev=>cv.addEventListener(ev,()=>setTimeout(saveWork,0)));
-['studyId','observerId','imageType','session','side','implantCollar','headSize','calMode','scale','workMode','annotationTarget'].forEach(id=>{if($(id))$(''+id).addEventListener('change',saveWork)});
+['studyId','patientId','observerId','imageType','stemFamily','side','implantCollar','headSize','calMode','scale','ltVisibility','doubleCortex','exclusionFlag','workMode','annotationTarget'].forEach(id=>{if($(id))$(id).addEventListener('change',saveWork)});
 window.addEventListener('beforeunload',saveWork);
-setInterval(saveWork,5000);guide();draw();
+guide();draw();
 </script></body></html>
