@@ -194,3 +194,24 @@ assert.equal(run("defaultCalibrationDiameter('native')"),'25','default preoperat
 assert.equal(run("defaultCalibrationDiameter('other')"),'','unknown image types must not silently calibrate');
 assert.match(html,/\$\('headSize'\)\.value=defaultCalibrationDiameter\(\$\('imageType'\)\.value\)/,'image load / mode changes must update default');
 console.log('PASS: postoperative 32mm initial value, preop 25mm marker, dynamic per-image defaults');
+
+
+// AI model provenance defaults: pilot run is documented, not a generic app version.
+// Unknown models are explicitly allowed as missing; JSON inference metadata takes precedence.
+assert.equal(run('DEFAULT_PILOT_MODEL_VERSION'),'FMA-AI-v2-10cases');
+assert.match(html,/<input id="modelVersion"[^>]*value="FMA-AI-v2-10cases"/);
+assert.ok(html.includes("$('modelVersion').value=DEFAULT_PILOT_MODEL_VERSION;"),
+  'new image must restore pilot default');
+assert.ok(html.includes("pred.provenance_and_split?.model_version||pred.model_version||pred.prediction?.model_version||''"),
+  'inference JSON must overwrite pilot preset with recorded model or unknown');
+set('modelVersion','FMA-AI-v2-10cases');run('aiLoaded=true');
+let pilotRecord=run('buildDataDictionaryV11Record()');
+assert.equal(pilotRecord.provenance_and_split.model_version,'FMA-AI-v2-10cases');
+assert.equal(pilotRecord.provenance_and_split.model_version_status,'recorded');
+set('modelVersion','');pilotRecord=run('buildDataDictionaryV11Record()');
+assert.equal(pilotRecord.provenance_and_split.model_version,null);
+assert.equal(pilotRecord.provenance_and_split.model_version_status,'unknown');
+run('aiLoaded=false');set('modelVersion','FMA-AI-v2-10cases');
+pilotRecord=run('buildDataDictionaryV11Record()');
+assert.equal(pilotRecord.provenance_and_split.model_version,null,'pure manual teacher data must have N/A model');
+console.log('PASS: documented pilot model default; metadata override; unknown and manual provenance safeguards');
