@@ -121,3 +121,33 @@ for(const side of ['R','L'])for(const mode of ['islands','short','long','speck']
  }
 }
 console.log('PASS: R/L canal island recovery, short gap interpolation, long-gap abstention, isolated-noise rejection and stem-tip protection');
+
+
+// Proximal lateral canal teacher rule: pure class 2 can start below the stem shoulder.
+// The class>=2 union MUST NOT extend canal_lateral into stem-only proximal rows.
+function proximalCanalFixture(side,mode){
+ const W=256,H=256,px=new Uint8ClampedArray(W*H*4);
+ const mark=(x,y,k)=>{const xx=side==='R'?x:W-1-x,i=(y*W+xx)*4;px[i]=px[i+1]=px[i+2]=k;px[i+3]=255};
+ for(let y=20;y<=205;y++){
+  const cutoff=mode==='pure-throughout'?20:mode==='no-lateral-pure'?999:mode==='single-noise'?110:115;
+  for(let x=60;x<=205;x++){
+   let k=1;if(x>=85&&x<=180)k=2;if(x>=95&&x<=165)k=3;
+   if(y<cutoff&&x<95)k=1;
+   if(mode==='single-noise'&&y===25&&x>=83&&x<=87)k=2;
+   mark(x,y,k);
+  }
+ }
+ return px;
+}
+for(const side of ['R','L'])for(const mode of ['base-cutoff','pure-throughout','no-lateral-pure','single-noise']){
+ front.proximalCanalFixture=proximalCanalFixture(side,mode);
+ const contours=run('fmaExtractMaskContours(proximalCanalFixture,256,256,'+(side==='R'?'true':'false')+')');
+ const lat=side==='R'?contours.canL:contours.canR;
+ const med=side==='R'?contours.canR:contours.canL;
+ const start=mode==='base-cutoff'?115:mode==='pure-throughout'?20:mode==='single-noise'?110:null;
+ assert.equal(contours.qc.canalLatStartY,start,'pure-class2 start '+side+' '+mode);
+ assert.equal(lat.length>0?lat[0].y:null,start,'lateral contour must not extend proximally '+side+' '+mode);
+ assert.ok(med.length>0&&med[0].y===20,'medial canal must preserve independent proximal limit '+side+' '+mode);
+}
+assert.ok(html.includes("fillBetweenRendered('canal_medial','canal_lateral','rgb(2,2,2)',true)"),'teacher class-2 raster must be clipped to shared proximal extent');
+console.log('PASS: R/L pure-class2 proximal canal cutoff, noise rejection, and masked extent clipping');
