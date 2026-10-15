@@ -422,11 +422,16 @@ function autoStemWidthAt(p,n){
 function calculateProfiles(){
   const g=measurementGeometry();if(!g)return[];
   const n={x:-g.vy,y:g.vx},rows=[];
+  // Cache the same smoothed, axis-ordered paths used by the overlay and saved mask.
+  // Avoid per-millimeter recomputation and prevent render/metric divergence.
+  const femMed=getRenderedContour('femur_medial'),femLat=getRenderedContour('femur_lateral');
+  const canMed=getRenderedContour('canal_medial'),canLat=getRenderedContour('canal_lateral');
+  const stmMed=getRenderedContour('stem_medial'),stmLat=getRenderedContour('stem_lateral');
   for(let mm=-20;mm<=120;mm+=1){
     const p={x:g.lt.x+g.vx*mm*g.pxPerMm,y:g.lt.y+g.vy*mm*g.pxPerMm};
-    const ow=(annotation.femur_medial.length&&annotation.femur_lateral.length)?pairedWidth(annotation.femur_medial,annotation.femur_lateral,p,n):widthAt(annotation.femur_mask,p,n,annotationClosed.femur_mask);
-    const cw=(annotation.canal_medial.length&&annotation.canal_lateral.length)?pairedWidth(annotation.canal_medial,annotation.canal_lateral,p,n):widthAt(annotation.canal_mask,p,n,annotationClosed.canal_mask);
-    const sw=(annotation.stem_medial.length&&annotation.stem_lateral.length)?pairedWidth(annotation.stem_medial,annotation.stem_lateral,p,n):widthAt(annotation.stem_mask,p,n,annotationClosed.stem_mask);
+    const ow=(femMed.length&&femLat.length)?pairedWidth(femMed,femLat,p,n):widthAt(annotation.femur_mask,p,n,annotationClosed.femur_mask);
+    const cw=(canMed.length&&canLat.length)?pairedWidth(canMed,canLat,p,n):widthAt(annotation.canal_mask,p,n,annotationClosed.canal_mask);
+    const sw=(stmMed.length&&stmLat.length)?pairedWidth(stmMed,stmLat,p,n):widthAt(annotation.stem_mask,p,n,annotationClosed.stem_mask);
     const asw=autoStemWidthAt(p,n);
     const effSw=sw||asw;
     rows.push({
