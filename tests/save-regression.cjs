@@ -28,3 +28,46 @@ server.payload=a;vm.runInContext('saveFmaRecordToCloud(payload)',server);assert.
 server.payload={provenance_and_split:{research_id:'CASE14'}};assert.throws(()=>vm.runInContext('saveFmaRecordToCloud(payload)',server));assert.equal(locked,false);
 assert.equal(files.size,8,'four snapshots each preserve record and annotation');
 console.log('PASS: calibration missing/change/manual; stale measurement clearing; unknown/known model; observer/repeat keys; immutable saves; legacy preservation; header mapping; retry; old-client rejection');
+
+
+// Synthetic segmentation-mask regressions (no patient images).
+// Ensure the proximal medial neck-cut edge is discarded, the connected stem tip
+// is retained, and isolated distal class-3 noise is not interpreted as the tip.
+function syntheticMask(side='R',withTurn=true){
+  const w=512,h=512,pixels=new Uint8ClampedArray(w*h*4);
+  const mark=(x,y,k)=>{
+    const xx=side==='R'?x:w-1-x;
+    const idx=(y*w+xx)*4;pixels[idx]=k;pixels[idx+1]=k;pixels[idx+2]=k;pixels[idx+3]=255;
+  };
+  for(let y=30;y<=250;y++){
+    const med=withTurn?(y<=90?Math.round(230+(y-30)*1.1):Math.round(296-(y-90)*.12)):290;
+    const fR=withTurn?(y<=90?Math.round(260+(y-30)*.9):Math.round(314-(y-90)*.07)):330;
+    const cR=withTurn?(y<=90?Math.round(245+(y-30)*1):Math.round(305-(y-90)*.08)):310;
+    const stL=y>235?Math.round(185+(y-235)*1.1):185;
+    const stR=y>235?Math.max(stL,Math.round(med-(y-235)*2)):med;
+    for(let x=120;x<=fR;x++){
+      let k=1;
+      if(x>=155&&x<=cR)k=2;
+      if(x>=stL&&x<=stR)k=3;
+      mark(x,y,k);
+    }
+  }
+  for(let y=290;y<304;y++)for(let x=475;x<479;x++)mark(x,y,3);
+  return pixels;
+}
+for(const side of ['R','L']){
+  front.syntheticData=syntheticMask(side);
+  const c=run("fmaExtractMaskContours(syntheticData,512,512,"+(side==='R'?'true':'false')+")");
+  const stMed=side==='R'?c.stmR:c.stmL,stLat=side==='R'?c.stmL:c.stmR;
+  const caMed=side==='R'?c.canR:c.canL,feMed=side==='R'?c.femR:c.femL;
+  assert.ok(stMed[0].y>=75 && stMed[0].y<=100,'stem medial must begin after neck-cut turn: '+side);
+  assert.ok(caMed[0].y>=75 && feMed[0].y>=75,'canal/femur medial must omit neck-cut: '+side);
+  assert.equal(stMed.at(-1).y,250,'stem tip retained: '+side);
+  assert.equal(stLat.at(-1).y,250,'lateral stem tip retained: '+side);
+  assert.equal(c.qc.stemComponents,2,'distal disconnected noise must be separated: '+side);
+}
+front.syntheticData=syntheticMask('R',false);
+const straight=run('fmaExtractMaskContours(syntheticData,512,512,true)');
+assert.equal(straight.qc.stemTurnDetected,false,'must not invent a calcar turn on a straight stem');
+assert.equal(straight.stmR[0].y,30,'straight-sided stem proximal contour must be preserved');
+console.log('PASS: mask contour right/left proximal medial, continuous stem tip, disconnected distal noise, straight-sided fallback');
