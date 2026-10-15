@@ -184,3 +184,13 @@ for(const side of ['R','L'])for(const mode of ['hooked','smooth','early-stop']){
  }
 }
 console.log('PASS: R/L distal inward-hook correction, natural taper preservation, no early-stop extrapolation, stem tip protection');
+
+
+// Default calibration dimensions follow FMA Protocol: postoperative head 32 mm;
+// preoperative iron-ball marker 25 mm. Defaults remain user-editable per case.
+assert.match(html,/<input id="headSize"[^>]*value="32"/,'postoperative calibration default visible in UI');
+assert.equal(run("defaultCalibrationDiameter('postop_THA')"),'32','default postoperative head diameter');
+assert.equal(run("defaultCalibrationDiameter('native')"),'25','default preoperative marker diameter');
+assert.equal(run("defaultCalibrationDiameter('other')"),'','unknown image types must not silently calibrate');
+assert.match(html,/\$\('headSize'\)\.value=defaultCalibrationDiameter\(\$\('imageType'\)\.value\)/,'image load / mode changes must update default');
+console.log('PASS: postoperative 32mm initial value, preop 25mm marker, dynamic per-image defaults');
