@@ -670,6 +670,28 @@ function smooth1DAnchored(list,radius=1){
     return {x:xs[Math.floor(xs.length/2)],y:p.y};
   });
 }
+// Pair only observed points at the same height; never bridge missing rows.
+function fmaCanalAxisCandidate(left,right){
+  const valid=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y);
+  const rightByY=new Map((right||[]).filter(valid).map(p=>[p.y,p]));
+  const pairs=(left||[]).filter(valid).flatMap(p=>{
+    const q=rightByY.get(p.y);
+    return q&&q.x>p.x?[{x:(p.x+q.x)/2,y:p.y}]:[];
+  }).sort((a,b)=>a.y-b.y);
+  const unique=pairs.filter((p,i)=>!i||p.y!==pairs[i-1].y);
+  if(unique.length<6)return null;
+  const proximal=unique[Math.floor(unique.length*.3)];
+  const distal=unique[Math.floor(unique.length*.85)];
+  return distal.y>proximal.y?{proximal,distal}:null;
+}
+function fmaInitializeCanalAxis(left,right){
+  // Preserve an axis already set by the observer.
+  if(pts.sap&&pts.sad)return true;
+  const candidate=fmaCanalAxisCandidate(left,right);
+  if(!candidate)return false;
+  pts.sap=candidate.proximal;pts.sad=candidate.distal;
+  return true;
+}
 // Deterministic mask-to-contour extraction, in 512x512 mask coordinates.
 // Do not infer a calcar peak solely from a global X extremum: require a rise and turn.
 function fmaExtractMaskContours(md,w=512,h=512,isR=true){
@@ -932,18 +954,15 @@ $('aiMaskFile').onchange=e=>{
       canal_medial:isR?canR:canL,canal_lateral:isR?canL:canR,
       stem_medial:isR?stmR:stmL,stem_lateral:isR?stmL:stmR
     }};
-    if(canL.length>=6&&(!pts.sap||!pts.sad)){
-      const i0=Math.floor(canL.length*0.3),i1=Math.floor(canL.length*0.85);
-      pts.sap={x:(canL[i0].x+canR[i0].x)/2,y:(canL[i0].y+canR[i0].y)/2};
-      pts.sad={x:(canL[i1].x+canR[i1].x)/2,y:(canL[i1].y+canR[i1].y)/2};
-    }
+    const axisReady=fmaInitializeCanalAxis(canL,canR);
     applyFullPrediction(pred);
     URL.revokeObjectURL(u);
     const warning=contours.qc.stemTurnDetected?'':'（近位内側の折り返し点は要目視確認）';
     const q=contours.qc;
     const note='外側髄腔：純粋なクラス2の開始Y='+(q.canalLatStartSupported?q.canalLatStartY:'未検出（目視確認）')+'／分断領域 '+q.recoveredCanalLateralRows+'行、短区間補間 '+q.interpolatedCanalLateralRows+'行／画像端補正 外皮質 '+q.distalOuterEdits+'点、髄腔 '+q.distalCanalEdits+'点';
+    const axisNote=axisReady?'':'／髄腔の対応点が不足しています。軸の近位・遠位2点を手動設定してください。';
     const pending=q.unresolvedCanalLateralRows?'／未確定 '+q.unresolvedCanalLateralRows+'行（要手動確認）':'';
-    $('guide').innerHTML='<span class="status">mask512.png：輪郭候補を抽出しました ✓ '+warning+' '+note+pending+'</span>';
+    $('guide').innerHTML='<span class="status">mask512.png：輪郭候補を抽出しました ✓ '+warning+' '+note+pending+axisNote+'</span>';
   };
   mImg.onerror=()=>{URL.revokeObjectURL(u);alert('マスク画像を読み込めませんでした')};
   mImg.src=u;

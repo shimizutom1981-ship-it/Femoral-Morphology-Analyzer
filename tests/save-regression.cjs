@@ -225,3 +225,32 @@ assert.doesNotMatch(html,/if\(\$\('stemFamily'\)\.value==='Z1'\)\$\('stemFamily'
 set('stemFamily','Avenir');
 assert.equal(run("document.getElementById('stemFamily').value"),'Avenir','user stem is editable');
 console.log('PASS: Stem Family blank by default, image-load reset, no preop auto-inference, editable');
+
+// Unequal proximal extents: match observed heights, not array indices.
+for(const mirror of [false,true]){
+  const L=Array.from({length:256},(_,i)=>({x:100+i*.2,y:255+i}));
+  const R=Array.from({length:85},(_,i)=>({x:180+(171+i)*.2,y:426+i}));
+  front.axisLeft=mirror?R.map(p=>({x:512-p.x,y:p.y})):L;
+  front.axisRight=mirror?L.map(p=>({x:512-p.x,y:p.y})):R;
+  run('pts.sap=null;pts.sad=null');
+  assert.equal(run('fmaInitializeCanalAxis(axisLeft,axisRight)'),true);
+  for(const p of [run('pts.sap'),run('pts.sad')]){
+    const l=front.axisLeft.find(q=>q.y===p.y),r=front.axisRight.find(q=>q.y===p.y);
+    assert.ok(l&&r,'both boundaries observed at selected height');
+    assert.equal(p.x,(l.x+r.x)/2,'same-height midpoint');
+  }
+}
+front.axisLeft=[{x:1,y:1}];front.axisRight=[{x:2,y:2}];
+run('pts.sap=null;pts.sad=null');
+assert.equal(run('fmaInitializeCanalAxis(axisLeft,axisRight)'),false);
+assert.equal(run('pts.sap'),null);assert.equal(run('pts.sad'),null);
+assert.equal(run('fmaCanalAxisCandidate([],[])'),null);
+front.axisLeft=Array.from({length:10},(_,y)=>({x:200,y}));
+front.axisRight=Array.from({length:10},(_,y)=>({x:100,y}));
+assert.equal(run('fmaCanalAxisCandidate(axisLeft,axisRight)'),null,'crossed boundaries rejected');
+run('pts.sap={x:123,y:45};pts.sad={x:124,y:200}');
+assert.equal(run('fmaInitializeCanalAxis([],[])'),true);
+assert.equal(run('pts.sap.x'),123);assert.equal(run('pts.sad.y'),200);
+assert.ok(html.includes('const axisReady=fmaInitializeCanalAxis(canL,canR)'));
+assert.ok(html.includes('軸の近位・遠位2点を手動設定してください'));
+console.log('PASS: same-height canal axis, unequal R/L extents, missing/crossed boundaries, manual axis preservation');
