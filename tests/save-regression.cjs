@@ -151,3 +151,36 @@ for(const side of ['R','L'])for(const mode of ['base-cutoff','pure-throughout','
 }
 assert.ok(html.includes("fillBetweenRendered('canal_medial','canal_lateral','rgb(2,2,2)',true)"),'teacher class-2 raster must be clipped to shared proximal extent');
 console.log('PASS: R/L pure-class2 proximal canal cutoff, noise rejection, and masked extent clipping');
+
+
+// Distal image-crop regression: preserve natural shaft contours and stem tips.
+// Correct only abrupt inward hooks of outer femur and canal near the frame edge.
+function distalCropFixture(side,mode){
+ const W=256,H=256,px=new Uint8ClampedArray(W*H*4);
+ const put=(x,y,c)=>{const xx=side==='R'?x:W-1-x,i=(y*W+xx)*4;px[i]=px[i+1]=px[i+2]=c;px[i+3]=255;};
+ const bottom=mode==='early-stop'?215:255;
+ for(let y=16;y<=bottom;y++){
+  const hook=mode==='hooked'&&y>241?Math.round((y-241)*1.5):mode==='smooth'&&y>170?Math.round((y-170)/50):0;
+  for(let x=36+hook;x<=220-hook;x++){
+   let c=1;if(x>=56+hook&&x<=200-hook)c=2;
+   if(y<212&&x>=108&&x<=148)c=3;
+   put(x,y,c);
+  }
+ }
+ return px;
+}
+for(const side of ['R','L'])for(const mode of ['hooked','smooth','early-stop']){
+ front.distalFixture=distalCropFixture(side,mode);
+ const c=run('fmaExtractMaskContours(distalFixture,256,256,'+(side==='R'?'true':'false')+')');
+ assert.equal(c.stmL.at(-1).y,211,'preserve lateral stem tip '+side+' '+mode);
+ assert.equal(c.stmR.at(-1).y,211,'preserve medial stem tip '+side+' '+mode);
+ if(mode==='hooked'){
+  assert.ok(c.qc.distalOuterEdits>=10&&c.qc.distalCanalEdits>=10,'clip-induced hooks must be corrected '+side);
+  assert.ok(c.femL.at(-1).x<48&&c.femR.at(-1).x>208,'femur contour remains open '+side);
+  assert.ok(c.canL.at(-1).x<68&&c.canR.at(-1).x>188,'canal contour remains open '+side);
+ }else{
+  assert.equal(c.qc.distalOuterEdits,0,'no modification of genuine/non-border femur '+side+' '+mode);
+  assert.equal(c.qc.distalCanalEdits,0,'no modification of genuine/non-border canal '+side+' '+mode);
+ }
+}
+console.log('PASS: R/L distal inward-hook correction, natural taper preservation, no early-stop extrapolation, stem tip protection');
