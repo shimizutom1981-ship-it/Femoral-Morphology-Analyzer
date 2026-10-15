@@ -198,8 +198,10 @@ function fitCircleLeastSquares(points){
 function orderedContour(name){
   const a=(annotation[name]||[]).slice();
   const guided=['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral','osteotomy_line'];
-  if(!guided.includes(name)||a.length<2)return a;
-  return a;
+  if(!guided.includes(name)||a.length<2||name==='osteotomy_line')return a;
+  const g=measurementGeometry();
+  if(g)return a.sort((u,v)=>((u.x-g.lt.x)*g.vx+(u.y-g.lt.y)*g.vy)-((v.x-g.lt.x)*g.vx+(v.y-g.lt.y)*g.vy));
+  return a.sort((u,v)=>u.y-v.y);
 }
 function smoothGuidePath(a){
   if(!Array.isArray(a)||a.length<3)return a||[];
@@ -220,6 +222,11 @@ function smoothGuidePath(a){
     }
   }
   return out;
+}
+
+function getRenderedContour(name){
+  const a=orderedContour(name);
+  return (a.length>=3&&name!=='osteotomy_line')?smoothGuidePath(a):a;
 }
 
 function drawAnnotation(){
@@ -252,7 +259,7 @@ function drawAnnotation(){
     const a=orderedContour(n);if(!a.length)continue;
     const col=contourColor(n);ctx.strokeStyle=col;ctx.fillStyle=col;
     if(a.length>=2){
-      const sp=(a.length>=3&&n!=='osteotomy_line')?smoothGuidePath(a):a;
+      const sp=getRenderedContour(n);
       ctx.beginPath();ctx.moveTo(sp[0].x,sp[0].y);for(let i=1;i<sp.length;i++)ctx.lineTo(sp[i].x,sp[i].y);ctx.stroke();
     }
     for(const p of a){if(p._auto)continue;ctx.beginPath();ctx.arc(p.x,p.y,5.5/zoom,0,Math.PI*2);ctx.fill()}
@@ -417,11 +424,16 @@ function autoStemWidthAt(p,n){
 function calculateProfiles(){
   const g=measurementGeometry();if(!g)return[];
   const n={x:-g.vy,y:g.vx},rows=[];
+  // Cache the same smoothed, axis-ordered paths used by the overlay and saved mask.
+  // Avoid per-millimeter recomputation and prevent render/metric divergence.
+  const femMed=getRenderedContour('femur_medial'),femLat=getRenderedContour('femur_lateral');
+  const canMed=getRenderedContour('canal_medial'),canLat=getRenderedContour('canal_lateral');
+  const stmMed=getRenderedContour('stem_medial'),stmLat=getRenderedContour('stem_lateral');
   for(let mm=-20;mm<=120;mm+=1){
     const p={x:g.lt.x+g.vx*mm*g.pxPerMm,y:g.lt.y+g.vy*mm*g.pxPerMm};
-    const ow=(annotation.femur_medial.length&&annotation.femur_lateral.length)?pairedWidth(annotation.femur_medial,annotation.femur_lateral,p,n):widthAt(annotation.femur_mask,p,n,annotationClosed.femur_mask);
-    const cw=(annotation.canal_medial.length&&annotation.canal_lateral.length)?pairedWidth(annotation.canal_medial,annotation.canal_lateral,p,n):widthAt(annotation.canal_mask,p,n,annotationClosed.canal_mask);
-    const sw=(annotation.stem_medial.length&&annotation.stem_lateral.length)?pairedWidth(annotation.stem_medial,annotation.stem_lateral,p,n):widthAt(annotation.stem_mask,p,n,annotationClosed.stem_mask);
+    const ow=(femMed.length&&femLat.length)?pairedWidth(femMed,femLat,p,n):widthAt(annotation.femur_mask,p,n,annotationClosed.femur_mask);
+    const cw=(canMed.length&&canLat.length)?pairedWidth(canMed,canLat,p,n):widthAt(annotation.canal_mask,p,n,annotationClosed.canal_mask);
+    const sw=(stmMed.length&&stmLat.length)?pairedWidth(stmMed,stmLat,p,n):widthAt(annotation.stem_mask,p,n,annotationClosed.stem_mask);
     const asw=autoStemWidthAt(p,n);
     const effSw=sw||asw;
     rows.push({
@@ -642,100 +654,95 @@ cv.addEventListener('pointermove',e=>{
 cv.addEventListener('pointerup',()=>{if(annotationDrag)saveWork();drag=null;annotationDrag=null;isPanning=false;panStart=null});
 cv.addEventListener('wheel',e=>{e.preventDefault();const p=screenPos(e);setZoom(zoom*(e.deltaY<0?1.15:1/1.15),p.x,p.y)},{passive:false});
 
+// 1-D median smoothing: protect the first/last two control points, especially stem tips.
+function smooth1DAnchored(list,radius=1){
+  if(!Array.isArray(list)||list.length<=4)return list;
+  return list.map((p,i)=>{
+    if(i<2||i>=list.length-2)return {...p};
+    const xs=[];
+    for(let k=-radius;k<=radius;k++)xs.push(list[i+k].x);
+    xs.sort((a,b)=>a-b);
+    return {x:xs[Math.floor(xs.length/2)],y:p.y};
+  });
+}
 $('aiMaskFile').onchange=e=>{
   const f=e.target.files&&e.target.files[0];if(!f)return;
   if(!img){alert('先に元画像（1. 画像選択）を読み込んでください');return}
-  const u=URL.createObjectURL(f), mImg=new Image();
+  const u=URL.createObjectURL(f),mImg=new Image();
   mImg.onload=()=>{
     const mc=document.createElement('canvas');mc.width=512;mc.height=512;
-    const mx=mc.getContext('2d',{willReadFrequently:true});mx.drawImage(mImg,0,0,512,512);
+    const mx=mc.getContext('2d',{willReadFrequently:true});mx.imageSmoothingEnabled=false;
+    mx.drawImage(mImg,0,0,512,512);
     const md=mx.getImageData(0,0,512,512).data;
     const s=Math.min(512/cv.width,512/cv.height),ox=(512-cv.width*s)/2,oy=(512-cv.height*s)/2;
     const toCanvas=(px,py)=>({x:(px-ox)/s,y:(py-oy)/s});
-
-    // Step 1: 各行で最も長い連続区間（Main Run）のみを採用し、飛び地ノイズを除去するヘルパー
-    function findMainRun(y, minCls){
-      let bestL=-1, bestR=-1, bestW=0, curL=-1;
-      for(let x=8;x<504;x++){
-        const v=md[(y*512+x)*4];
-        const cls=(v===1||v===2||v===3)?v:(v>200?3:v>120?2:v>40?1:0);
-        if(cls>=minCls){
-          if(curL<0)curL=x;
-        }else if(curL>=0){
-          const w=x-curL;
-          if(w>bestW){bestW=w;bestL=curL;bestR=x-1;}
+    const isR=($('side').value==='R');
+    // Keep the longest contiguous run per row, avoiding disconnected AI false positives.
+    function getMainRun(y,minClass){
+      let bestLen=0,bestL=512,bestR=-1,curL=-1;
+      for(let x=4;x<=508;x++){
+        let cls=0;
+        if(x<508){
+          const v=md[(y*512+x)*4];
+          cls=(v===1||v===2||v===3)?v:(v>200?3:v>120?2:v>40?1:0);
+        }
+        if(cls>=minClass){if(curL<0)curL=x}
+        else if(curL>=0){
+          const len=x-curL;
+          if(len>bestLen){bestLen=len;bestL=curL;bestR=x-1}
           curL=-1;
         }
       }
-      if(curL>=0 && (504-curL)>bestW){bestW=504-curL;bestL=curL;bestR=503;}
-      return bestW>=4 ? {l:bestL, r:bestR, w:bestW} : null;
+      return bestLen>0?{l:bestL,r:bestR,w:bestLen}:null;
     }
-
-    const rows=[];
-    for(let y=24;y<496;y+=4){
-      const fRun=findMainRun(y,1); // Femur envelope (class 1,2,3)
-      const cRun=findMainRun(y,2); // Canal envelope (class 2,3)
-      const sRun=findMainRun(y,3); // Stem body (class 3)
-      if(!fRun||!cRun)continue;
-
-      // Step 2: 解剖学的追い越し禁止ルール (Femurの外にCanalは出ない、Canalの外にStemは出ない)
-      const fl=fRun.l, fr=fRun.r;
-      const cl=Math.max(fl+2, cRun.l), cr=Math.min(fr-2, cRun.r);
-      let sl=null, sr=null;
-      if(sRun && sRun.w>=3){
-        sl=Math.max(cl+1, sRun.l);
-        sr=Math.min(cr-1, sRun.r);
-        if(sr-sl<2){sl=null;sr=null;}
-      }
-      if(cr-cl>=4) rows.push({y, fl, fr, cl, cr, sl, sr});
+    const rawRows=[];
+    for(let y=4;y<508;y+=2)rawRows.push({y,fRun:getMainRun(y,1),cRun:getMainRun(y,2),sRun:getMainRun(y,3)});
+    const sValid=rawRows.filter(r=>r.sRun&&r.sRun.w>=2);
+    let stemMedStartY=sValid.length?sValid[0].y:0;
+    if(sValid.length>=8){
+      const topN=Math.min(Math.floor(sValid.length*0.35),25);
+      let maxW=-1,peakIdx=0;
+      for(let i=0;i<topN;i++)if(sValid[i].sRun.w>maxW){maxW=sValid[i].sRun.w;peakIdx=i}
+      for(let i=0;i<=peakIdx;i++)if(sValid[i].sRun.w>=maxW*0.85){stemMedStartY=sValid[i].y;break}
     }
-
-    // Step 3: 1D Median Filter (前後5行の中央値) で左へ飛び出すスパイク・ガタつきを除去
-    function smooth1D(arr, key){
-      const out=arr.map(r=>r[key]);
-      for(let i=0;i<arr.length;i++){
-        if(out[i]==null)continue;
-        const win=[];
-        for(let j=Math.max(0,i-3);j<=Math.min(arr.length-1,i+3);j++){
-          if(arr[j][key]!=null) win.push(arr[j][key]);
-        }
-        win.sort((a,b)=>a-b);
-        out[i]=win[Math.floor(win.length/2)];
-      }
-      return out;
-    }
-
-    const flS=smooth1D(rows,'fl'), frS=smooth1D(rows,'fr');
-    const clS=smooth1D(rows,'cl'), crS=smooth1D(rows,'cr');
-    const slS=smooth1D(rows,'sl'), srS=smooth1D(rows,'sr');
-
-    // 上端・下端の収束ノイズ（三角形に閉じる現象）を防ぐため上下端の2スライスをトリミング
-    const trim=Math.min(2, Math.floor(rows.length/6));
     const femL=[],femR=[],canL=[],canR=[],stmL=[],stmR=[];
-    for(let i=trim;i<rows.length-trim;i++){
-      const y=rows[i].y;
-      femL.push(toCanvas(flS[i],y)); femR.push(toCanvas(frS[i],y));
-      canL.push(toCanvas(clS[i],y)); canR.push(toCanvas(crS[i],y));
-      if(slS[i]!=null && srS[i]!=null && (srS[i]-slS[i])>=2){
-        stmL.push(toCanvas(slS[i],y)); stmR.push(toCanvas(srS[i],y));
+    for(const r of rawRows){
+      const y=r.y;
+      let fl=r.fRun?r.fRun.l:512,fr=r.fRun?r.fRun.r:-1;
+      let cl=r.cRun?r.cRun.l:512,cr=r.cRun?r.cRun.r:-1;
+      const sl=r.sRun?r.sRun.l:512,sr=r.sRun?r.sRun.r:-1;
+      const hasF=(fr-fl>=6),hasC=(cr-cl>=4),hasS=(r.sRun&&r.sRun.w>=1);
+      const medStemValid=hasS&&y>=stemMedStartY;
+      if(hasC&&hasS){
+        if(isR){cl=Math.min(cl,sl);if(medStemValid)cr=Math.max(cr,sr)}
+        else{cr=Math.max(cr,sr);if(medStemValid)cl=Math.min(cl,sl)}
+      }
+      if(hasF&&hasC){fl=Math.min(fl,cl);fr=Math.max(fr,cr)}
+      if(hasF){femL.push(toCanvas(fl,y));femR.push(toCanvas(fr,y))}
+      if(hasC){canL.push(toCanvas(cl,y));canR.push(toCanvas(cr,y))}
+      if(hasS){
+        if(isR){stmL.push(toCanvas(sl,y));if(medStemValid)stmR.push(toCanvas(sr,y))}
+        else{stmR.push(toCanvas(sr,y));if(medStemValid)stmL.push(toCanvas(sl,y))}
       }
     }
-
-    const isR=($('side').value==='R');
+    const sFemL=smooth1DAnchored(femL),sFemR=smooth1DAnchored(femR);
+    const sCanL=smooth1DAnchored(canL),sCanR=smooth1DAnchored(canR);
+    const sStmL=smooth1DAnchored(stmL),sStmR=smooth1DAnchored(stmR);
     const pred={annotation:{
-      femur_medial:isR?femR:femL, femur_lateral:isR?femL:femR,
-      canal_medial:isR?canR:canL, canal_lateral:isR?canL:canR,
-      stem_medial:isR?stmR:stmL,   stem_lateral:isR?stmL:stmR
+      femur_medial:isR?sFemR:sFemL,femur_lateral:isR?sFemL:sFemR,
+      canal_medial:isR?sCanR:sCanL,canal_lateral:isR?sCanL:sCanR,
+      stem_medial:isR?sStmR:sStmL,stem_lateral:isR?sStmL:sStmR
     }};
-    if(canL.length>=6&&(!pts.sap||!pts.sad)){
-      const i0=Math.floor(canL.length*0.3), i1=Math.floor(canL.length*0.85);
-      pts.sap={x:(canL[i0].x+canR[i0].x)/2,y:(canL[i0].y+canR[i0].y)/2};
-      pts.sad={x:(canL[i1].x+canR[i1].x)/2,y:(canL[i1].y+canR[i1].y)/2};
+    if(sCanL.length>=6&&(!pts.sap||!pts.sad)){
+      const i0=Math.floor(sCanL.length*0.3),i1=Math.floor(sCanL.length*0.85);
+      pts.sap={x:(sCanL[i0].x+sCanR[i0].x)/2,y:(sCanL[i0].y+sCanR[i0].y)/2};
+      pts.sad={x:(sCanL[i1].x+sCanR[i1].x)/2,y:(sCanL[i1].y+sCanR[i1].y)/2};
     }
     applyFullPrediction(pred);
     URL.revokeObjectURL(u);
-    $('guide').innerHTML='<span class="status">mask512.png から飛び地除去＋解剖学的順序制約＋平滑化を行って輪郭を抽出しました ✓</span>';
+    $('guide').innerHTML='<span class="status">mask512.pngを読み込み、飛び地除去・近位斜め境界の除外・端点保護平滑化を適用しました ✓</span>';
   };
+  mImg.onerror=()=>{URL.revokeObjectURL(u);alert('マスク画像を読み込めませんでした')};
   mImg.src=u;
 };
 
@@ -1018,20 +1025,21 @@ function trainingManifestText(){
 }
 function trainingMaskPngBlob(){
   return new Promise(resolve=>{
-    const m=document.createElement('canvas');m.width=512;m.height=512;const x=m.getContext('2d');
+    const m=document.createElement('canvas');m.width=512;m.height=512;
+    const x=m.getContext('2d');x.imageSmoothingEnabled=false;
     x.fillStyle='rgb(0,0,0)';x.fillRect(0,0,512,512);
-    const s=Math.min(512/cv.width,512/cv.height),sx=s,sy=s,ox=(512-cv.width*s)/2,oy=(512-cv.height*s)/2;
-    function fillBetween(a,b,fill){
-      if(!Array.isArray(a)||!Array.isArray(b)||a.length<2||b.length<2)return;
-      const A=orderedContour(a===annotation.femur_medial?'femur_medial':a===annotation.canal_medial?'canal_medial':a===annotation.stem_medial?'stem_medial':'');
-      const B=orderedContour(b===annotation.femur_lateral?'femur_lateral':b===annotation.canal_lateral?'canal_lateral':b===annotation.stem_lateral?'stem_lateral':'');
-      const pA=A.length?A:a, pB=B.length?B:b;
-      x.beginPath();pA.forEach((p,i)=>{i?x.lineTo(p.x*sx+ox,p.y*sy+oy):x.moveTo(p.x*sx+ox,p.y*sy+oy)});
-      pB.slice().reverse().forEach(p=>x.lineTo(p.x*sx+ox,p.y*sy+oy));x.closePath();x.fillStyle=fill;x.fill();
+    const s=Math.min(512/cv.width,512/cv.height),ox=(512-cv.width*s)/2,oy=(512-cv.height*s)/2;
+    function fillBetweenRendered(medialName,lateralName,color){
+      const A=getRenderedContour(medialName),B=getRenderedContour(lateralName);
+      if(A.length<2||B.length<2)return;
+      x.beginPath();
+      A.forEach((p,i)=>i?x.lineTo(p.x*s+ox,p.y*s+oy):x.moveTo(p.x*s+ox,p.y*s+oy));
+      B.slice().reverse().forEach(p=>x.lineTo(p.x*s+ox,p.y*s+oy));
+      x.closePath();x.fillStyle=color;x.fill();
     }
-    fillBetween(annotation.femur_medial,annotation.femur_lateral,'rgb(1,1,1)');
-    fillBetween(annotation.canal_medial,annotation.canal_lateral,'rgb(2,2,2)');
-    if($('imageType').value==='postop_THA')fillBetween(annotation.stem_medial,annotation.stem_lateral,'rgb(3,3,3)');
+    fillBetweenRendered('femur_medial','femur_lateral','rgb(1,1,1)');
+    fillBetweenRendered('canal_medial','canal_lateral','rgb(2,2,2)');
+    if($('imageType').value==='postop_THA')fillBetweenRendered('stem_medial','stem_lateral','rgb(3,3,3)');
     m.toBlob(resolve,'image/png');
   });
 }
@@ -1105,11 +1113,16 @@ function rdpPolyline(points,eps){
   if(dm>eps&&im>0){const l=rdpPolyline(points.slice(0,im+1),eps),r=rdpPolyline(points.slice(im),eps);return l.slice(0,-1).concat(r)}
   return [a,b];
 }
-function reduceAIControlPoints(points,maxPts=12){
+function reduceAIControlPoints(points,maxPts=16,initEps=1.0){
   if(!Array.isArray(points)||points.length<=maxPts)return (points||[]).map(q=>({...q,_aiControl:true}));
-  let eps=2,best=points;
-  for(let n=0;n<14;n++){const q=rdpPolyline(points,eps);best=q;if(q.length<=maxPts)break;eps*=1.45}
-  if(best.length>maxPts){const out=[];for(let i=0;i<maxPts;i++)out.push(best[Math.round(i*(best.length-1)/(maxPts-1))]);best=out}
+  let eps=initEps,best=points;
+  for(let n=0;n<14;n++){const q=rdpPolyline(points,eps);best=q;if(q.length<=maxPts)break;eps*=1.35}
+  if(best.length>maxPts){
+    const out=[best[0]];
+    for(let i=1;i<maxPts-1;i++)out.push(best[Math.round(i*(best.length-1)/(maxPts-1))]);
+    out.push(best[best.length-1]);
+    best=out;
+  }
   return best.map(q=>({...q,_aiControl:true}));
 }
 function normalizePrediction(j){
@@ -1119,7 +1132,8 @@ function normalizePrediction(j){
   for(const k of ['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral']){
     if(Array.isArray(a[k])){
       const dense=a[k].map(q=>({x:Number(q.x),y:Number(q.y)})).filter(q=>Number.isFinite(q.x)&&Number.isFinite(q.y));
-      out.annotation[k]=reduceAIControlPoints(dense,12);
+      const stem=k.startsWith('stem_');
+      out.annotation[k]=reduceAIControlPoints(dense,stem?18:14,stem?0.8:1.2);
     }
   }
   if(a.head)out.annotation.head=a.head;
