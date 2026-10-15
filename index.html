@@ -702,6 +702,45 @@ function fmaExtractMaskContours(md,w=512,h=512,isR=true){
   if(group.length)components.push(group);
   components.sort((a,b)=>b.reduce((v,r)=>v+r.sRun.w,0)-a.reduce((v,r)=>v+r.sRun.w,0));
   const stemBody=new Set((components[0]||[]).map(r=>r.y));
+  // The proximal lateral endosteal boundary is intentionally not labeled
+  // above the greater-trochanter base in the teacher dataset.
+  // A class>=2 envelope alone is NOT proof: class 3 (stem) extends more proximal.
+  // Identify sustained PURE class-2 evidence lateral to the connected stem.
+  function pureLateralRun(r){
+    if(!r.fRun)return null;
+    const hasStem=stemBody.has(r.y)&&r.sRun;
+    const lo=isR?Math.max(0,r.fRun.l+2):(hasStem?Math.max(0,r.sRun.r+2):Math.max(0,r.fRun.l+2));
+    const hi=isR?(hasStem?Math.min(w-1,r.sRun.l-2):Math.min(w-1,r.fRun.r-2)):Math.min(w-1,r.fRun.r-2);
+    if(hi<lo)return null;
+    let best=null,start=-1;
+    for(let x=lo;x<=hi+1;x++){
+      if(x<=hi&&labelAt(x,r.y)===2){if(start<0)start=x}
+      else if(start>=0){
+        const run={l:start,r:x-1,w:x-start};
+        if(run.w>=2&&(!best||run.w>best.w))best=run;
+        start=-1;
+      }
+    }
+    return best;
+  }
+  const lateralPure=raw.map(pureLateralRun);
+  function stableLateralStart(){
+    // Reject sporadic false positives: require six of nine successive rows,
+    // and their outer edge positions must form a reasonably continuous trace.
+    for(let i=0;i<raw.length-8;i++){
+      if(!lateralPure[i])continue;
+      let count=1,last=isR?lateralPure[i].l:lateralPure[i].r,lastIdx=i;
+      for(let j=i+1;j<=i+8;j++){
+        const q=lateralPure[j];
+        if(!q)continue;
+        const x=isR?q.l:q.r;
+        if(j-lastIdx<=3&&Math.abs(x-last)<=12){count++;last=x;lastIdx=j}
+      }
+      if(count>=6)return raw[i].y;
+    }
+    return null;
+  }
+  const canalLatStartY=stableLateralStart();
   // Recover lateral class-2 islands that are disconnected from the stem body.
   // Require consistency in neighboring rows; never promote isolated speckles.
   function canalIslandRuns(r){
@@ -808,8 +847,8 @@ function fmaExtractMaskContours(md,w=512,h=512,isR=true){
     const sMedOk=hasS&&y>=stemStart,cMedOk=hasC&&y>=canalStart,fMedOk=hasF&&y>=femStart;
     // Enforce containment only where the corresponding medial edge is valid.
     if(hasC&&hasS){
-      if(isR){cl=Math.min(cl,sl);if(cMedOk&&sMedOk)cr=Math.max(cr,sr)}
-      else{cr=Math.max(cr,sr);if(cMedOk&&sMedOk)cl=Math.min(cl,sl)}
+      if(isR){if(canalLatStartY!=null&&y>=canalLatStartY)cl=Math.min(cl,sl);if(cMedOk&&sMedOk)cr=Math.max(cr,sr)}
+      else{if(canalLatStartY!=null&&y>=canalLatStartY)cr=Math.max(cr,sr);if(cMedOk&&sMedOk)cl=Math.min(cl,sl)}
     }
     if(hasF&&hasC){
       if(isR){fl=Math.min(fl,cl);if(fMedOk&&cMedOk)fr=Math.max(fr,cr)}
@@ -817,8 +856,8 @@ function fmaExtractMaskContours(md,w=512,h=512,isR=true){
     }
     if(hasF){if(isR){femL.push({x:fl,y});if(fMedOk)femR.push({x:fr,y})}
              else{femR.push({x:fr,y});if(fMedOk)femL.push({x:fl,y})}}
-    if(hasC){if(isR){canL.push({x:cl,y});if(cMedOk)canR.push({x:cr,y})}
-             else{canR.push({x:cr,y});if(cMedOk)canL.push({x:cl,y})}}
+    if(hasC){if(isR){if(canalLatStartY!=null&&y>=canalLatStartY)canL.push({x:cl,y});if(cMedOk)canR.push({x:cr,y})}
+             else{if(canalLatStartY!=null&&y>=canalLatStartY)canR.push({x:cr,y});if(cMedOk)canL.push({x:cl,y})}}
     if(hasS){if(isR){stmL.push({x:sl,y});if(sMedOk)stmR.push({x:sr,y})}
              else{stmR.push({x:sr,y});if(sMedOk)stmL.push({x:sl,y})}}
   }
@@ -827,7 +866,7 @@ function fmaExtractMaskContours(md,w=512,h=512,isR=true){
         stemTurnDetected:stPeak.detected,canalTurnDetected:caPeak.detected,
         femurTurnDetected:fePeak.detected,
         stemTipY:stemRows.length?stemRows[stemRows.length-1].y:null,
-        stemComponents:components.length,recoveredCanalLateralRows,interpolatedCanalLateralRows,unresolvedCanalLateralRows}};
+        stemComponents:components.length,canalLatStartY,canalLatStartSupported:canalLatStartY!=null,recoveredCanalLateralRows,interpolatedCanalLateralRows,unresolvedCanalLateralRows}};
 }
 $('aiMaskFile').onchange=e=>{
   const f=e.target.files&&e.target.files[0];if(!f)return;
@@ -859,7 +898,7 @@ $('aiMaskFile').onchange=e=>{
     URL.revokeObjectURL(u);
     const warning=contours.qc.stemTurnDetected?'':'（近位内側の折り返し点は要目視確認）';
     const q=contours.qc;
-    const note='外側髄腔：分断領域 '+q.recoveredCanalLateralRows+'行、短区間補間 '+q.interpolatedCanalLateralRows+'行';
+    const note='外側髄腔：純粋なクラス2の開始Y='+(q.canalLatStartSupported?q.canalLatStartY:'未検出（目視確認）')+'／分断領域 '+q.recoveredCanalLateralRows+'行、短区間補間 '+q.interpolatedCanalLateralRows+'行';
     const pending=q.unresolvedCanalLateralRows?'／未確定 '+q.unresolvedCanalLateralRows+'行（要手動確認）':'';
     $('guide').innerHTML='<span class="status">mask512.png：輪郭候補を抽出しました ✓ '+warning+' '+note+pending+'</span>';
   };
@@ -1151,16 +1190,21 @@ function trainingMaskPngBlob(){
     const x=m.getContext('2d');x.imageSmoothingEnabled=false;
     x.fillStyle='rgb(0,0,0)';x.fillRect(0,0,512,512);
     const s=Math.min(512/cv.width,512/cv.height),ox=(512-cv.width*s)/2,oy=(512-cv.height*s)/2;
-    function fillBetweenRendered(medialName,lateralName,color){
+    function fillBetweenRendered(medialName,lateralName,color,limitToSharedProximal=false){
       const A=getRenderedContour(medialName),B=getRenderedContour(lateralName);
       if(A.length<2||B.length<2)return;
+      x.save();
+      if(limitToSharedProximal){
+        const top=Math.max(Math.min(...A.map(p=>p.y)),Math.min(...B.map(p=>p.y)))*s+oy;
+        x.beginPath();x.rect(0,Math.max(0,top),512,512);x.clip();
+      }
       x.beginPath();
       A.forEach((p,i)=>i?x.lineTo(p.x*s+ox,p.y*s+oy):x.moveTo(p.x*s+ox,p.y*s+oy));
       B.slice().reverse().forEach(p=>x.lineTo(p.x*s+ox,p.y*s+oy));
-      x.closePath();x.fillStyle=color;x.fill();
+      x.closePath();x.fillStyle=color;x.fill();x.restore();
     }
     fillBetweenRendered('femur_medial','femur_lateral','rgb(1,1,1)');
-    fillBetweenRendered('canal_medial','canal_lateral','rgb(2,2,2)');
+    fillBetweenRendered('canal_medial','canal_lateral','rgb(2,2,2)',true);
     if($('imageType').value==='postop_THA')fillBetweenRendered('stem_medial','stem_lateral','rgb(3,3,3)');
     m.toBlob(resolve,'image/png');
   });
