@@ -13,7 +13,7 @@ Key Rules for AI Assistants modifying this file:
   - Cloud Save sends: `_fma_record.json`, `_annotation.json`, `_mask512.png`, `_profile.csv`, and `_overlay.png`.
   - Preserve the 9-stage guided workflow (`guidedStages`), `autoDetectStem`, `autoDetectHead`,
     PCHIP `stem_interface_anchors`, and local export (`saveCaseFilesToFolder`).
-  - Coordinate convention along Shaft Axis (`vx, vy` from proximal `sap` to distal `sad`):
+  - Coordinate convention along the automatically derived FEMORAL axis (10 / 100→90→80 mm):
     `distance_from_LT_mm`: negative = proximal to LT (-20mm = 2cm above LT, -10mm = 1cm above LT),
     positive = distal to LT (+20, +30, +70, +100mm).
   - 512x512 Mask convention (`trainingMaskPngBlob` & `aiMaskFile`):
@@ -68,7 +68,7 @@ Key Rules for AI Assistants modifying this file:
       <option value="stem_medial">Step 5: Stem - medial</option>
       <option value="canal_medial">Step 6: Canal - medial</option>
       <option value="femur_medial">Step 7: Outer cortex - medial</option>
-      <option value="lt_midpoint">Step 8: LT medial-most point</option>
+      <option value="lt_midpoint">Step 8: Provisional LT medial prominence</option>
       <option value="osteotomy_line">Opt: Osteotomy line (近位0%境界)</option>
       <option value="stem_interface_anchors">Opt: Stem/cortex PCHIP補正点</option>
       <option value="lt_region">Opt: LT region contour</option>
@@ -89,6 +89,7 @@ Key Rules for AI Assistants modifying this file:
     <button id="saveCloud" class="cloudBtn">☁ Cloud Save (Drive+Sheet)</button>
   </div>
 
+  <div class="guide"><div id="axisStatus">FEMORAL axis: awaiting contours / LT / calibration</div><button id="confirmLT">自動FEMORAL軸に垂直な内側突出点としてLTを確認</button><label>既存Annotation / FMA record（原本は変更しません）<input id="recordFile" type="file" accept=".json,application/json"></label><button id="confirmLegacyStem" hidden>旧2点を手動STEM軸候補として確認</button></div>
   <div id="guide" class="guide">画像を選択してください。</div>
 
   <!-- Contrast / WL-WW Bar for Double Cortical Line Inspection -->
@@ -125,14 +126,16 @@ Key Rules for AI Assistants modifying this file:
 <div class="card"><table><thead><tr><th>Level (from LT)</th><th>Canal px</th><th>Canal mm</th><th>Outer px</th><th>Outer mm</th><th>Stem manual mm</th><th>Stem AUTO mm</th><th>ΔStem mm</th><th>CTI</th><th>CFR manual</th><th>CFR AUTO</th></tr></thead><tbody id="tbl"></tbody></table></div>
 </div>
 
+<script src="femoral-axis.js"></script>
 <script>
 const levels=[-20,-10,0,20,30,70,100];
-const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Shaft axis proximal','sap'],['Shaft axis distal','sad']];
-const guidedStages=['head','femur_lateral','canal_lateral','stem_lateral','stem_medial','canal_medial','femur_medial','lt_midpoint','shaft_adjust'];
+const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
+const guidedStages=['head','femur_lateral','canal_lateral','stem_lateral','stem_medial','canal_medial','femur_medial','lt_midpoint','stem_adjust'];
 let guidedStage=0;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 let img=null,grayCache=null,pts={},step=0,start=null,elapsedSec=null,drag=null,zoom=1,panX=0,panY=0,isPanning=false,panStart=null,accepted=false,correctionCount=0,aiInitial={},aiLoaded=false,profileRows=[],continuousSlices=[],continuousSummary={};
-let annotation={version:'2.1-training',head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};
+function emptyAnnotation(){return {version:'2.1-training',head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};}
+let annotation=emptyAnnotation();
 let annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,osteotomy_line:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};
 let annotationDrag=null,annotationCorrectionCount=0;
 const $=id=>document.getElementById(id);
@@ -190,14 +193,9 @@ function fitCircleLeastSquares(points){
   return {x:cx,y:cy,r,rmse:Math.sqrt(sse/n)};
 }
 
-function orderedContour(name){
-  const a=(annotation[name]||[]).slice();
-  const guided=['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral','osteotomy_line'];
-  if(!guided.includes(name)||a.length<2||name==='osteotomy_line')return a;
-  const g=measurementGeometry();
-  if(g)return a.sort((u,v)=>((u.x-g.lt.x)*g.vx+(u.y-g.lt.y)*g.vy)-((v.x-g.lt.x)*g.vx+(v.y-g.lt.y)*g.vy));
-  return a.sort((u,v)=>u.y-v.y);
-}
+// Connectivity is annotation data, never a function of either mutable axis.
+// New guided contours must be entered proximal to distal; inserted points retain adjacency.
+function orderedContour(name){ return (annotation[name]||[]).slice(); }
 function smoothGuidePath(a){
   if(!Array.isArray(a)||a.length<3)return a||[];
   const out=[{x:a[0].x,y:a[0].y}];
@@ -267,28 +265,28 @@ function draw(){
   let hc=circle3(pts.head1,pts.head2,pts.head3);
   if(!hc&&annotation.head&&annotation.head.center&&Number.isFinite(annotation.head.radius_px))hc={x:annotation.head.center.x,y:annotation.head.center.y,r:annotation.head.radius_px};
   if(hc){ctx.beginPath();ctx.arc(hc.x,hc.y,hc.r,0,Math.PI*2);ctx.strokeStyle='#22c55e';ctx.lineWidth=3/zoom;ctx.stroke()}
-  if(pts.sap&&pts.sad){
+  if(pts.stem_prox&&pts.stem_dist){
     ctx.save();ctx.strokeStyle='#ef4444';ctx.fillStyle='#ef4444';ctx.lineWidth=3/zoom;ctx.setLineDash([10/zoom,6/zoom]);
-    ctx.beginPath();ctx.moveTo(pts.sap.x,pts.sap.y);ctx.lineTo(pts.sad.x,pts.sad.y);ctx.stroke();
-    for(const p of [pts.sap,pts.sad]){ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fill()}
-    ctx.font=(13/zoom)+'px sans-serif';ctx.fillText('Shaft axis',pts.sap.x+8/zoom,pts.sap.y-8/zoom);ctx.restore();
+    ctx.beginPath();ctx.moveTo(pts.stem_prox.x,pts.stem_prox.y);ctx.lineTo(pts.stem_dist.x,pts.stem_dist.y);ctx.stroke();
+    for(const p of [pts.stem_prox,pts.stem_dist]){ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fill()}
+    ctx.font=(13/zoom)+'px sans-serif';ctx.fillText('Manual STEM axis',pts.stem_prox.x+8/zoom,pts.stem_prox.y-8/zoom);ctx.restore();
   }
-  const sg=measurementGeometry();
+  const sg=femoralPreviewGeometry();
   if(sg){
     if(sg.ltMedial&&$('ltVisibility').value!=='occluded_unidentifiable'){
       ctx.save();ctx.strokeStyle='#22c55e';ctx.lineWidth=1.5/zoom;ctx.setLineDash([5/zoom,4/zoom]);
       ctx.beginPath();ctx.moveTo(sg.ltMedial.x,sg.ltMedial.y);ctx.lineTo(sg.lt.x,sg.lt.y);ctx.stroke();
       ctx.setLineDash([]);ctx.beginPath();ctx.arc(sg.lt.x,sg.lt.y,4/zoom,0,Math.PI*2);ctx.fillStyle='#22c55e';ctx.fill();ctx.restore();
     }
-    ctx.save();ctx.strokeStyle='#ef4444';ctx.lineWidth=2/zoom;ctx.setLineDash([10/zoom,6/zoom]);
-    const L=Math.max(cv.width,cv.height)*2;ctx.beginPath();const axisAnchor=pts.sap||sg.lt;
-    ctx.moveTo(axisAnchor.x-sg.vx*L,axisAnchor.y-sg.vy*L);ctx.lineTo(axisAnchor.x+sg.vx*L,axisAnchor.y+sg.vy*L);ctx.stroke();ctx.restore();
+    ctx.save();ctx.strokeStyle='#38bdf8';ctx.lineWidth=2/zoom;ctx.setLineDash([10/zoom,6/zoom]);
+    const L=Math.max(cv.width,cv.height)*2;ctx.beginPath();const axisAnchor=sg.lt;
+    ctx.moveTo(axisAnchor.x-sg.vx*L,axisAnchor.y-sg.vy*L);ctx.lineTo(axisAnchor.x+sg.vx*L,axisAnchor.y+sg.vy*L);ctx.stroke();ctx.fillStyle='#38bdf8';ctx.font=(13/zoom)+'px sans-serif';ctx.fillText('Auto FEMORAL 10 / '+femoralAxisResult.levels.distalMm+' mm',sg.lt.x+10/zoom,sg.lt.y-20/zoom);ctx.restore();
   }
   const lc=levelCenters();
   if(Object.keys(lc).length&&$('ltVisibility').value!=='occluded_unidentifiable'){
     ctx.save();ctx.strokeStyle='#f59e0b';ctx.fillStyle='#f59e0b';ctx.lineWidth=1/zoom;
     for(const [l,p] of Object.entries(lc)){
-      const g=measurementGeometry(),nx=-g.vy,ny=g.vx,h=70;
+      const g=femoralPreviewGeometry(),nx=-g.vy,ny=g.vx,h=70;
       ctx.beginPath();ctx.moveTo(p.x-nx*h,p.y-ny*h);ctx.lineTo(p.x+nx*h,p.y+ny*h);ctx.stroke();
       ctx.font=(12/zoom)+'px sans-serif';ctx.fillText((Number(l)>=0?'+':'')+l+' mm',p.x+5/zoom,p.y-5/zoom);
     }
@@ -298,8 +296,8 @@ function draw(){
       const n2={x:-g2.vy,y:g2.vx};ctx.save();ctx.fillStyle='#a855f7';
       for(const l of levels){
         const p=lc[l];if(!p)continue;
-        const fw=(annotation.femur_medial.length&&annotation.femur_lateral.length)?pairedWidth(annotation.femur_medial,annotation.femur_lateral,p,n2):widthAt(annotation.femur_mask,p,n2,annotationClosed.femur_mask);
-        const cw=(annotation.canal_medial.length&&annotation.canal_lateral.length)?pairedWidth(annotation.canal_medial,annotation.canal_lateral,p,n2):widthAt(annotation.canal_mask,p,n2,annotationClosed.canal_mask);
+        const fw=(annotation.femur_medial.length&&annotation.femur_lateral.length)?pairedWidth(getRenderedContour('femur_medial'),getRenderedContour('femur_lateral'),p,n2):widthAt(annotation.femur_mask,p,n2,annotationClosed.femur_mask);
+        const cw=(annotation.canal_medial.length&&annotation.canal_lateral.length)?pairedWidth(getRenderedContour('canal_medial'),getRenderedContour('canal_lateral'),p,n2):widthAt(annotation.canal_mask,p,n2,annotationClosed.canal_mask);
         for(const w of [fw,cw])if(w)for(const q of [w.a,w.b]){ctx.beginPath();ctx.arc(q.x,q.y,4/zoom,0,Math.PI*2);ctx.fill()}
       }
       ctx.restore();
@@ -316,7 +314,7 @@ function draw(){
       const ax=autoStemInfo.prox,ay=autoStemInfo.dist,L=Math.max(cv.width,cv.height)*2;
       const dx=ay.x-ax.x,dy=ay.y-ax.y,ll=Math.hypot(dx,dy)||1,vx=dx/ll,vy=dy/ll;
       ctx.beginPath();ctx.moveTo(ax.x-vx*L,ax.y-vy*L);ctx.lineTo(ax.x+vx*L,ax.y+vy*L);ctx.stroke();
-      ctx.setLineDash([]);ctx.fillStyle='#fde047';ctx.font=(13/zoom)+'px sans-serif';ctx.fillText('AUTO Stem axis',ax.x+10/zoom,ax.y-12/zoom);
+      ctx.setLineDash([]);ctx.fillStyle='#fde047';ctx.font=(13/zoom)+'px sans-serif';ctx.fillText('Edge-fit diagnostic (not STEM reference)',ax.x+10/zoom,ax.y-12/zoom);
       for(const p of [ax,ay]){ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fill()}
       ctx.restore();
     }
@@ -347,9 +345,12 @@ function lineSegIntersection(p,n,a,b){
 function contourHits(contour,p,n,closed=true){
   if(!Array.isArray(contour)||contour.length<2)return[];
   const hits=[],N=contour.length,lim=closed?N:N-1;
-  for(let i=0;i<lim;i++){const h=lineSegIntersection(p,n,contour[i],contour[(i+1)%N]);if(h)hits.push(h)}
+  for(let i=0;i<lim;i++){const a=contour[i],b=contour[(i+1)%N];
+    const cross=q=>(q.x-p.x)*n.y-(q.y-p.y)*n.x;
+    if(Math.abs(cross(a))<1e-9&&Math.abs(cross(b))<1e-9&&Math.hypot(a.x-b.x,a.y-b.y)>1e-9)return[];
+    const h=lineSegIntersection(p,n,a,b);if(h)hits.push(h)}
   hits.sort((a,b)=>a.t-b.t);
-  const uniq=[];for(const h of hits){if(!uniq.length||Math.hypot(h.x-uniq[uniq.length-1].x,h.y-uniq[uniq.length-1].y)>1)uniq.push(h)}
+  const uniq=[];for(const h of hits){if(!uniq.length||Math.hypot(h.x-uniq[uniq.length-1].x,h.y-uniq[uniq.length-1].y)>1e-7)uniq.push(h)}
   return uniq;
 }
 function sideHit(contour,p,n){
@@ -357,58 +358,78 @@ function sideHit(contour,p,n){
   return h.reduce((a,b)=>Math.abs(a.t)<Math.abs(b.t)?a:b);
 }
 function pairedWidth(aContour,bContour,p,n){
-  const g=measurementGeometry();
-  const sortA=g?aContour.slice().sort((u,v)=>((u.x-g.lt.x)*g.vx+(u.y-g.lt.y)*g.vy)-((v.x-g.lt.x)*g.vx+(v.y-g.lt.y)*g.vy)):aContour;
-  const sortB=g?bContour.slice().sort((u,v)=>((u.x-g.lt.x)*g.vx+(u.y-g.lt.y)*g.vy)-((v.x-g.lt.x)*g.vx+(v.y-g.lt.y)*g.vy)):bContour;
-  const a=sideHit(sortA,p,n),b=sideHit(sortB,p,n);if(!a||!b)return null;
-  return{width_px:Math.hypot(b.x-a.x,b.y-a.y),a,b,hits:2};
+  const ah=contourHits(aContour,p,n,false),bh=contourHits(bContour,p,n,false);
+  // Multiple crossings are ambiguous: never silently select the nearest wall.
+  if(ah.length!==1||bh.length!==1)return null;
+  const a=ah[0],b=bh[0],width_px=Math.hypot(b.x-a.x,b.y-a.y);
+  return width_px>0?{width_px,a,b,hits:2}:null;
 }
 function widthAt(contour,p,n,closed=true){
-  const h=contourHits(contour,p,n,closed);if(h.length<2)return null;
+  const h=contourHits(contour,p,n,closed);if(h.length!==2)return null;
   const a=h[0],b=h[h.length-1];return{width_px:Math.hypot(b.x-a.x,b.y-a.y),a,b,hits:h.length};
 }
 
-function computeAxesAndAlignment(g){
-  let canalAngle=null, stemAngle=null, alignDeg=null;
-  if(g){canalAngle=Math.atan2(g.vx,g.vy)*180/Math.PI;}
-  if(annotation.stem_medial.length>=2&&annotation.stem_lateral.length>=2){
-    const sm=annotation.stem_medial, sl=annotation.stem_lateral;
-    const pTop={x:(sm[0].x+sl[0].x)/2, y:(sm[0].y+sl[0].y)/2};
-    const pBot={x:(sm[sm.length-1].x+sl[sl.length-1].x)/2, y:(sm[sm.length-1].y+sl[sl.length-1].y)/2};
-    const dx=pBot.x-pTop.x, dy=pBot.y-pTop.y;
-    if(Math.hypot(dx,dy)>10)stemAngle=Math.atan2(dx,dy)*180/Math.PI;
-  }else if(autoStemInfo&&autoStemInfo.prox&&autoStemInfo.dist){
-    const dx=autoStemInfo.dist.x-autoStemInfo.prox.x, dy=autoStemInfo.dist.y-autoStemInfo.prox.y;
-    if(Math.hypot(dx,dy)>10)stemAngle=Math.atan2(dx,dy)*180/Math.PI;
+const AXIS_SCHEMA='fma_axes_v1';
+const CONTOUR_GEOMETRY_VERSION='connected-centripetal-v1';
+let femoralAxisResult=null, axisInputKey=null, confirmedLTKey=null;
+let legacyStemCandidate=null, legacySourceVersion=null, legacySourceId=null;
+function axisInputs(){
+  return {medial:getRenderedContour('canal_medial'),lateral:getRenderedContour('canal_lateral'),
+    lt:pts.ltm||annotation.lt_midpoint,mmPerPx:Number($('scale').value)};
+}
+function refreshFemoralAxis(){
+  const input=axisInputs();
+  // Include outer contours as well: changing any bone input invalidates review.
+  const key=JSON.stringify([input,annotation.femur_medial,annotation.femur_lateral,annotation.femur_mask,annotation.canal_mask,annotationClosed,$('ltVisibility').value,$('calMode').value,$('headSize').value,annotation.head]);
+  if(key!==axisInputKey){
+    axisInputKey=key;confirmedLTKey=null;accepted=false;
+    profileRows=[];continuousSlices=[];continuousSummary={};
+    femoralAxisResult=$('ltVisibility').value==='occluded_unidentifiable'
+      ?{status:'error',reason:'lt_unidentifiable'}:FemoralAxis.solve(input);
   }
+  return femoralAxisResult;
+}
+function measurementGeometry(){
+  const a=refreshFemoralAxis();
+  return a&&a.status==='ok'&&confirmedLTKey===axisInputKey?a.geometry:null;
+}
+function femoralPreviewGeometry(){const a=refreshFemoralAxis();return a&&a.status==='ok'?a.geometry:null;}
+function axisMetadata(){
+  const a=refreshFemoralAxis();
+  return {schema:AXIS_SCHEMA,contour_geometry_version:CONTOUR_GEOMETRY_VERSION,
+    legacy_source_version:legacySourceVersion,legacy_source_id:legacySourceId,
+    femoral:{...a,inputs:axisInputs(),lt_confirmed:confirmedLTKey===axisInputKey,
+      quality_status:a.status!=='ok'?'unavailable':confirmedLTKey===axisInputKey?'confirmed':'review_required',
+      reason:a.status!=='ok'?a.reason:confirmedLTKey===axisInputKey?null:'lt_confirmation_required'},
+    stem:{method:'manual_template_aligned_two_points',version:'1',
+      proximal:pts.stem_prox||null,distal:pts.stem_dist||null,
+      status:computeAxesAndAlignment(null).stemAngle!=null?'manual':'unavailable',
+      reason:!pts.stem_prox||!pts.stem_dist?'manual_stem_points_missing':computeAxesAndAlignment(null).stemAngle==null?'degenerate_manual_stem_axis':null,legacy_candidate:legacyStemCandidate}};
+}
+function computeAxesAndAlignment(g){
+  const p=pts.stem_prox,d=pts.stem_dist;
+  const canalAngle=g?Math.atan2(g.vx,g.vy)*180/Math.PI:null;
+  const stemAngle=p&&d&&Math.hypot(d.x-p.x,d.y-p.y)>1e-9?Math.atan2(d.x-p.x,d.y-p.y)*180/Math.PI:null;
+  let alignDeg=null;
   if(canalAngle!=null&&stemAngle!=null){
-    const sideSign=($('side').value==='R')?1:-1;
-    alignDeg=(stemAngle-canalAngle)*sideSign;
+    // Axial angles are modulo 180 degrees; medial/lateral sign retains existing side convention.
+    alignDeg=(((stemAngle-canalAngle+90)%180+180)%180-90)*($('side').value==='R'?1:-1);
   }
   return {canalAngle,stemAngle,alignDeg};
 }
-
-function measurementGeometry(){
-  let m=pts.ltm||annotation.lt_midpoint;
-  const p=pts.sap,d=pts.sad;
-  if(!p||!d)return null;
-  if(!m && $('ltVisibility').value==='occluded_unidentifiable') m={x:p.x,y:p.y};
-  if(!m)return null;
-  let vx=d.x-p.x,vy=d.y-p.y,L=Math.hypot(vx,vy);if(!L)return null;vx/=L;vy/=L;
-  const proj=(m.x-p.x)*vx+(m.y-p.y)*vy;
-  const lt={x:p.x+proj*vx,y:p.y+proj*vy};
-  let s=parseFloat($('scale').value)||null;
-  if(!s&&$('calMode').value==='head'&&annotation.head&&Number.isFinite(annotation.head.radius_px)&&annotation.head.radius_px>0){
-    const hd=parseFloat($('headSize').value)||32;
-    s=hd/(2*annotation.head.radius_px);$('scale').value=s.toFixed(5);
-  }
-  if(!s)return null;
-  return{lt,ltMedial:m,vx,vy,pxPerMm:1/s,mmPerPx:s};
-}
+$('confirmLT').onclick=()=>{
+  const a=refreshFemoralAxis();if(!a||a.status!=='ok')return;
+  confirmedLTKey=axisInputKey;draw();saveWork();
+};
+$('confirmLegacyStem').onclick=()=>{
+  if(!legacyStemCandidate)return;
+  pts.stem_prox={...legacyStemCandidate.proximal};pts.stem_dist={...legacyStemCandidate.distal};
+  legacyStemCandidate=null;$('confirmLegacyStem').hidden=true;draw();saveWork();
+};
 
 function levelCenters(){
-  const g=measurementGeometry();if(!g)return{};
-  const out={};for(const l of levels)out[l]={x:g.lt.x+g.vx*l*g.pxPerMm,y:g.lt.y+g.vy*l*g.pxPerMm};
+  const g=femoralPreviewGeometry();if(!g)return{};
+  const out={};for(const l of [...new Set([...levels,10,femoralAxisResult.levels.distalMm])])out[l]={x:g.lt.x+g.vx*l*g.pxPerMm,y:g.lt.y+g.vy*l*g.pxPerMm};
   return out;
 }
 
@@ -420,6 +441,7 @@ function autoStemWidthAt(p,n){
 }
 
 function calculateProfiles(){
+  profileRows=[];continuousSlices=[];continuousSummary={};
   const g=measurementGeometry();if(!g)return[];
   const n={x:-g.vy,y:g.vx},rows=[];
   // Cache the same smoothed, axis-ordered paths used by the overlay and saved mask.
@@ -436,6 +458,7 @@ function calculateProfiles(){
     const effSw=sw||asw;
     rows.push({
       distance_from_LT_mm:mm,
+      missing_reason:!ow||!cw?'contour_missing_or_ambiguous':null,
       outer_width_px:ow?ow.width_px:null,
       canal_width_px:cw?cw.width_px:null,
       stem_width_px:sw?sw.width_px:null,
@@ -531,7 +554,7 @@ function guide(){
   if(mode==='annotation'){
     const t=$('annotationTarget').value;
     if(t==='head'){const n=(annotation._head_points||[]).length;$('guide').innerHTML='<span class="status">Annotation / Head or Ball: 外周を3点以上クリック ('+n+' pts)。カップ重なり時は見える円弧のみでOK。</span>';return}
-    if(t==='lt_midpoint'){$('guide').innerHTML='<span class="status">Annotation / LT medial-most point: 小転子頂点(または中点基準)を1回クリック（内旋で不明ならLT VisibilityをOccludedへ）</span>';return}
+    if(t==='lt_midpoint'){$('guide').innerHTML='<span class="status">Annotation / LT medial-most point: 小転子の暫定内側突出点をクリック。自動FEMORAL軸に垂直な突出点を確認し、LT確認ボタンを押してください（内旋で不明ならLT VisibilityをOccludedへ）</span>';return}
     if(t==='osteotomy_line'){$('guide').innerHTML='<span class="status">Annotation / Osteotomy line: 内側Calcar切断端から外側大転子基部へクリック</span>';return}
     if(t==='stem_interface_anchors'){const n=(annotation.stem_interface_anchors||[]).length;$('guide').innerHTML='<span class="status">Stem/cortex境界のズレている場所をクリックして補正点を追加（現在 '+n+' 点）。</span>';return}
     if(t==='lt_region'){$('guide').innerHTML='<span class="status">Annotation / LT region: 小転子領域を囲んでください</span>';return}
@@ -542,7 +565,7 @@ function guide(){
     if(nAi){
       $('guide').innerHTML='<span class="status">Annotation / '+label+': AI制御点 '+nAi+'点＋追加 '+count+'点。既存点はShift+ドラッグ、追加点はクリック。「1点戻す」で追加点のみ削除。</span>';return;
     }
-    $('guide').innerHTML='<span class="status">Annotation / '+label+': '+count+'点。皮質に沿って順番にクリック → 完了したら「次へ ▶」。</span>';return;
+    $('guide').innerHTML='<span class="status">Annotation / '+label+': '+count+'点。近位→遠位の順に皮質に沿ってクリック → 完了したら「次へ ▶」。</span>';return;
   }
   if(step<steps.length)$('guide').innerHTML=(step+1)+'/'+steps.length+': <b>'+steps[step][0]+'</b> をクリック';
   else $('guide').innerHTML='<span class="status">Measurement基準入力完了。オレンジ線がLT基準の自動measurement levelsです。</span>';
@@ -731,11 +754,6 @@ $('aiMaskFile').onchange=e=>{
       canal_medial:isR?sCanR:sCanL,canal_lateral:isR?sCanL:sCanR,
       stem_medial:isR?sStmR:sStmL,stem_lateral:isR?sStmL:sStmR
     }};
-    if(sCanL.length>=6&&(!pts.sap||!pts.sad)){
-      const i0=Math.floor(sCanL.length*0.3),i1=Math.floor(sCanL.length*0.85);
-      pts.sap={x:(sCanL[i0].x+sCanR[i0].x)/2,y:(sCanL[i0].y+sCanR[i0].y)/2};
-      pts.sad={x:(sCanL[i1].x+sCanR[i1].x)/2,y:(sCanL[i1].y+sCanR[i1].y)/2};
-    }
     applyFullPrediction(pred);
     URL.revokeObjectURL(u);
     $('guide').innerHTML='<span class="status">mask512.pngを読み込み、飛び地除去・近位斜め境界の除外・端点保護平滑化を適用しました ✓</span>';
@@ -787,8 +805,9 @@ function buildDataDictionaryV11Record(){
       timestamp_utc:new Date().toISOString(),
       model_version:aiLoaded?'fma_jang_resnet34_unet_v1':'manual_teacher_v1',
       preprocess_version:'canvas_highres_v2.1',
-      annotation_rule_ver:'v1.0',
-      algorithm_git_hash:'v2.1.2-cloud',
+      annotation_rule_ver:'v1.0', // Existing contour rule retained; axis method is independently versioned.
+      axis_schema:AXIS_SCHEMA,contour_geometry_version:CONTOUR_GEOMETRY_VERSION,
+      algorithm_git_hash:null,algorithm_version:'v2.2-axis-split',
       mask_source_type:aiLoaded?(totalEditCount>0?'ai_observer_corrected':'ai_raw'):'teacher_gt'
     },
     calibration_metrics:{
@@ -832,8 +851,8 @@ function buildDataDictionaryV11Record(){
       mmi_0:maskIfOccluded(mmi_0),
       mmi_minus20:maskIfOccluded(mmi_m20),
       mmi_average:maskIfOccluded(mmi_avg),
-      ldr_alpha:maskIfOccluded($('ldra').textContent.split('/')[0]?.trim()),
-      ldr_beta:maskIfOccluded($('ldrb').textContent)
+      ldr_alpha:g&&Number.isFinite(parseFloat($('ldra').textContent))?parseFloat($('ldra').textContent):null,
+      ldr_beta:g&&Number.isFinite(parseFloat($('ldrb').textContent))?parseFloat($('ldrb').textContent):null
     },
     continuous_profile:{
       valid_span_length_mm:continuousSummary.valid_span_length_mm||null,
@@ -841,6 +860,9 @@ function buildDataDictionaryV11Record(){
       exploratory_summary:continuousSummary,
       profile_slices:continuousSlices
     },
+    axes:axisMetadata(),
+    missing_reasons:{axis:measurementGeometry()?null:axisMetadata().femoral.reason,
+      fixed_100mm:!g?'axis_unavailable_or_unconfirmed':gVal(100,'CTI')==null?'contour_missing_or_ambiguous':null},
     raw_annotations:annotationPayload()
   };
 }
@@ -848,6 +870,7 @@ function buildDataDictionaryV11Record(){
 $('saveCloud').onclick=async()=>{
   const id=ensureCaseId();
   if(!id){alert('⚠ Research ID (Study ID) を入力してください。');$('studyId').focus();return}
+  if(legacySourceId&&id===legacySourceId){alert('旧記録を上書きしないため、新しいResearch IDを指定してください。');return;}
   if(!confirmMissingBeforeSave('Googleクラウドへ保存'))return;
   if(start&&elapsedSec==null)elapsedSec=Math.round((Date.now()-start)/1000);
   const payload=buildDataDictionaryV11Record();
@@ -893,7 +916,8 @@ function measurementMissingReport(){
   return[...new Set(miss)];
 }
 function confirmMissingBeforeSave(action){
-  const miss=measurementMissingReport();if(!miss.length)return true;
+  if(legacySourceId&&ensureCaseId()===legacySourceId){alert('旧記録を上書きしないため、新しいResearch IDを指定してください。');return false;}
+  const miss=measurementMissingReport();if(!measurementGeometry())miss.unshift('FEMORAL axis: '+axisMetadata().femoral.reason);if(!miss.length)return true;
   return confirm('⚠ 一部スライスに未計測があります。\n\n・'+miss.join('\n・')+'\n\nこのまま'+action+'しますか？');
 }
 
@@ -920,13 +944,13 @@ $('file').onchange=e=>{
   const u=URL.createObjectURL(f);img=new Image();
   img.onload=()=>{
     const ratio=img.height/img.width;cv.width=1200;cv.height=Math.round(1200*ratio);
-    buildGrayCache();pts={};step=0;start=Date.now();elapsedSec=null;zoom=1;panX=0;panY=0;$('zoomLabel').textContent='100%';
+    buildGrayCache();pts={};$('scale').value='';step=0;start=Date.now();elapsedSec=null;zoom=1;panX=0;panY=0;$('zoomLabel').textContent='100%';
     accepted=false;correctionCount=0;aiInitial={};aiLoaded=false;autoStemInfo=null;profileRows=[];continuousSlices=[];continuousSummary={};
     annotation={version:'2.1-training',head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};
     annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,osteotomy_line:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};
-    annotationCorrectionCount=0;clearSavedWork();guidedStage=0;$('workMode').value='annotation';$('annotationTarget').value='head';
-    draw();guide();
-    $('guide').innerHTML='<span class="status">新しい画像を読み込みました。Step 1/9：Head(または25mm鉄球)から開始、またはAI Mask512 PNGを読み込んでください。</span>';
+    annotationCorrectionCount=0;axisInputKey=null;confirmedLTKey=null;femoralAxisResult=null;legacySourceId=null;legacySourceVersion=null;legacyStemCandidate=null;$('confirmLegacyStem').hidden=true;guidedStage=0;$('workMode').value='annotation';$('annotationTarget').value='head';
+    restoreSavedWork();draw();guide();
+    $('guide').innerHTML='<span class="status">画像を読み込みました。Step 1/9：Head(または25mm鉄球)から開始、またはAI Mask512 PNGを読み込んでください。</span>';
     URL.revokeObjectURL(u);
   };
   img.src=u;
@@ -935,10 +959,10 @@ $('file').onchange=e=>{
 function setGuidedStage(i){
   guidedStage=Math.max(0,Math.min(guidedStages.length-1,i));
   const k=guidedStages[guidedStage];
-  if(k==='shaft_adjust'){
+  if(k==='stem_adjust'){
     if(annotation.lt_midpoint)pts.ltm={x:annotation.lt_midpoint.x,y:annotation.lt_midpoint.y};
     $('workMode').value='measurement';step=4;
-    $('guide').innerHTML='<span class="status">Step 9/9：Shaft axis proximal → distal の2点をクリックして髄腔軸を確定してください。</span>';
+    $('guide').innerHTML='<span class="status">Step 9/9：テンプレートに合わせて手動STEM軸の近位→遠位2点を指定してください。FEMORAL軸は髄腔から自動計算されます。</span>';
     draw();saveWork();return;
   }
   $('workMode').value='annotation';$('annotationTarget').value=k;
@@ -947,15 +971,15 @@ function setGuidedStage(i){
 }
 $('workflowBack').onclick=()=>{
   if(guidedStage<=0){$('guide').innerHTML='<span class="status">最初のStepです。</span>';return}
-  if(guidedStages[guidedStage]==='shaft_adjust'){step=(pts.sap&&pts.sad)?6:4;accepted=false}
+  if(guidedStages[guidedStage]==='stem_adjust'){step=(pts.stem_prox&&pts.stem_dist)?6:4;accepted=false}
   const prev=guidedStage-1, pk=guidedStages[prev];
-  if(pk!=='head'&&pk!=='lt_midpoint'&&pk!=='shaft_adjust'&&Array.isArray(annotation[pk]))annotationClosed[pk]=false;
+  if(pk!=='head'&&pk!=='lt_midpoint'&&pk!=='stem_adjust'&&Array.isArray(annotation[pk]))annotationClosed[pk]=false;
   setGuidedStage(prev);draw();saveWork();
 };
 $('workflowNext').onclick=()=>{
   const k=guidedStages[guidedStage];
-  if(k==='shaft_adjust'&&(!pts.sap||!pts.sad)){$('guide').innerHTML='<span class="status" style="color:#fbbf24">Shaft axis proximal → distal の2点をクリックしてください。</span>';return}
-  if(k!=='head'&&k!=='lt_midpoint'&&k!=='shaft_adjust'&&Array.isArray(annotation[k]))annotationClosed[k]=true;
+  if(k==='stem_adjust'&&$('imageType').value==='postop_THA'&&(!pts.stem_prox||!pts.stem_dist)){$('guide').innerHTML='<span class="status" style="color:#fbbf24">手動STEM軸の近位→遠位2点をクリックしてください（nativeでは不要）。</span>';return}
+  if(k!=='head'&&k!=='lt_midpoint'&&k!=='stem_adjust'&&Array.isArray(annotation[k]))annotationClosed[k]=true;
   if(guidedStage<guidedStages.length-1)setGuidedStage(guidedStage+1);
   else{$('guide').innerHTML='<span class="status">全ステップ完了 ✓ 「☁ Cloud Save」または「Local Save」で保存できます。</span>';saveWork()}
 };
@@ -1024,6 +1048,7 @@ function trainingMaskPngBlob(){
   });
 }
 async function saveCaseFilesToFolder(id){
+  if(legacySourceId&&id===legacySourceId){alert('旧記録の保存先には書き込めません。新しいResearch IDを指定してください。');return {ok:false,reason:'legacy_source_protected'};}
   const maskBlob=await trainingMaskPngBlob();
   const fmaRecord=buildDataDictionaryV11Record();
   const src=window._fmaFile;
@@ -1058,6 +1083,7 @@ function annotationPayload(){
     patient_id:$('patientId').value.trim()||ensureCaseId(),image_type:$('imageType').value,
     stem_family:$('stemFamily').value,side:$('side').value,implant_collar:$('implantCollar').value,
     lt_visibility:$('ltVisibility').value,double_cortex:$('doubleCortex').value,
+    calibration:{mode:$('calMode').value,mm_per_px:Number($('scale').value)||null,known_mm:Number($('headSize').value)||null},
     head:annotation.head,measurement_points:pts,lt_midpoint:annotation.lt_midpoint,osteotomy_line:annotation.osteotomy_line,
     stem_interface_anchors:annotation.stem_interface_anchors,lt_region:annotation.lt_region,
     femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,
@@ -1065,20 +1091,23 @@ function annotationPayload(){
     stem_medial:annotation.stem_medial,stem_lateral:annotation.stem_lateral,
     contour_closed:annotationClosed,annotation_correction_count:annotationCorrectionCount,
     ai_loaded:aiLoaded,ai_initial_prediction:aiLoaded?aiInitial:null,
-    app_version:'v2.1.2-cloud',timestamp:new Date().toISOString()
+    axes:axisMetadata(),contour_geometry_version:CONTOUR_GEOMETRY_VERSION,
+    app_version:'v2.2-axis-split',timestamp:new Date().toISOString()
   };
 }
 function profileCsvText(){
-  const rows=calculateProfiles(),hdr=['Distance_from_LT_mm','Outer_width_px','Canal_width_px','Stem_width_px','Outer_width_mm','Canal_width_mm','Stem_width_mm','CTI','CFR'];
-  return [hdr.join(',')].concat(rows.map(r=>[r.distance_from_LT_mm,r.outer_width_px,r.canal_width_px,r.stem_width_px,r.outer_width_mm,r.canal_width_mm,r.stem_width_mm,r.CTI,r.CFR].map(v=>v==null?'':v).join(','))).join('\n');
+  const rows=calculateProfiles(),hdr=['Distance_from_LT_mm','Outer_width_px','Canal_width_px','Stem_width_px','Outer_width_mm','Canal_width_mm','Stem_width_mm','CTI','CFR','Missing_reason','Axis_status','Axis_distal_mm'];
+  if(!rows.length)return hdr.join(',')+'\n'+[null,null,null,null,null,null,null,null,null,axisMetadata().femoral.reason,axisMetadata().femoral.quality_status,null].map(v=>v??'').join(',');
+  return [hdr.join(',')].concat(rows.map(r=>[r.distance_from_LT_mm,r.outer_width_px,r.canal_width_px,r.stem_width_px,r.outer_width_mm,r.canal_width_mm,r.stem_width_mm,r.CTI,r.CFR,r.missing_reason,axisMetadata().femoral.quality_status,femoralAxisResult.levels?.distalMm].map(v=>v==null?'':v).join(','))).join('\n');
 }
 function measurementCsvText(){
-  let s=parseFloat($('scale').value)||'',rows=[['Study_ID','Patient_ID','Observer_ID','Image_type','Stem_family','Side','Implant_collar','Landmark_name','X_px','Y_px','Image_width_px','Image_height_px','Scale_mm_per_px','Head_diameter_mm','Calibration_source','AP_CTI','CFI','CCR','CBR','Stem_Align_deg','Mean_Stem_Fill','Measurement_time_sec','AI_loaded','Correction_count','App_version','Timestamp']];
+  calc();
+  let s=parseFloat($('scale').value)||'',rows=[['Study_ID','Patient_ID','Observer_ID','Image_type','Stem_family','Side','Implant_collar','Landmark_name','X_px','Y_px','Image_width_px','Image_height_px','Scale_mm_per_px','Head_diameter_mm','Calibration_source','AP_CTI','CFI','CCR','CBR','Stem_Align_deg','Mean_Stem_Fill','Measurement_time_sec','AI_loaded','Correction_count','App_version','Timestamp','Femoral_axis_status','Femoral_axis_distal_mm','Axis_missing_reason','Fixed_100_missing_reason']];
   for(const[name,k]of steps){
     let p=pts[k];if(!p)continue;
-    rows.push([ensureCaseId(),$('patientId').value||ensureCaseId(),$('observerId').value,$('imageType').value,$('stemFamily').value,$('side').value,$('implantCollar').value,k,p.x.toFixed(3),p.y.toFixed(3),cv.width,cv.height,s,$('headSize').value,$('calMode').value,$('cti').textContent,$('cfiVal').textContent,$('ccrVal').textContent,$('cbrVal').textContent,$('alignVal').textContent,$('meanFillVal').textContent,elapsedSec!=null?elapsedSec:(start?Math.round((Date.now()-start)/1000):''),aiLoaded?'true':'false',correctionCount+annotationCorrectionCount,'v2.1.2-cloud',new Date().toISOString()]);
+    rows.push([ensureCaseId(),$('patientId').value||ensureCaseId(),$('observerId').value,$('imageType').value,$('stemFamily').value,$('side').value,$('implantCollar').value,k,p.x.toFixed(3),p.y.toFixed(3),cv.width,cv.height,s,$('headSize').value,$('calMode').value,$('cti').textContent,$('cfiVal').textContent,$('ccrVal').textContent,$('cbrVal').textContent,$('alignVal').textContent,$('meanFillVal').textContent,elapsedSec!=null?elapsedSec:(start?Math.round((Date.now()-start)/1000):''),aiLoaded?'true':'false',correctionCount+annotationCorrectionCount,'v2.2-axis-split',new Date().toISOString(),axisMetadata().femoral.quality_status,femoralAxisResult.levels?.distalMm??'',axisMetadata().femoral.reason??'',!measurementGeometry()?axisMetadata().femoral.reason:$('cti').textContent==='--'?'contour_missing_or_ambiguous':'']);
   }
-  return rows.map(r=>r.map(esc).join(',')).join('\n');
+  return rows.map(r=>r.map(v=>esc(v==='--'?'':v)).join(',')).join('\n');
 }
 
 function rdpPolyline(points,eps){
@@ -1118,9 +1147,12 @@ function normalizePrediction(j){
 }
 function applyFullPrediction(pred){
   if(!pred)return;
-  const n=normalizePrediction(pred);aiInitial=JSON.parse(JSON.stringify(n));aiLoaded=true;
+  const n=normalizePrediction(pred);
+  const cp=n.points?.stem_prox||n.points?.sap,cd=n.points?.stem_dist||n.points?.sad;
+  if(cp&&cd){legacyStemCandidate={proximal:{...cp},distal:{...cd}};$('confirmLegacyStem').hidden=false;}
+  aiInitial=JSON.parse(JSON.stringify(n));aiLoaded=true;
   annotation._manualAnchors={};annotation._nextManualId=0;
-  for(const[k,p]of Object.entries(n.points||{}))if(p&&Number.isFinite(Number(p.x))&&Number.isFinite(Number(p.y)))pts[k]={x:Number(p.x),y:Number(p.y)};
+  for(const[k,p]of Object.entries(n.points||{}))if(['head1','head2','head3','ltm'].includes(k)&&p&&Number.isFinite(Number(p.x))&&Number.isFinite(Number(p.y)))pts[k]={x:Number(p.x),y:Number(p.y)};
   for(const[k,a]of Object.entries(n.annotation||{})){
     if(Array.isArray(a)){annotation[k]=a.map(q=>({...q}));annotationClosed[k]=true}
     else annotation[k]=JSON.parse(JSON.stringify(a));
@@ -1139,7 +1171,7 @@ $('aiJsonFile').onchange=async e=>{
 $('aiSuggest').onclick=()=>{if(!img){alert('先に画像を選択してください');return}if(!pendingAiPrediction){alert('先に「AI候補JSON」を選択してください');return}applyFullPrediction(pendingAiPrediction)};
 $('accept').onclick=()=>{
   if(start&&elapsedSec==null)elapsedSec=Math.round((Date.now()-start)/1000);
-  accepted=true;calc();saveWork();
+  calc();if(!measurementGeometry()){alert('FEMORAL軸とLTを確認してください。');return;}accepted=true;saveWork();
   $('guide').innerHTML='<span class="status">Accepted ✓ 総測定時間 '+(elapsedSec!=null?elapsedSec+' s':'--')+'。「☁ Cloud Save」または「Local Save」で保存できます。</span>';
 };
 $('scale').oninput=calc;$('headSize').oninput=calc;$('calMode').onchange=calc;$('ltVisibility').onchange=()=>{draw();calc()};
@@ -1272,7 +1304,12 @@ function calc(){
     let hp=hc?2*hc.r:(annotation.head&&Number.isFinite(annotation.head.radius_px)?2*annotation.head.radius_px:null);
     if(hp){s=hd/hp;$('scale').value=s.toFixed(5)}
   }
+  profileRows=[];continuousSlices=[];continuousSummary={};
   const g=measurementGeometry(),fixed={};
+  const a=refreshFemoralAxis();
+  $('axisStatus').textContent=a.status==='ok'?'FEMORAL: 10 / '+a.levels.distalMm+' mm — '+(g?'LT confirmed':'LT confirmation required')+(a.fallbackReasons?.length?' | '+JSON.stringify(a.fallbackReasons):''):'FEMORAL: unavailable / '+a.reason;
+  if(legacySourceVersion)$('axisStatus').textContent+=' | Legacy '+legacySourceVersion+': original preserved; copied connectivity frozen; new record ID required';
+  $('confirmLT').disabled=a.status!=='ok';
   if(g){const rows=calculateProfiles();for(const l of levels)fixed[l]=rows.find(r=>r.distance_from_LT_mm===l)||null}
   const r100=fixed[100];
   $('cti').textContent=r100&&r100.CTI!=null?r100.CTI.toFixed(3):'--';
@@ -1306,16 +1343,87 @@ function calc(){
   }).join('');
 }
 
-function imageWorkKey(file){return file?'FMA_work_v21_'+[file.name,file.size].join('_'):null}
+// v2 work keys are read-only. New work uses a distinct namespace.
+function imageWorkKey(file){return file?'FMA_work_axes_v1_'+[file.name,file.size].join('_'):null}
 function saveWork(){
   if(!window._fmaFile)return;
   const key=imageWorkKey(window._fmaFile);if(!key)return;
-  const data={pts,step,zoom,panX,panY,annotation,annotationClosed,annotationCorrectionCount,profileRows,autoStemInfo,start,elapsedSec,
+  const data={pts,step,zoom,panX,panY,annotation,annotationClosed,annotationCorrectionCount,autoStemInfo,start,elapsedSec,
+    axes:axisMetadata(),confirmedLTKey,legacyStemCandidate,legacySourceVersion,legacySourceId,
     fields:{studyId:$('studyId').value,patientId:$('patientId').value,observerId:$('observerId').value,imageType:$('imageType').value,stemFamily:$('stemFamily').value,side:$('side').value,implantCollar:$('implantCollar').value,headSize:$('headSize').value,calMode:$('calMode').value,scale:$('scale').value,ltVisibility:$('ltVisibility').value,doubleCortex:$('doubleCortex').value,exclusionFlag:$('exclusionFlag').value},
-    savedAt:new Date().toISOString(),appVersion:'v2.1.2-cloud'};
+    savedAt:new Date().toISOString(),appVersion:'v2.2-axis-split'};
   try{localStorage.setItem(key,JSON.stringify(data))}catch(e){}
 }
-function clearSavedWork(){if(window._fmaFile){const k=imageWorkKey(window._fmaFile);if(k)localStorage.removeItem(k)}}
+function restoreWorkData(data){
+  // Never trust stored calculated metrics. Recompute from explicit inputs.
+  const modern=data.axes?.schema===AXIS_SCHEMA;
+  pts=JSON.parse(JSON.stringify(data.pts||{}));
+  annotation={...emptyAnnotation(),...JSON.parse(JSON.stringify(data.annotation||{}))};
+  annotationClosed=Object.fromEntries(Object.keys(annotationClosed).map(k=>[k,false]));
+  Object.assign(annotationClosed,data.annotationClosed||{});
+  for(const[k,v]of Object.entries(data.fields||{}))if($(k))$(k).value=v;
+  step=data.step||0;zoom=data.zoom||1;panX=data.panX||0;panY=data.panY||0;
+  annotationCorrectionCount=data.annotationCorrectionCount||0;autoStemInfo=data.autoStemInfo||null;
+  start=data.start||null;elapsedSec=data.elapsedSec??null;
+  legacySourceVersion=data.legacySourceVersion||(!modern?data.appVersion||'unversioned':null);
+  legacySourceId=data.legacySourceId||(!modern?(data.fields?.studyId||'legacy'):null);
+  legacyStemCandidate=data.legacyStemCandidate||null;
+  if(!modern){
+    const p=pts.sap,d=pts.sad;
+    if(p&&d){legacyStemCandidate={proximal:{...p},distal:{...d}};}
+    // Freeze precisely the legacy axis-ordering once. This is an in-memory copy;
+    // source bytes and source mask are not touched or automatically republished.
+    let legacyScale=parseFloat($('scale').value)||null;
+    if(!legacyScale&&$('calMode').value==='head'&&Number.isFinite(annotation.head?.radius_px)&&annotation.head.radius_px>0)
+      legacyScale=(parseFloat($('headSize').value)||32)/(2*annotation.head.radius_px);
+    const hadLegacyGeometry=p&&d&&Math.hypot(d.x-p.x,d.y-p.y)>0
+      &&(pts.ltm||annotation.lt_midpoint||$('ltVisibility').value==='occluded_unidentifiable')
+      &&legacyScale; // Match prior renderer only; solver still rejects nonpositive scales.
+    const dx=hadLegacyGeometry?d.x-p.x:0,dy=hadLegacyGeometry?d.y-p.y:1;
+    for(const name of ['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral'])
+      annotation[name]=(annotation[name]||[]).slice().sort((a,b)=>(a.x-b.x)*dx+(a.y-b.y)*dy);
+    delete pts.stem_prox;delete pts.stem_dist;
+  }
+  delete pts.sap;delete pts.sad;
+  $('confirmLegacyStem').hidden=!legacyStemCandidate;
+  axisInputKey=null;confirmedLTKey=null;refreshFemoralAxis();
+  // Exact-input confirmation only; any algorithm/version difference requires review.
+  if(modern&&data.confirmedLTKey===axisInputKey&&data.axes.femoral?.method===femoralAxisResult.method&&data.axes.femoral?.version===femoralAxisResult.version)
+    confirmedLTKey=axisInputKey;
+  profileRows=[];continuousSlices=[];continuousSummary={};accepted=false;
+}
+function restoreSavedWork(){
+  if(!window._fmaFile)return false;
+  const f=window._fmaFile,key=imageWorkKey(f);
+  try{
+    const current=localStorage.getItem(key);
+    const old=!current?localStorage.getItem('FMA_work_v21_'+[f.name,f.size].join('_')):null;
+    if(!current&&!old)return false;
+    if(!confirm(current?'この画像の作業を再開しますか？':'旧作業データを読み取り専用で取り込みますか？ 軸は未確認として扱い、原本は保持します。'))return false;
+    restoreWorkData(JSON.parse(current||old));return true;
+  }catch(e){alert('作業データの読込に失敗しました: '+e.message);return false;}
+}
+$('recordFile').onchange=async e=>{
+  const file=e.target.files?.[0];if(!file)return;
+  if(!img){alert('対応する元画像を先に読み込んでください。');return;}
+  try{
+    const record=JSON.parse(await file.text()),raw=record.raw_annotations||record;
+    if(!Array.isArray(raw.canal_medial)||!Array.isArray(raw.canal_lateral))throw Error('対応するannotationではありません');
+    if(!confirm('対応する画像であることを確認してください。旧記録の軸は未確認です。原本・保存済みマスクを変更せず、作業用コピーを読み込みます。'))return;
+    const axes=raw.axes||record.axes;
+    const ann={};for(const k of Object.keys(annotation))if(raw[k]!==undefined)ann[k]=raw[k];
+    ann.version=raw.annotation_version||annotation.version;
+    restoreWorkData({pts:raw.measurement_points||{},annotation:ann,annotationClosed:raw.contour_closed||{},axes,
+      appVersion:raw.app_version,legacySourceId:axes?.legacy_source_id,
+      fields:{studyId:raw.study_id||record.provenance_and_split?.research_id||'',
+        patientId:raw.patient_id||'',side:raw.side||$('side').value,imageType:raw.image_type||$('imageType').value,
+        ltVisibility:raw.lt_visibility||'clear',
+        calMode:'manual',scale:record.calibration_metrics?.calibrated_mm_per_px||raw.calibration?.mm_per_px||'',
+        headSize:record.calibration_metrics?.calib_known_mm||raw.calibration?.known_mm||'',
+        stemFamily:raw.stem_family||'',implantCollar:raw.implant_collar||'NA'}});
+    draw();saveWork();guide();
+  }catch(err){alert('記録JSONの読込エラー: '+err.message);}
+};
 function esc(v){v=String(v??'');return '"'+v.replaceAll('"','""')+'"'}
 
 $('export').onclick=()=>{
