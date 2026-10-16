@@ -1,0 +1,72 @@
+name: Sync FMA to existing GAS deployment
+on:
+  push:
+    branches: [v2.1.2-cloud]
+    paths:
+      - index.html
+      - Code.gs
+      - appsscript.json
+      - .clasp.json
+      - .claspignore
+      - .github/workflows/gas-sync.yml
+      - tests/save-regression.cjs
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fma-production-gas
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOYMENT_ID: AKfycbwjM7bGEl9Enx8-67okUubpr33A8ZL_xdJHd_YHHJZNHeY-gRZOEXPZuS4tQHN8-d3kLg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Regression tests
+        run: node tests/save-regression.cjs
+      - name: Validate prerequisites
+        env:
+          CLASP_AUTH: ${{ secrets.CLASP_AUTH }}
+        run: |
+          test -f appsscript.json || { echo "::error::Import the existing GAS appsscript.json before enabling sync."; exit 1; }
+          test -n "$CLASP_AUTH" || { echo "::error::Register CLASP_AUTH in repository Actions secrets."; exit 1; }
+          node -e "JSON.parse(require('fs').readFileSync('appsscript.json','utf8'))"
+      - name: Install clasp
+        run: npm install --global @google/clasp@3
+      - name: Configure Google authentication
+        env:
+          CLASP_AUTH: ${{ secrets.CLASP_AUTH }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const os = require('os');
+          const auth = JSON.parse(process.env.CLASP_AUTH);
+          fs.writeFileSync(path.join(os.homedir(), '.clasprc.json'), JSON.stringify(auth), {mode: 0o600});
+          NODE
+      - name: Stamp exact source commit
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const sha = process.env.GITHUB_SHA;
+          if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('Invalid source commit');
+          for (const file of ['index.html', 'Code.gs']) {
+            const source = fs.readFileSync(file, 'utf8');
+            if (!source.includes('__FMA_BUILD_COMMIT__')) throw new Error('Missing build marker: '+file);
+            fs.writeFileSync(file, source.replaceAll('__FMA_BUILD_COMMIT__', sha));
+          }
+          NODE
+      - name: Push code
+        run: clasp push --force
+      - name: Update existing web app
+        run: clasp create-deployment --deploymentId "$DEPLOYMENT_ID" --description "FMA GitHub $GITHUB_SHA"
+      - name: Remove authentication file
+        if: always()
+        run: |
+          node -e "require('fs').rmSync(require('path').join(require('os').homedir(),'.clasprc.json'),{force:true})"
+

@@ -4,6 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
+const crypto=require('node:crypto');
 
 // Executes the shipped inline application, with a deterministic canvas command
 // recorder. Mask assertions compare drawing-command bytes, not browser PNG pixels.
@@ -18,10 +19,9 @@ function harness(end=120){
   }
   const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
   Object.entries({scale:'1',calMode:'manual',headSize:'32',ltVisibility:'visible',side:'R',imageType:'postop_THA',studyId:'SYNTHETIC',workMode:'annotation',annotationTarget:'head'}).forEach(([k,v])=>get(k).value=v);
-  const context=vm.createContext({document:{getElementById:get,createElement:element,body:{appendChild(){}}},window:{addEventListener(){}},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},console,Blob,Buffer,setTimeout(){},alert(){},confirm:()=>true,URL:{createObjectURL:()=>'',revokeObjectURL(){}},Image:function(){}});
+  const context=vm.createContext({document:{getElementById:get,createElement:element,body:{appendChild(){}}},window:{addEventListener(){}},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},console,crypto,Blob,Buffer,setTimeout(){},alert(){},confirm:()=>true,URL:{createObjectURL:()=>'',revokeObjectURL(){}},Image:function(){}});
   const run=src=>vm.runInContext(src,context);
-  run(fs.readFileSync(path.join(__dirname,'../dev/femoral-axis.js'),'utf8'));
-  const html=fs.readFileSync(path.join(__dirname,'../dev/index.html'),'utf8');
+  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
   for(const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g))if(match[1].trim())run(match[1]);
   run(`pts={ltm:{x:95,y:30},stem_prox:{x:100,y:40},stem_dist:{x:100,y:120}};
     annotation.lt_midpoint={...pts.ltm};
@@ -117,7 +117,7 @@ let chromium;try{chromium=require('playwright').chromium;}catch{}
 test('real Chromium mask PNG pixels are invariant under manual STEM endpoint changes',{skip:process.env.FMA_BROWSER_TESTS!=='1'||!chromium||!fs.existsSync('/usr/bin/chromium')},async()=>{
   const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
   try{
-    const page=await browser.newPage();await page.goto('file://'+path.join(__dirname,'../dev/index.html'));
+    const page=await browser.newPage();await page.goto('file://'+path.join(__dirname,'../index.html'));
     const result=await page.evaluate(async()=>{
       $('calMode').value='manual';$('scale').value='1';pts={ltm:{x:95,y:30},stem_prox:{x:100,y:40},stem_dist:{x:100,y:120}};annotation.lt_midpoint={...pts.ltm};
       for(const[name,x]of [['canal_medial',95],['canal_lateral',105],['femur_medial',90],['femur_lateral',110],['stem_medial',97],['stem_lateral',103]])annotation[name]=[{x,y:0},{x,y:70},{x,y:150}];
@@ -157,15 +157,66 @@ test('AI STEM points require explicit manual adoption and cannot overwrite manua
   h.get('confirmLegacyStem').onclick();assert.equal(h.run('pts.stem_prox.x'),200);
 });
 
-test('every common save guard protects the legacy source Research ID',async()=>{
-  const h=harness();h.run("legacySourceId='SYNTHETIC'");
-  assert.equal(h.run("confirmMissingBeforeSave('test')"),false);
-  const result=await h.run("saveCaseFilesToFolder('SYNTHETIC')");assert.equal(result.ok,false);assert.equal(result.reason,'legacy_source_protected');
-  await h.get('saveCloud').onclick(); // Must return before any network or download tools.
+test('legacy source file keys are protected while same-Research-ID new snapshots remain allowed',async()=>{
+  const h=harness();h.run("legacySourceId='SYNTHETIC';legacySourceRecordKey='OLD_SNAPSHOT';$('observerId').value='TEST';$('repeatIndex').value='1';$('imageId').value='IMG'");
+  assert.equal(h.run("confirmMissingBeforeSave('test')"),true);
+  assert.equal(h.run('isProtectedSourceKey(newSaveKey())'),false);
+  for(const key of ['SYNTHETIC','OLD_SNAPSHOT']){
+    assert.equal(h.run(`isProtectedSourceKey('${key}')`),true);
+    const result=await h.run(`saveCaseFilesToFolder('${key}')`);assert.equal(result.ok,false);assert.equal(result.reason,'legacy_source_protected');
+  }
 });
 
 test('invalid geometry exports null LDR values and degenerate STEM metadata is unavailable',()=>{
   const h=harness();const record=h.json('buildDataDictionaryV11Record()');
   assert.equal(record.discrete_parameters.ldr_alpha,null);assert.equal(record.discrete_parameters.ldr_beta,null);
   h.run('pts.stem_dist={...pts.stem_prox}');assert.equal(h.json('axisMetadata()').stem.status,'unavailable');
+});
+
+test('Apps Script single inline solver exactly matches the canonical library',()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+  const lib=fs.readFileSync(path.join(__dirname,'../lib/femoral-axis.js'),'utf8');
+  const begin='// BEGIN GENERATED FEMORAL AXIS SOLVER (lib/femoral-axis.js)';
+  const end='// END GENERATED FEMORAL AXIS SOLVER';
+  assert.equal(html.split(begin).length,2);assert.equal(html.split(end).length,2);
+  assert.equal(html.split(begin)[1].split(end)[0].trim(),lib.trim());
+  assert.equal([...html.matchAll(/<script(?:\s[^>]*)?>/g)].length,1,'GAS page must remain self-contained');
+  assert.doesNotMatch(html,/<script[^>]*src=/);
+});
+
+test('AI work provenance survives save/resume and never leaks into manual or unknown legacy work',()=>{
+  const h=harness();h.run("window._fmaFile={name:'ai-synthetic.png',size:456};aiLoaded=true;aiProvenanceKnown=true;aiInitial={synthetic:true};$('modelVersion').value='TEST_MODEL';saveWork()");
+  const data=JSON.parse(h.storage.get(h.run('imageWorkKey(window._fmaFile)')));
+  h.run(`restoreWorkData(${JSON.stringify(data)})`);
+  assert.equal(h.run('aiLoaded'),true);assert.deepEqual(h.json('aiInitial'),{synthetic:true});
+  assert.equal(h.json('buildDataDictionaryV11Record()').provenance_and_split.mask_source_type,'ai_raw');
+  const manual={...data,aiLoaded:false,aiInitial:{shouldNotLeak:true}};h.run(`restoreWorkData(${JSON.stringify(manual)})`);
+  assert.deepEqual(h.json('aiInitial'),{});assert.equal(h.json('buildDataDictionaryV11Record()').provenance_and_split.mask_source_type,'teacher_gt');
+  delete data.aiLoaded;delete data.aiProvenanceKnown;delete data.axes;data.appVersion='v2.1.3-cloud';
+  h.run(`restoreWorkData(${JSON.stringify(data)})`);
+  assert.equal(h.run('aiLoaded'),false);assert.deepEqual(h.json('aiInitial'),{});assert.equal(h.run('aiProvenanceKnown'),false);
+  const provenance=h.json('buildDataDictionaryV11Record()').provenance_and_split;assert.equal(provenance.mask_source_type,'unknown');assert.equal(provenance.model_version,null);
+});
+
+test('standalone annotation import roundtrips identity and AI provenance without prior-case leakage',async()=>{
+  const h=harness();h.run("img={width:256,height:256};$('observerId').value='OBSERVER';$('repeatIndex').value='3';$('imageId').value='SYNTH_IMG';aiLoaded=true;aiProvenanceKnown=true;aiInitial={synthetic:true};$('modelVersion').value='TEST_MODEL'");
+  const raw=h.json('annotationPayload()'),identity=h.json('measurementIdentity()');
+  h.run("$('observerId').value='WRONG';$('repeatIndex').value='9';$('imageId').value='WRONG';aiInitial={leak:true}");
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});
+  assert.deepEqual(h.json('measurementIdentity()'),identity);assert.equal(h.run('aiLoaded'),true);assert.deepEqual(h.json('aiInitial'),{synthetic:true});
+  delete raw.ai_loaded;delete raw.ai_initial_prediction;delete raw.ai_provenance_known;delete raw.model_version;
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});
+  assert.equal(h.run('aiProvenanceKnown'),false);assert.deepEqual(h.json('aiInitial'),{});assert.equal(h.get('modelVersion').value,'');
+});
+
+for(const [version,headSize,headPoints,expectAxis] of [
+  ['v2.1.3-cloud','',false,false],['v2.1.3-cloud','32',false,true],
+  ['v2.1.3-cloud','32',true,true],['v2.1.2-cloud','',false,true]
+])test(`legacy connectivity matches ${version}, diameter '${headSize}', circle landmarks ${headPoints}`,()=>{
+  const h=harness();const points=[{x:30,y:10},{x:10,y:30},{x:20,y:20}];
+  const data={appVersion:version,pts:{sap:{x:0,y:0},sad:{x:100,y:0},ltm:{x:0,y:0}},annotation:{canal_medial:points,canal_lateral:points.map(p=>({x:p.x,y:p.y+5})),head:headPoints?null:{radius_px:16}},fields:{calMode:'head',headSize,scale:'1',ltVisibility:'clear'}};
+  if(headPoints)Object.assign(data.pts,{head1:{x:0,y:16},head2:{x:16,y:0},head3:{x:0,y:-16}});
+  h.run(`restoreWorkData(${JSON.stringify(data)})`);
+  const expected=points.slice().sort((a,b)=>expectAxis?a.x-b.x:a.y-b.y);
+  assert.deepEqual(h.json('annotation.canal_medial'),expected);assert.equal(h.run('confirmedLTKey'),null);
 });

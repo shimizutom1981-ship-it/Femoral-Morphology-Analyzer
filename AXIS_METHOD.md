@@ -1,7 +1,11 @@
-# Separate femoral and stem references (development app only)
+# Separate femoral and stem references (review branch)
 
-This change is isolated to `dev/`. The root app, saved source records, existing
-masks, training pipeline and Apps Script deployment are not modified.
+This change integrates into the current `v2.1.2-cloud` source at commit
+`70b8b221829c43ffd4a912dc589826ba4ebe3740`. It is published only on a review
+branch. Saved source records, existing masks, training code and production
+deployment are not modified. The production backend, immutable snapshot IDs,
+required observation metadata, calibration validation and mask-extraction fixes
+are preserved.
 
 ## Workflow
 
@@ -22,15 +26,15 @@ can retain confirmation; imported records require a fresh review.
 
 ## Femoral method
 
-`femoral-axis.js` is a pure, deterministic, versioned solver. It uses the same
+`lib/femoral-axis.js` is a pure, deterministic, versioned solver. It uses the same
 centripetal smoothed open polylines as rendering and masks, preserving connectivity.
 Its initializer is the sum of the walls' proximal-to-distal endpoint directions,
 with no implant or image-y seed. It iterates axis-perpendicular sections at LT+10
 and LT+100 mm, connecting their medial/lateral wall midpoints, using damped direction
 updates until angular residual is below 1e-9 radians (maximum 400 iterations).
 
-Fallback is attempted in order 100 → 90 → 80 mm only with a certified absent distal
-section. The certificate requires an entire missing wall to lie within the
+Fallback is attempted in order 100 → 90 → 80 mm only with geometrically established absent distal
+coverage. The geometric check requires an entire missing wall to lie within the
 LT-centered radius for that level. Since a ball is convex, all polyline segments
 then also lie inside it and no orientation can provide a crossing. This is
 intentionally conservative: some genuinely truncated wide/oblique contours can
@@ -49,13 +53,15 @@ Axes store schema, method/version, exact input contours and calibration, endpoin
 actual levels, fallback evidence, residual, iterations and review state. Contour
 geometry has a separate version. The existing annotation rule remains honestly
 `v1.0`; this change does not claim adoption of all rules in a separate v1.1 document.
-The algorithm version is `v2.2-axis-split`; no fabricated Git hash is exported.
+The algorithm version is `v2.2-axis-split`; the production build-commit injection
+is preserved and remains null outside an identified build.
 
 Legacy source files and `FMA_work_v21_*` entries are never rewritten. A working copy
 freezes the prior renderer's contour ordering once; original mask bytes are not
 regenerated or replaced automatically. Legacy `sap`/`sad` are unverified candidates
-and can become STEM references only through explicit confirmation. Same-source-ID
-exports are blocked for imported legacy cases; choose a new Research ID. New work
+and can become STEM references only through explicit confirmation. Same-source-filename
+exports are blocked for imported cases; the existing Research ID can be retained
+while the production `newSaveKey()` mechanism creates a new immutable UUID snapshot. New work
 is stored under `FMA_work_axes_v1_*` and recalculated rather than trusting stored
 profiles. Source/calibration absence produces missing measurements, not a guess.
 
@@ -64,6 +70,7 @@ profiles. Source/calibration absence produces missing measurements, not a guess.
 Run all dependency-free numerical and application integration checks:
 
     node --test tests/*.test.js
+    node tests/save-regression.cjs
 
 The app tests execute the actual HTML script with a fake DOM/canvas. They compare
 mask drawing-command bytes, not raster pixels. An optional Playwright/Chromium
@@ -78,3 +85,15 @@ Rendered smoothing differed from the earlier straight-polyline calculation by
 mean absolute 0.081 degrees (maximum 0.170 degrees) at the selected level; these
 are distinct analyses, not an exact equivalence claim. This limited check is not
 clinical validation or evidence for automatic source-data migration.
+
+## GAS packaging and deployment safety
+
+The canonical solver is copied inline into the existing single script in
+`index.html`. A parity test fails if the inline copy and `lib/femoral-axis.js`
+diverge. This works with the unchanged `Code.gs` createHtmlOutputFromFile route
+and existing clasp allowlist; no external JavaScript fetch is needed.
+
+The existing GAS workflow triggers only pushes to `v2.1.2-cloud` or manual
+dispatch. Publishing this feature branch or draft PR does not deploy. No
+workflow or deployment configuration is changed. Merge/release requires separate
+explicit authorization after the outstanding browser validation.

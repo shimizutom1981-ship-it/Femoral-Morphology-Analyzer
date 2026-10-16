@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {solve}=require('../dev/femoral-axis.js');
+const {solve}=require('../lib/femoral-axis.js');
 const near=(a,b,t=1e-6)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 function canal(end=120) {return {medial:[{x:-5,y:-10},{x:-5,y:30},{x:-5,y:end}],lateral:[{x:5,y:-10},{x:5,y:30},{x:5,y:end}],lt:{x:-5,y:0},mmPerPx:1};}
 function transform(input,angle,mirror,scale,tx,ty) {
