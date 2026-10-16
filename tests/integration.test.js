@@ -11,10 +11,10 @@ const crypto=require('node:crypto');
 function harness(end=120){
   const elements=new Map(),storage=new Map();
   function element(){
-    const commands=[];
+    const commands=[],listeners={};
     const context=new Proxy({}, {get:(o,k)=>k in o?o[k]:(...args)=>{commands.push([k,...args]);},set:(o,k,v)=>{o[k]=v;commands.push(['set',k,v]);return true;}});
     return {value:'',textContent:'',innerHTML:'',style:{},width:256,height:256,checked:false,hidden:false,
-      addEventListener(){},focus(){},click(){},remove(){},getContext:()=>context,
+      addEventListener(type,fn){(listeners[type]??=[]).push(fn);},dispatch(type,e={}){for(const fn of listeners[type]||[])fn(e);},setPointerCapture(){},focus(){},click(){},remove(){},getContext:()=>context,
       toBlob:cb=>cb(Buffer.from(JSON.stringify(commands))),getBoundingClientRect:()=>({left:0,top:0,width:256,height:256})};
   }
   const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
@@ -219,4 +219,46 @@ for(const [version,headSize,headPoints,expectAxis] of [
   h.run(`restoreWorkData(${JSON.stringify(data)})`);
   const expected=points.slice().sort((a,b)=>expectAxis?a.x-b.x:a.y-b.y);
   assert.deepEqual(h.json('annotation.canal_medial'),expected);assert.equal(h.run('confirmedLTKey'),null);
+});
+
+
+function pointer(h,type,x,y,shiftKey=false){
+  h.get('cv').dispatch(type,{clientX:x,clientY:y,button:0,pointerId:1,shiftKey});
+}
+
+for(const target of ['head','stem_interface_anchors'])test('Measurement Shift miss is edit-only with target '+target,()=>{
+  const h=harness();h.confirm();h.get('workMode').value='measurement';h.get('annotationTarget').value=target;
+  h.run('step=0;accepted=true');
+  const points=h.json('pts'),annotation=h.json('annotation'),geometry=h.json('measurementGeometry()'),profiles=h.json('profileRows');
+  pointer(h,'pointerdown',240,240,true);pointer(h,'pointermove',245,245,true);pointer(h,'pointerup',245,245,true);
+  assert.deepEqual(h.json('pts'),points);assert.deepEqual(h.json('annotation'),annotation);
+  assert.equal(h.run('step'),0);assert.equal(h.run('drag'),null);assert.equal(h.run('accepted'),true);assert.equal(h.run('correctionCount'),0);
+  assert.deepEqual(h.json('measurementGeometry()'),geometry);assert.deepEqual(h.json('profileRows'),profiles);
+});
+
+test('Measurement endpoint Shift drag changes only STEM alignment and ends on pointerup',()=>{
+  const h=harness();h.confirm();h.get('workMode').value='measurement';
+  const geometry=h.json('measurementGeometry()'),profiles=h.json('profileRows'),angle=h.get('alignVal').textContent;
+  pointer(h,'pointerdown',100,120,true);pointer(h,'pointermove',120,120,true);pointer(h,'pointerup',120,120,true);
+  assert.deepEqual(h.json('pts.stem_dist'),{x:120,y:120});assert.equal(h.run('drag'),null);assert.equal(h.run('step'),0);
+  assert.notEqual(h.get('alignVal').textContent,angle);assert.deepEqual(h.json('measurementGeometry()'),geometry);assert.deepEqual(h.json('profileRows'),profiles);
+  pointer(h,'pointermove',200,200);assert.deepEqual(h.json('pts.stem_dist'),{x:120,y:120});
+});
+
+test('Measurement LT Shift drag still invalidates confirmation and derived results',()=>{
+  const h=harness();h.confirm();h.get('workMode').value='measurement';
+  pointer(h,'pointerdown',95,30,true);pointer(h,'pointermove',95,32,true);pointer(h,'pointerup',95,32,true);
+  assert.deepEqual(h.json('pts.ltm'),{x:95,y:32});assert.equal(h.run('confirmedLTKey'),null);assert.deepEqual(h.json('profileRows'),[]);
+});
+
+test('Measurement plain click still adds the current point',()=>{
+  const h=harness();h.get('workMode').value='measurement';h.run('step=0');
+  pointer(h,'pointerdown',230,230);pointer(h,'pointerup',230,230);
+  assert.deepEqual(h.json('pts.head1'),{x:230,y:230});assert.equal(h.run('step'),1);
+});
+
+test('Annotation Step 8 Shift click retains existing LT placement behavior',()=>{
+  const h=harness();h.get('annotationTarget').value='lt_midpoint';
+  pointer(h,'pointerdown',110,35,true);pointer(h,'pointerup',110,35,true);
+  assert.deepEqual(h.json('pts.ltm'),{x:110,y:35});assert.deepEqual(h.json('annotation.lt_midpoint'),{x:110,y:35});
 });

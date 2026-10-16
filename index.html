@@ -763,15 +763,18 @@ cv.addEventListener('pointerdown',e=>{
     return;
   }
   const p=pos(e);
+  if(e.shiftKey){
+    let best=null,d=18;
+    for(const[k,q]of Object.entries(pts)){let z=Math.hypot(p.x-q.x,p.y-q.y);if(z<d){d=z;best=k}}
+    if(best){drag=best;accepted=false;correctionCount++;cv.setPointerCapture(e.pointerId)}
+    return; // Measurement Shift gestures only edit existing points; a miss must never add one.
+  }
   if($('annotationTarget').value==='stem_interface_anchors'){
     if(!Array.isArray(annotation.stem_interface_anchors))annotation.stem_interface_anchors=[];
     annotation.stem_interface_anchors.push(p);draw();saveWork();
     $('guide').innerHTML='<span class="status">Stem/cortex補正点 '+annotation.stem_interface_anchors.length+' 点。Stem自動検出で曲線を更新してください。</span>';
     return;
   }
-  let best=null,d=18;
-  for(const[k,q]of Object.entries(pts)){let z=Math.hypot(p.x-q.x,p.y-q.y);if(z<d){d=z;best=k}}
-  if(best&&e.shiftKey){drag=best;accepted=false;correctionCount++;cv.setPointerCapture(e.pointerId);return}
   if(step>=steps.length)return;
   const currentKey=steps[step][1];pts[currentKey]=p;step++;
   if(['head1','head2','head3'].includes(currentKey))syncHeadAnnotation();
