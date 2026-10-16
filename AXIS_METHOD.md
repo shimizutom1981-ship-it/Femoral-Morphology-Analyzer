@@ -97,3 +97,24 @@ The existing GAS workflow triggers only pushes to `v2.1.2-cloud` or manual
 dispatch. Publishing this feature branch or draft PR does not deploy. No
 workflow or deployment configuration is changed. Merge/release requires separate
 explicit authorization after the outstanding browser validation.
+
+## Local draft rescue and save revisions
+
+Local Save and CSV export require Research ID; optional observer, scientific repeat,
+anonymous image and patient grouping IDs remain unknown when absent. They are not
+invented from Research ID. JSON carries completeness/missing-field and independent
+repeat status; measurement CSV carries equivalent status columns. A warning allows
+an incomplete local draft to be saved without claiming research readiness.
+
+`save_revision` is a best-effort number per exact Research ID from this browser's
+stored high-water mark and imported snapshot. It is not a scientific repeat, cannot
+search other browsers, Downloads or Drive, may skip a number after cancellation,
+and may repeat across concurrent tabs or cleared/blocked storage. Snapshot UUIDs
+remain unique and prevent file overwrites despite those number collisions. Original
+imported records and source filenames are preserved; a loaded renamed image's name
+is recorded separately. All seven local export components are captured from the
+same synchronous state before PNG completion.
+
+Cloud Save/server validation remains strict and unchanged. Local drafts with missing
+scientific identity are not accepted by the production backend. This is a local
+rescue workflow, not authorization to merge, deploy GAS or alter study definitions.

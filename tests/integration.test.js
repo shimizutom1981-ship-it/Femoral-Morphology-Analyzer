@@ -262,3 +262,83 @@ test('Annotation Step 8 Shift click retains existing LT placement behavior',()=>
   pointer(h,'pointerdown',110,35,true);pointer(h,'pointerup',110,35,true);
   assert.deepEqual(h.json('pts.ltm'),{x:110,y:35});assert.deepEqual(h.json('annotation.lt_midpoint'),{x:110,y:35});
 });
+
+test('Local rescue needs only Research ID; missing provenance stays null and cloud remains strict',()=>{
+  const h=harness();assert.equal(h.run('validateLocalIdentity()'),true);assert.equal(h.run('validateIdentity()'),false);
+  const r=h.json('buildDataDictionaryV11Record()');
+  for(const k of ['patient_id','observer_id','repeat_index','image_id'])assert.equal(r.provenance_and_split[k],null,k);
+  assert.equal(r.provenance_and_split.metadata_completeness,'incomplete');
+  assert.equal(r.provenance_and_split.independent_repeat_status,'not_declared');
+  assert.equal(r.raw_annotations.patient_id,null);
+  h.get('studyId').value='';assert.equal(h.run('validateLocalIdentity()'),false);
+  h.get('studyId').value='X';h.get('repeatIndex').value='1.5';assert.equal(h.run('validateLocalIdentity()'),false);
+});
+
+test('Local revisions increment by Research ID without changing declared repeat or image',()=>{
+  const h=harness();h.get('repeatIndex').value='2';h.get('observerId').value='OBS';h.get('imageId').value='AP_A';
+  const a=h.run('newLocalSaveKey()'),first=h.json('buildDataDictionaryV11Record()');
+  const b=h.run('newLocalSaveKey()'),second=h.json('buildDataDictionaryV11Record()');
+  assert.notEqual(a,b);assert.equal(first.provenance_and_split.save_revision,1);assert.equal(second.provenance_and_split.save_revision,2);
+  assert.equal(second.provenance_and_split.repeat_index,2);assert.equal(h.get('repeatIndex').value,'2');
+  h.get('imageId').value='AP_B';h.get('observerId').value='OTHER';h.run('newLocalSaveKey()');
+  assert.equal(h.json('localSaveMetadata()').save_revision,3);assert.equal(h.json('measurementIdentity()').image_id,'AP_B');
+  h.get('studyId').value='OTHER';h.run('newLocalSaveKey()');assert.equal(h.json('localSaveMetadata()').save_revision,1);
+  assert.equal(first.provenance_and_split.save_revision,1,'prior payload immutable');
+  const csv=h.run('measurementCsvText()');assert.match(csv,/Save_revision/);assert.match(csv,/Independent_repeat_status/);
+});
+
+test('Revision uses imported high-water and stored maximum; storage failure still gives unique UUID keys',()=>{
+  const h=harness();h.storage.set('FMA_save_revision_v1_SYNTHETIC','12');h.run("importLocalRevision('SYNTHETIC',{save_revision:8});newLocalSaveKey()");
+  assert.equal(h.json('localSaveMetadata()').save_revision,13);
+  h.run("importLocalRevision('SYNTHETIC',{save_revision:20});newLocalSaveKey()");assert.equal(h.json('localSaveMetadata()').save_revision,21);
+  h.run("localStorage.getItem=()=>{throw Error('blocked')};localStorage.setItem=()=>{throw Error('blocked')}");
+  const a=h.run('newLocalSaveKey()'),b=h.run('newLocalSaveKey()');assert.notEqual(a,b);assert.equal(h.json('localSaveMetadata()').save_revision,23);
+  const fresh=harness();fresh.run("localStorage.getItem=()=>{throw Error('blocked')};localStorage.setItem=()=>{throw Error('blocked')}");
+  const c=fresh.run('newLocalSaveKey()');assert.notEqual(a,c);assert.equal(fresh.json('localSaveMetadata()').save_revision,1);
+});
+
+test('Annotation and full-record imports preserve declared IDs, original source and revision',async()=>{
+  for(const full of [false,true]){
+    const h=harness();h.run('img={};window._fmaFile={name:"renamed_source.jpg",size:50}');
+    const ann=h.json('annotationPayload()');Object.assign(ann,{study_id:'CASE',patient_id:'PATIENT',source_image_filename:'original.jpg',save_revision:7,measurement_identity:{research_id:'CASE',observer_id:'OBS',repeat_index:4,image_id:'AP_01',side:'R',image_stage:'postop_THA'}});
+    const record=full?{raw_annotations:ann,provenance_and_split:{research_id:'CASE',save_revision:7}}:ann;
+    const original=JSON.stringify(record);
+    await h.get('recordFile').onchange({target:{files:[{text:async()=>original}]}});
+    assert.equal(h.get('studyId').value,'CASE');assert.equal(String(h.get('repeatIndex').value),'4');assert.equal(h.get('imageId').value,'AP_01');assert.equal(h.get('patientId').value,'PATIENT');
+    const key=h.run('newLocalSaveKey()');assert.match(key,/CASE__save008__/);
+    const out=h.json('annotationPayload()');assert.equal(out.measurement_identity.observer_id,'OBS');assert.equal(out.source_image_filename,'original.jpg');assert.equal(out.loaded_image_filename,'renamed_source.jpg');assert.equal(JSON.stringify(record),original);
+  }
+});
+
+test('Legacy import lacking IDs can be locally exported without inventing metadata',async()=>{
+  const h=harness();h.run('img={}');
+  const ann=h.json('annotationPayload()');delete ann.measurement_identity;delete ann.save_revision;ann.study_id='LEGACY';ann.patient_id='KNOWN_PATIENT';ann.app_version='v2.1.2-cloud';
+  const source=JSON.stringify(ann);
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>source}]}});
+  assert.equal(h.run('validateLocalIdentity()'),true);assert.equal(h.run('validateIdentity()'),false);
+  h.run('newLocalSaveKey()');const record=h.json('buildDataDictionaryV11Record()');
+  assert.equal(record.provenance_and_split.save_revision,1);assert.equal(record.provenance_and_split.repeat_index,null);assert.equal(record.provenance_and_split.patient_id,'KNOWN_PATIENT');
+  assert.equal(JSON.stringify(ann),source);
+  const before=h.json('pts');await h.get('saveCase').onclick();assert.deepEqual(h.json('pts'),before);
+});
+
+test('Deferred PNG and concurrent edits cannot mutate snapshot JSON, CSV or source',async()=>{
+  const h=harness();
+  h.run(`window._fmaFile={name:'original.jpg',type:'image/jpeg'};
+    globalThis.exports=[];globalThis.resolveMask=null;
+    trainingMaskPngBlob=()=>new Promise(resolve=>{resolveMask=resolve});
+    downloadBlob=(content,type,name)=>exports.push({content,type,name});
+    globalThis.firstKey=newLocalSaveKey();globalThis.pendingSave=saveCaseFilesToFolder(firstKey);`);
+  const original=h.json('pts');
+  h.run(`pts.ltm.x=777;annotation.canal_medial[0].x=888;
+    window._fmaFile={name:'other.jpg',type:'image/jpeg'};
+    newLocalSaveKey();resolveMask(new Blob(['mask']));`);
+  await h.run('pendingSave');
+  const outputs=h.json('exports'),record=JSON.parse(outputs.find(x=>x.name.endsWith('_fma_record.json')).content);
+  assert.deepEqual(record.raw_annotations.measurement_points,original);assert.equal(record.raw_annotations.canal_medial[0].x,95);
+  assert.equal(record.provenance_and_split.save_revision,1);assert.equal(record.raw_annotations.save_revision,1);
+  assert.equal(record.raw_annotations.record_key,h.run('firstKey'));
+  assert.equal(outputs.find(x=>x.name.endsWith('_source.jpg')).content.name,'original.jpg');
+  assert.match(outputs.find(x=>x.name.startsWith('FMA_')).content,/"95.000"/);
+  assert.ok(outputs.every(x=>x.name.includes(h.run('firstKey'))));
+});
