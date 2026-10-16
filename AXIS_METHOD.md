@@ -33,14 +33,27 @@ with no implant or image-y seed. It iterates axis-perpendicular sections at LT+1
 and LT+100 mm, connecting their medial/lateral wall midpoints, using damped direction
 updates until angular residual is below 1e-9 radians (maximum 400 iterations).
 
-Fallback is attempted in order 100 → 90 → 80 mm only with geometrically established absent distal
-coverage. The geometric check requires an entire missing wall to lie within the
-LT-centered radius for that level. Since a ball is convex, all polyline segments
-then also lie inside it and no orientation can provide a crossing. This is
-intentionally conservative: some genuinely truncated wide/oblique contours can
-return `coverage_unproven` and require review. It is not acceptable to interpret
-an initializer failure as image truncation. Multiple crossings, collinear sections,
-nonconvergence, invalid scale and missing 10-mm coverage are hard failures.
+Fallback is attempted in order 100 → 90 → 80 mm only after a separate explicit
+user review confirms each absent section is outside the effective acquisition
+field. Solver v1.1.0 never derives that field from canvas bounds, black borders,
+photographic frames or contour endpoints. Unknown field coverage stops with
+`effective_field_review_required`; a section confirmed inside the field stops
+with `contour_incomplete` and requires contour completion.
+
+The existing direction-independent contour radial bound remains a necessary
+secondary safeguard, not acquisition evidence. Ambiguity, collinearity,
+nonconvergence, invalid scale and missing 10-mm coverage remain hard failures.
+A user outside-field confirmation cannot override these failures. A 100-mm
+confirmation never implicitly approves a missing 90- or 80-mm section.
+
+The UI records per-level manual acquisition evidence in axis inputs and fallback
+metadata. It is tied to the current bone geometry, LT and calibration and is
+cleared when those inputs change, an image is opened or any saved work/record is
+restored. Imported evidence is retained in the original file but is not trusted
+as current approval. Thus fallback sessions require new field review and LT
+confirmation after reload. STEM edits do not invalidate acquisition or LT review.
+No automatic image-content field detector is included; a human must leave the
+case unavailable when effective coverage cannot be established.
 
 Fixed-distance parameters remain at their defined levels. In particular, a valid
 10/90 or 10/80 axis does not supply a missing 100-mm width, CTI, CFI, CCR or CBR.

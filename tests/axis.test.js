@@ -3,11 +3,11 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {solve}=require('../lib/femoral-axis.js');
 const near=(a,b,t=1e-6)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
-function canal(end=120) {return {medial:[{x:-5,y:-10},{x:-5,y:30},{x:-5,y:end}],lateral:[{x:5,y:-10},{x:5,y:30},{x:5,y:end}],lt:{x:-5,y:0},mmPerPx:1};}
+function canal(end=120) {return {medial:[{x:-5,y:-10},{x:-5,y:30},{x:-5,y:end}],lateral:[{x:5,y:-10},{x:5,y:30},{x:5,y:end}],lt:{x:-5,y:0},mmPerPx:1,acquisitionReview:Object.fromEntries([100,90,80].map(level=>[level,{status:'outside',source:'user_confirmed_effective_field'}]))};}
 function transform(input,angle,mirror,scale,tx,ty) {
   const c=Math.cos(angle),s=Math.sin(angle);
   const p=q=>({x:scale*(mirror*q.x*c-q.y*s)+tx,y:scale*(mirror*q.x*s+q.y*c)+ty});
-  return {medial:input.medial.map(p),lateral:input.lateral.map(p),lt:p(input.lt),mmPerPx:input.mmPerPx/scale};
+  return {medial:input.medial.map(p),lateral:input.lateral.map(p),lt:p(input.lt),mmPerPx:input.mmPerPx/scale,acquisitionReview:input.acquisitionReview};
 }
 test('full coverage uses 10/100; projected LT and exact endpoints',()=>{
   const r=solve(canal());assert.equal(r.status,'ok');assert.equal(r.levels.distalMm,100);
@@ -71,4 +71,23 @@ test('curved-axis solution is covariant and never mutates inputs',()=>{
 });
 test('exact distal endpoint coverage is accepted without fallback',()=>{
   for(const length of [100,90,80]) {const r=solve(canal(length));assert.equal(r.status,'ok',r.reason);assert.equal(r.levels.distalMm,length);}
+});
+
+test('unknown effective field never inferred from contour endpoints, canvas or black-frame metadata',()=>{
+  for(const extra of [{},{imageWidth:256,imageHeight:256},{imageWidth:256,imageHeight:80},{validImageBounds:{x:0,y:0,width:256,height:80}},{blackBorderDetected:true}]){
+    const c={...canal(95),...extra};delete c.acquisitionReview;
+    const r=solve(c);assert.equal(r.reason,'distal_100_effective_field_review_required');assert.equal(r.reviewLevelMm,100);assert.deepEqual(r.fallbackReasons,[]);
+  }
+});
+test('inside effective field requires contour completion; unknown or legacy certificates do not authorize fallback',()=>{
+  for(const review of [{status:'inside',source:'user_confirmed_effective_field'},{status:'outside',source:'canvas_bounds'},{status:'outside',source:'legacy_record'},{status:'unknown',source:'user_confirmed_effective_field'}]){
+    const c=canal(95);c.acquisitionReview={100:review};const r=solve(c);
+    assert.equal(r.reason,review.status==='inside'?'distal_100_contour_incomplete':'distal_100_effective_field_review_required');assert.deepEqual(r.fallbackReasons,[]);
+  }
+});
+test('each absent 100/90/80 section independently requires effective acquisition review',()=>{
+  const c=canal(70);c.acquisitionReview={};
+  for(const level of [100,90,80]){const r=solve(c);assert.equal(r.reason,'distal_'+level+'_effective_field_review_required');c.acquisitionReview[level]={status:'outside',source:'user_confirmed_effective_field'};}
+  const r=solve(c);assert.equal(r.reason,'distal_80_coverage_missing');assert.equal(r.fallbackReasons.length,3);
+  assert.ok(r.fallbackReasons.every(x=>x.acquisitionReview.source==='user_confirmed_effective_field'));
 });

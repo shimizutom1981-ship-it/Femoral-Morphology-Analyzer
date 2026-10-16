@@ -62,7 +62,7 @@ for(const [label,edit] of [
 }
 
 for(const [end,distal] of [[95,90],[85,80]])test(`fallback ${distal} retains fixed-100 missing in screen, JSON and CSV`,()=>{
-  const h=harness(end);h.confirm();assert.equal(h.json('axisMetadata()').femoral.levels.distalMm,distal);
+  const h=harness(end);h.run('img={width:256,height:256}');h.get('coverageOutside').onclick();if(distal===80)h.get('coverageOutside').onclick();h.confirm();assert.equal(h.json('axisMetadata()').femoral.levels.distalMm,distal);
   const record=h.json('buildDataDictionaryV11Record()');assert.equal(record.discrete_parameters.cti_minus100,null);assert.equal(record.discrete_parameters.ew_minus100_lt_mm,null);assert.ok(record.missing_reasons.fixed_100mm);
   assert.equal(h.get('cti').textContent,'--');assert.equal(h.get('cfiVal').textContent,'--');
   const rows=h.run('profileCsvText()').split('\n').map(x=>x.split(',')),at100=rows.find(r=>r[0]==='100');
@@ -341,4 +341,74 @@ test('Deferred PNG and concurrent edits cannot mutate snapshot JSON, CSV or sour
   assert.equal(outputs.find(x=>x.name.endsWith('_source.jpg')).content.name,'original.jpg');
   assert.match(outputs.find(x=>x.name.startsWith('FMA_')).content,/"95.000"/);
   assert.ok(outputs.every(x=>x.name.includes(h.run('firstKey'))));
+});
+
+test('image-inside contour shortage is blocked until explicit acquisition review; fixed 100 remains missing',()=>{
+  const h=harness(95);h.run('img={width:256,height:256}');
+  assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_effective_field_review_required');
+  h.get('coverageInside').onclick();assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_contour_incomplete');
+  assert.equal(h.run('measurementGeometry()'),null);
+  h.get('coverageOutside').onclick();assert.equal(h.json('axisMetadata()').femoral.levels.distalMm,90);
+  assert.equal(h.run('measurementGeometry()'),null);h.confirm();
+  const r=h.json('buildDataDictionaryV11Record()');
+  for(const k of ['cti_minus100','cw_minus100_lt_mm','ew_minus100_lt_mm','cfi','ccr','cbr'])assert.equal(r.discrete_parameters[k],null,k);
+  assert.equal(r.axes.femoral.inputs.acquisitionReview[100].status,'outside');
+});
+test('90 and 80 review is sequential, never implicitly approved by 100 review',()=>{
+  const h=harness(70);h.run('img={width:256,height:256}');
+  for(const level of [100,90,80]){assert.equal(h.json('axisMetadata()').femoral.reviewLevelMm,level);h.get('coverageOutside').onclick();}
+  assert.equal(h.json('axisMetadata()').femoral.reason,'distal_80_coverage_missing');assert.equal(h.run('measurementGeometry()'),null);
+});
+for(const edit of ['pts.ltm.y+=1',"$('scale').value='1.01'",'annotation.canal_medial[1].x-=1','annotation.femur_medial[1].x-=1'])test('acquisition review expires with bone input change '+edit,()=>{
+  const h=harness(95);h.run('img={}');h.get('coverageOutside').onclick();h.confirm();h.run(edit+';calc()');
+  assert.deepEqual(h.json('acquisitionReview'),{});assert.equal(h.run('confirmedLTKey'),null);assert.equal(h.run('measurementGeometry()'),null);assert.deepEqual(h.json('profileRows'),[]);
+});
+test('STEM edits preserve acquisition review and all bone measurements',()=>{
+  const h=harness(85);h.run('img={}');h.get('coverageOutside').onclick();h.get('coverageOutside').onclick();h.confirm();
+  const review=h.json('acquisitionReview'),geometry=h.json('measurementGeometry()'),profiles=h.json('profileRows');
+  h.run('pts.stem_dist.x+=20;draw()');assert.deepEqual(h.json('acquisitionReview'),review);assert.deepEqual(h.json('measurementGeometry()'),geometry);assert.deepEqual(h.json('profileRows'),profiles);
+});
+test('fallback resume and imported old/new records require fresh acquisition review',async()=>{
+  const h=harness(95);h.run('img={};window._fmaFile={name:"synthetic.jpg",size:1}');h.get('coverageOutside').onclick();h.confirm();h.run('saveWork()');
+  const record=h.json('buildDataDictionaryV11Record()'),saved=JSON.parse(h.storage.get(h.run('imageWorkKey(window._fmaFile)')));
+  h.run('restoreWorkData('+JSON.stringify(saved)+');calc()');assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_effective_field_review_required');
+  for(const source of [record,{...record,axes:{femoral:{version:'1.0.0',fallbackReasons:[{reason:'true_distal_coverage_missing'}]}}}]){
+    await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(source)}]}});
+    assert.deepEqual(h.json('acquisitionReview'),{});assert.equal(h.run('measurementGeometry()'),null);
+  }
+});
+
+test('normal 100 mm success hides acquisition review and ignores hidden review actions',()=>{
+  const h=harness();h.run('img={width:256,height:256};calc()');
+  assert.equal(h.get('coverageReview').hidden,true);h.get('coverageOutside').onclick();assert.deepEqual(h.json('acquisitionReview'),{});
+  h.confirm();assert.equal(h.json('axisMetadata()').femoral.levels.distalMm,100);assert.equal(h.get('coverageReview').hidden,true);
+});
+test('review UI is available only for eligible missing sections; cancel never confirms',()=>{
+  const h=harness(95);h.run('img={width:256,height:256};calc()');
+  assert.equal(h.get('coverageReview').hidden,false);assert.match(h.get('coverageMessage').textContent,/100 mm/);
+  h.run('confirm=()=>false');h.get('coverageOutside').onclick();assert.deepEqual(h.json('acquisitionReview'),{});
+  assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_effective_field_review_required');
+  h.run("$('scale').value='0';calc()");assert.equal(h.get('coverageReview').hidden,true);h.get('coverageOutside').onclick();assert.deepEqual(h.json('acquisitionReview'),{});
+});
+test('new image selection clears effective field review before image decoding completes',()=>{
+  const h=harness(95);h.run('img={};window._fmaFile={name:"first.jpg",size:1}');h.get('coverageOutside').onclick();h.confirm();
+  h.get('file').onchange({target:{files:[{name:'second.jpg',size:2}]}});
+  assert.deepEqual(h.json('acquisitionReview'),{});assert.equal(h.run('confirmedLTKey'),null);assert.deepEqual(h.json('profileRows'),[]);
+});
+
+test('acquisition approval can be revoked after successful fallback without changing geometry',()=>{
+  const h=harness(85);h.run('img={}');h.get('coverageOutside').onclick();h.get('coverageOutside').onclick();h.confirm();
+  assert.equal(h.get('coverageReview').hidden,true);assert.equal(h.get('clearCoverageReview').hidden,false);const pts=h.json('pts');
+  h.get('clearCoverageReview').onclick();assert.deepEqual(h.json('pts'),pts);assert.deepEqual(h.json('acquisitionReview'),{});
+  assert.equal(h.run('confirmedLTKey'),null);assert.equal(h.run('measurementGeometry()'),null);assert.deepEqual(h.json('profileRows'),[]);
+  assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_effective_field_review_required');assert.equal(h.get('clearCoverageReview').hidden,true);
+  const normal=harness();assert.equal(normal.get('clearCoverageReview').hidden,true);
+});
+
+test('calibration landmark translation invalidates review even when fitted scale is unchanged',()=>{
+  const h=harness(95);h.run("img={};$('calMode').value='head';$('headSize').value='32';pts.head1={x:16,y:0};pts.head2={x:0,y:16};pts.head3={x:-16,y:0};calc()");
+  h.get('coverageOutside').onclick();h.confirm();assert.ok(h.run('measurementGeometry()'));const scale=h.run('calibrationScale()');
+  h.run('for(const k of ["head1","head2","head3"])pts[k].x+=5;calc()');
+  assert.equal(h.run('calibrationScale()'),scale);assert.deepEqual(h.json('acquisitionReview'),{});assert.equal(h.run('confirmedLTKey'),null);
+  assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_effective_field_review_required');
 });

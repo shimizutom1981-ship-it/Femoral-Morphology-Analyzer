@@ -96,7 +96,12 @@ Key Rules for AI Assistants modifying this file:
   </div>
 
   <div class="guide"><div id="axisStatus">FEMORAL axis: awaiting contours / LT / calibration</div><button id="confirmLT">自動FEMORAL軸に垂直な内側突出点としてLTを確認</button><label>既存Annotation / FMA record（原本は変更しません）<input id="recordFile" type="file" accept=".json,application/json"></label><button id="confirmLegacyStem" hidden>旧2点を手動STEM軸候補として確認</button></div>
-  <div id="guide" class="guide">画像を選択してください。</div>
+  <button id="clearCoverageReview" hidden>撮影範囲の確認を取り消す（未確認に戻す）</button>
+  <div id="coverageReview" class="guide" hidden><span id="coverageMessage"></span>
+<button id="coverageInside">必要な断面は有効撮影範囲内（輪郭を補完）</button>
+<button id="coverageOutside">必要な断面が有効撮影範囲外と確認</button>
+<div>黒い余白・写真枠・輪郭の終端だけでは範囲外と判断しないでください。有効撮影範囲を確定できない不足断面だけ確認が必要です。通常の100 mm計算に追加確認はありません。不明なら未確認のままにします。確認後もLTの再確認が必要です。</div></div>
+<div id="guide" class="guide">画像を選択してください。</div>
 
   <!-- Contrast / WL-WW Bar for Double Cortical Line Inspection -->
   <div class="filterBar">
@@ -140,7 +145,7 @@ Key Rules for AI Assistants modifying this file:
   else root.FemoralAxis = factory();
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const EPS = 1e-7; // millimeters, after translation and calibration
   const add = (a,b) => ({x:a.x+b.x,y:a.y+b.y});
   const sub = (a,b) => ({x:a.x-b.x,y:a.y-b.y});
@@ -211,7 +216,17 @@ Key Rules for AI Assistants modifying this file:
           // a poor current direction or numerical failure as permission to fallback.
           const proven=b.missingWalls.filter(k=>paths[k].every(p=>norm(p)<level-EPS));
           if(!proven.length) return fail('distal_'+level+'_coverage_unproven');
-          result.fallbackReasons.push({levelMm:level,reason:'true_distal_coverage_missing',wall:proven.map(k=>k===0?'medial':'lateral'),certificate:'entire_wall_radius_from_LT_less_than_level'});
+          // Contour absence is not evidence of acquisition truncation. Canvas bounds,
+          // black pixels and imported legacy fallback flags are never accepted.
+          const review=input.acquisitionReview?.[level];
+          result.reviewLevelMm=level;
+          if(review?.source!=='user_confirmed_effective_field' || !['outside','inside'].includes(review.status))
+            return fail('distal_'+level+'_effective_field_review_required');
+          if(review.status==='inside') return fail('distal_'+level+'_contour_incomplete');
+          result.fallbackReasons.push({levelMm:level,reason:'user_confirmed_outside_effective_field',
+            wall:proven.map(k=>k===0?'medial':'lateral'),certificate:'contour_radial_bound_and_explicit_acquisition_review',
+            acquisitionReview:{...review}});
+          delete result.reviewLevelMm;
           missing=true;break;
         }
         const next=unit(sub(b.mid,a.mid));
@@ -239,7 +254,6 @@ Key Rules for AI Assistants modifying this file:
   }
   return {solve,version:VERSION};
 }));
-
 // END GENERATED FEMORAL AXIS SOLVER
 
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
@@ -494,15 +508,18 @@ function widthAt(contour,p,n,closed=true){
 const AXIS_SCHEMA='fma_axes_v1';
 const CONTOUR_GEOMETRY_VERSION='connected-centripetal-v1';
 let femoralAxisResult=null, axisInputKey=null, confirmedLTKey=null;
+let acquisitionReview={}, acquisitionInputKey=null;
 let legacyStemCandidate=null, legacySourceVersion=null, legacySourceId=null, legacySourceRecordKey=null;
 function axisInputs(){
   return {medial:getRenderedContour('canal_medial'),lateral:getRenderedContour('canal_lateral'),
-    lt:pts.ltm||annotation.lt_midpoint,mmPerPx:calibrationScale()};
+    lt:pts.ltm||annotation.lt_midpoint,mmPerPx:calibrationScale(),acquisitionReview};
 }
 function refreshFemoralAxis(){
   const input=axisInputs();
   // Include outer contours as well: changing any bone input invalidates review.
-  const key=JSON.stringify([input,annotation.femur_medial,annotation.femur_lateral,annotation.femur_mask,annotation.canal_mask,annotationClosed,$('ltVisibility').value,$('calMode').value,$('headSize').value,annotation.head]);
+  const boneKey=JSON.stringify([{...input,acquisitionReview:undefined},annotation.femur_medial,annotation.femur_lateral,annotation.femur_mask,annotation.canal_mask,annotationClosed,$('ltVisibility').value,$('calMode').value,$('headSize').value,annotation.head,pts.head1,pts.head2,pts.head3]);
+  if(boneKey!==acquisitionInputKey){acquisitionReview={};acquisitionInputKey=boneKey;input.acquisitionReview=acquisitionReview;}
+  const key=JSON.stringify([boneKey,acquisitionReview]);
   if(key!==axisInputKey){
     axisInputKey=key;confirmedLTKey=null;accepted=false;
     profileRows=[];continuousSlices=[];continuousSummary={};
@@ -539,6 +556,18 @@ function computeAxesAndAlignment(g){
   }
   return {canalAngle,stemAngle,alignDeg};
 }
+function reviewAcquisition(status){
+  const a=refreshFemoralAxis(),level=a?.reviewLevelMm;
+  if(!img||![100,90,80].includes(level))return;
+  if(status==='outside'&&!confirm(level+' mm断面が有効な撮影範囲外であることを確認しましたか？輪郭の不足だけでは確認できません。不明ならキャンセルしてください。'))return;
+  acquisitionReview={...acquisitionReview,[level]:{status,source:'user_confirmed_effective_field'}};
+  draw();saveWork();
+}
+$('clearCoverageReview').onclick=()=>{
+  acquisitionReview={};axisInputKey=null;confirmedLTKey=null;draw();saveWork();
+};
+$('coverageInside').onclick=()=>reviewAcquisition('inside');
+$('coverageOutside').onclick=()=>reviewAcquisition('outside');
 $('confirmLT').onclick=()=>{
   const a=refreshFemoralAxis();if(!a||a.status!=='ok')return;
   confirmedLTKey=axisInputKey;draw();saveWork();
@@ -1289,11 +1318,15 @@ $('file').onchange=e=>{
   activeLocalSnapshot=null;importedSourceFilename=null;$('saveRevisionDisplay').value='';
   window._fmaFile=e.target.files&&e.target.files[0]?e.target.files[0]:null;
   const f=e.target.files[0];if(!f)return;
+  // Invalidate before asynchronous decoding, including load failures.
+  acquisitionReview={};acquisitionInputKey=null;axisInputKey=null;confirmedLTKey=null;femoralAxisResult=null;
+  profileRows=[];continuousSlices=[];continuousSummary={};accepted=false;
   if(!$('studyId').value.trim()){
     const base=f.name.replace(/\.[^.]+$/,'').replace(/_source$/i,'');
     $('studyId').value=base;
   }
   $('headSize').value=defaultCalibrationDiameter($('imageType').value);$('scale').value='';$('ltVisibility').value='';$('doubleCortex').value='';$('exclusionFlag').value='';$('modelVersion').value=DEFAULT_PILOT_MODEL_VERSION;$('imageId').value='';$('repeatIndex').value='';$('stemFamily').value='';pendingAiPrediction=null;
+  calc();
   const u=URL.createObjectURL(f);img=new Image();
   img.onload=()=>{
     const ratio=img.height/img.width;cv.width=1200;cv.height=Math.round(1200*ratio);
@@ -1301,7 +1334,7 @@ $('file').onchange=e=>{
     accepted=false;correctionCount=0;aiInitial={};aiLoaded=false;aiProvenanceKnown=true;autoStemInfo=null;profileRows=[];continuousSlices=[];continuousSummary={};
     annotation={version:'2.1-training',head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};
     annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,osteotomy_line:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};
-    annotationCorrectionCount=0;axisInputKey=null;confirmedLTKey=null;femoralAxisResult=null;legacySourceId=null;legacySourceRecordKey=null;legacySourceVersion=null;legacyStemCandidate=null;$('confirmLegacyStem').hidden=true;guidedStage=0;$('workMode').value='annotation';$('annotationTarget').value='head';
+    annotationCorrectionCount=0;acquisitionReview={};acquisitionInputKey=null;axisInputKey=null;confirmedLTKey=null;femoralAxisResult=null;legacySourceId=null;legacySourceRecordKey=null;legacySourceVersion=null;legacyStemCandidate=null;$('confirmLegacyStem').hidden=true;guidedStage=0;$('workMode').value='annotation';$('annotationTarget').value='head';
     restoreSavedWork();draw();guide();
     $('guide').innerHTML='<span class="status">画像を読み込みました。Step 1/9：Head(または25mm鉄球)から開始、またはAI Mask512 PNGを読み込んでください。</span>';
     URL.revokeObjectURL(u);
@@ -1745,6 +1778,9 @@ function calc(){
   $('axisStatus').textContent=a.status==='ok'?'FEMORAL: 10 / '+a.levels.distalMm+' mm — '+(g?'LT confirmed':'LT confirmation required')+(a.fallbackReasons?.length?' | '+JSON.stringify(a.fallbackReasons):''):'FEMORAL: unavailable / '+a.reason;
   if(legacySourceVersion)$('axisStatus').textContent+=' | Legacy '+legacySourceVersion+': original preserved; copied connectivity frozen; new immutable snapshot on save';
   $('confirmLT').disabled=a.status!=='ok';
+  $('coverageReview').hidden=!a.reviewLevelMm;
+  $('clearCoverageReview').hidden=Object.keys(acquisitionReview).length===0;
+  $('coverageMessage').textContent=a.reviewLevelMm? a.reviewLevelMm+' mmの髄腔輪郭が不足しています。有効撮影範囲を確認してください。範囲内なら輪郭の補完が必要です。自動切替は保留しています。':'';
   if(g){const rows=calculateProfiles();for(const l of levels)fixed[l]=rows.find(r=>r.distance_from_LT_mm===l)||null}
   const r100=fixed[100];
   $('cti').textContent=r100&&r100.CTI!=null?r100.CTI.toFixed(3):'--';
@@ -1832,7 +1868,7 @@ function restoreWorkData(data){
   }
   delete pts.sap;delete pts.sad;
   $('confirmLegacyStem').hidden=!legacyStemCandidate;
-  axisInputKey=null;confirmedLTKey=null;refreshFemoralAxis();
+  acquisitionReview={};acquisitionInputKey=null;axisInputKey=null;confirmedLTKey=null;refreshFemoralAxis();
   // Exact-input confirmation only; any algorithm/version difference requires review.
   if(modern&&data.confirmedLTKey===axisInputKey&&data.axes.femoral?.method===femoralAxisResult.method&&data.axes.femoral?.version===femoralAxisResult.version)
     confirmedLTKey=axisInputKey;
