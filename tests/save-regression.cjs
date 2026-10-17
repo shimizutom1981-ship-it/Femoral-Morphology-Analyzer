@@ -7,7 +7,7 @@ const front=vm.createContext({document,window:{addEventListener(){}},console,cry
 vm.runInContext(html.split('<script>')[1].split('</script>')[0],front);
 const run=s=>vm.runInContext(s,front),set=(id,v)=>document.getElementById(id).value=String(v);
 set('imageType','postop_THA');set('calMode','head');set('side','R');set('studyId','CASE14');set('observerId','TS');set('repeatIndex',1);set('imageId','AP01');
-run('annotation.head={radius_px:100};pts.sap={x:300,y:300};pts.sad={x:300,y:900};pts.ltm={x:300,y:400}');
+run('annotation.head={radius_px:100};pts.stem_prox={x:300,y:300};pts.stem_dist={x:300,y:900};pts.ltm={x:300,y:400}');
 set('scale',0.16);assert.equal(run('calibrationScale()'),null,'blank diameter must invalidate stale scale');
 set('headSize',32);assert.equal(run('calibrationScale()'),0.16);
 set('headSize',36);assert.equal(run('calibrationScale()'),0.18,'edited diameter recalculates scale');
@@ -226,31 +226,25 @@ set('stemFamily','Avenir');
 assert.equal(run("document.getElementById('stemFamily').value"),'Avenir','user stem is editable');
 console.log('PASS: Stem Family blank by default, image-load reset, no preop auto-inference, editable');
 
-// Unequal proximal extents: match observed heights, not array indices.
+// Axis-split replacement for the old sap/sad initializer assertions. The
+// automatic FEMORAL solver must handle unequal observed proximal extents;
+// manual STEM landmarks must remain untouched, including failed auto solves.
 for(const mirror of [false,true]){
   const L=Array.from({length:256},(_,i)=>({x:100+i*.2,y:255+i}));
   const R=Array.from({length:85},(_,i)=>({x:180+(171+i)*.2,y:426+i}));
   front.axisLeft=mirror?R.map(p=>({x:512-p.x,y:p.y})):L;
   front.axisRight=mirror?L.map(p=>({x:512-p.x,y:p.y})):R;
-  run('pts.sap=null;pts.sad=null');
-  assert.equal(run('fmaInitializeCanalAxis(axisLeft,axisRight)'),true);
-  for(const p of [run('pts.sap'),run('pts.sad')]){
-    const l=front.axisLeft.find(q=>q.y===p.y),r=front.axisRight.find(q=>q.y===p.y);
-    assert.ok(l&&r,'both boundaries observed at selected height');
-    assert.equal(p.x,(l.x+r.x)/2,'same-height midpoint');
-  }
+  front.ltPoint={x:mirror?512-(180+195*.2):100+195*.2,y:450};
+  run('pts.stem_prox={x:123,y:45};pts.stem_dist={x:124,y:200};annotation.canal_medial=axisLeft;annotation.canal_lateral=axisRight;pts.ltm=ltPoint');
+  set('calMode','manual');set('scale',3);set('ltVisibility','clear');
+  const solved=run('refreshFemoralAxis()');
+  assert.equal(solved.status,'ok','unequal extents must produce a valid automatic axis: '+JSON.stringify(solved));
+  assert.equal(solved.levels.distalMm,100);
+  assert.equal(run('pts.stem_prox.x'),123);assert.equal(run('pts.stem_dist.y'),200);
+  assert.equal(run('measurementGeometry()'),null,'auto solution requires explicit LT review');
 }
-front.axisLeft=[{x:1,y:1}];front.axisRight=[{x:2,y:2}];
-run('pts.sap=null;pts.sad=null');
-assert.equal(run('fmaInitializeCanalAxis(axisLeft,axisRight)'),false);
-assert.equal(run('pts.sap'),null);assert.equal(run('pts.sad'),null);
-assert.equal(run('fmaCanalAxisCandidate([],[])'),null);
-front.axisLeft=Array.from({length:10},(_,y)=>({x:200,y}));
-front.axisRight=Array.from({length:10},(_,y)=>({x:100,y}));
-assert.equal(run('fmaCanalAxisCandidate(axisLeft,axisRight)'),null,'crossed boundaries rejected');
-run('pts.sap={x:123,y:45};pts.sad={x:124,y:200}');
-assert.equal(run('fmaInitializeCanalAxis([],[])'),true);
-assert.equal(run('pts.sap.x'),123);assert.equal(run('pts.sad.y'),200);
-assert.ok(html.includes('const axisReady=fmaInitializeCanalAxis(canL,canR)'));
-assert.ok(html.includes('軸の近位・遠位2点を手動設定してください'));
-console.log('PASS: same-height canal axis, unequal R/L extents, missing/crossed boundaries, manual axis preservation');
+run('annotation.canal_medial=[{x:1,y:1}];annotation.canal_lateral=[{x:2,y:2}]');
+assert.equal(run('refreshFemoralAxis().status'),'error');
+assert.equal(run('pts.stem_prox.x'),123);assert.equal(run('pts.stem_dist.y'),200);
+assert.equal(run('measurementGeometry()'),null);
+console.log('PASS: automatic FEMORAL unequal R/L extents, explicit LT review, missing boundaries, manual STEM preservation');

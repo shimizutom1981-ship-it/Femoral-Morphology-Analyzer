@@ -1,0 +1,9 @@
+PASS: calibration missing/change/manual; stale measurement clearing; unknown/known model; observer/repeat keys; immutable saves; legacy preservation; header mapping; retry; old-client rejection
+PASS: mask contour right/left proximal medial, continuous stem tip, disconnected distal noise, straight-sided fallback
+PASS: R/L canal island recovery, short gap interpolation, long-gap abstention, isolated-noise rejection and stem-tip protection
+PASS: R/L pure-class2 proximal canal cutoff, noise rejection, and masked extent clipping
+PASS: R/L distal inward-hook correction, natural taper preservation, no early-stop extrapolation, stem tip protection
+PASS: postoperative 32mm initial value, preop 25mm marker, dynamic per-image defaults
+PASS: documented pilot model default; metadata override; unknown and manual provenance safeguards
+PASS: Stem Family blank by default, image-load reset, no preop auto-inference, editable
+PASS: automatic FEMORAL unequal R/L extents, explicit LT review, missing boundaries, manual STEM preservation

@@ -1,0 +1,551 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const path=require('node:path');
+const crypto=require('node:crypto');
+
+// Executes the shipped inline application, with a deterministic canvas command
+// recorder. Mask assertions compare drawing-command bytes, not browser PNG pixels.
+function harness(end=120){
+  const elements=new Map(),storage=new Map();
+  function element(){
+    const commands=[],listeners={};
+    const context=new Proxy({}, {get:(o,k)=>k in o?o[k]:(...args)=>{commands.push([k,...args]);},set:(o,k,v)=>{o[k]=v;commands.push(['set',k,v]);return true;}});
+    return {value:'',textContent:'',innerHTML:'',style:{},width:256,height:256,checked:false,hidden:false,
+      addEventListener(type,fn){(listeners[type]??=[]).push(fn);},dispatch(type,e={}){for(const fn of listeners[type]||[])fn(e);},setPointerCapture(){},focus(){},click(){},remove(){},getContext:()=>context,
+      toBlob:cb=>cb(Buffer.from(JSON.stringify(commands))),getBoundingClientRect:()=>({left:0,top:0,width:256,height:256})};
+  }
+  const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
+  Object.entries({scale:'1',calMode:'manual',headSize:'32',ltVisibility:'visible',side:'R',imageType:'postop_THA',studyId:'SYNTHETIC',workMode:'annotation',annotationTarget:'head'}).forEach(([k,v])=>get(k).value=v);
+  const context=vm.createContext({document:{getElementById:get,createElement:element,body:{appendChild(){}}},window:{addEventListener(){}},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},console,crypto,Blob,Buffer,setTimeout(){},alert(){},confirm:()=>true,URL:{createObjectURL:()=>'',revokeObjectURL(){}},Image:function(){}});
+  const run=src=>vm.runInContext(src,context);
+  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+  for(const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g))if(match[1].trim())run(match[1]);
+  run(`pts={ltm:{x:95,y:30},stem_prox:{x:100,y:40},stem_dist:{x:100,y:120}};
+    annotation.lt_midpoint={...pts.ltm};
+    for(const [name,x] of [['canal_medial',95],['canal_lateral',105],['femur_medial',90],['femur_lateral',110],['stem_medial',97],['stem_lateral',103]]) annotation[name]=[{x,y:0},{x,y:70},{x,y:${30+end}}];calc();`);
+  const json=src=>JSON.parse(run(`JSON.stringify(${src})`));
+  return {run,json,get,storage,confirm:()=>get('confirmLT').onclick()};
+}
+
+test('LT confirmation gates measurements and exports',()=>{
+  const h=harness();assert.equal(h.json('refreshFemoralAxis()').status,'ok');
+  assert.equal(h.run('measurementGeometry()'),null);assert.equal(h.json('profileRows').length,0);
+  assert.equal(h.json('axisMetadata()').femoral.reason,'lt_confirmation_required');
+  h.confirm();assert.ok(h.run('measurementGeometry()'));assert.equal(h.json('profileRows').length,141);
+  assert.equal(h.get('cti').textContent,'0.500');
+});
+
+test('manual STEM point edits change alignment only; geometry, profiles and mask command bytes are invariant',async()=>{
+  const h=harness();h.confirm();
+  const geometry=h.json('measurementGeometry()'),profiles=h.json('profileRows'),summary=h.json('continuousSummary'),contours=h.json("getRenderedContour('canal_medial')");
+  const before=await h.run('trainingMaskPngBlob()');const angle=h.get('alignVal').textContent;
+  h.run('pts.stem_dist={x:120,y:120};draw()');
+  assert.notEqual(h.get('alignVal').textContent,angle);
+  assert.deepEqual(h.json('measurementGeometry()'),geometry);assert.deepEqual(h.json('profileRows'),profiles);
+  assert.deepEqual(h.json('continuousSummary'),summary);assert.deepEqual(h.json("getRenderedContour('canal_medial')"),contours);
+  assert.deepEqual(await h.run('trainingMaskPngBlob()'),before);assert.equal(h.json('axisMetadata()').femoral.lt_confirmed,true);
+});
+
+for(const [label,edit] of [
+  ['canal','annotation.canal_medial[1].x-=1'],['outer cortex','annotation.femur_medial[1].x-=1'],
+  ['LT','pts.ltm.y+=1'],['calibration',"$('scale').value='1.01'"],
+  ['visibility',"$('ltVisibility').value='occluded_unidentifiable'"],['head size',"$('headSize').value='36'"]]){
+  test(`${label} edit invalidates confirmation and clears every stale derived result`,()=>{
+    const h=harness();h.confirm();assert.ok(h.json('profileRows').length);h.run(`${edit};refreshFemoralAxis()`);
+    assert.equal(h.run('confirmedLTKey'),null);assert.deepEqual(h.json('profileRows'),[]);assert.deepEqual(h.json('continuousSlices'),[]);assert.deepEqual(h.json('continuousSummary'),{});
+    h.run('calc()');assert.equal(h.get('cti').textContent,'--');assert.equal(h.get('alignVal').textContent,'--');
+    const record=h.json('buildDataDictionaryV11Record()');assert.equal(record.discrete_parameters.cti_minus100,null);assert.equal(record.axes.femoral.lt_confirmed,false);
+  });
+}
+
+for(const [end,distal] of [[95,90],[85,80]])test(`fallback ${distal} retains fixed-100 missing in screen, JSON and CSV`,()=>{
+  const h=harness(end);h.run('img={width:256,height:256}');h.get('coverageOutside').onclick();if(distal===80)h.get('coverageOutside').onclick();h.confirm();assert.equal(h.json('axisMetadata()').femoral.levels.distalMm,distal);
+  const record=h.json('buildDataDictionaryV11Record()');assert.equal(record.discrete_parameters.cti_minus100,null);assert.equal(record.discrete_parameters.ew_minus100_lt_mm,null);assert.ok(record.missing_reasons.fixed_100mm);
+  assert.equal(h.get('cti').textContent,'--');assert.equal(h.get('cfiVal').textContent,'--');
+  const rows=h.run('profileCsvText()').split('\n').map(x=>x.split(',')),at100=rows.find(r=>r[0]==='100');
+  assert.equal(at100[5],'');assert.equal(at100[7],'');assert.ok(at100[9]);assert.equal(at100[11],String(distal));
+  assert.match(h.run('measurementCsvText()'),new RegExp('"confirmed","'+distal+'"'));
+});
+
+test('confirmed full-coverage display, JSON, profile CSV and measurement CSV agree',()=>{
+  const h=harness();h.confirm();const record=h.json('buildDataDictionaryV11Record()');
+  const row=h.run('profileCsvText()').split('\n').find(r=>r.startsWith('100,')).split(',');
+  assert.equal(Number(row[7]),record.discrete_parameters.cti_minus100);assert.equal(Number(h.get('cti').textContent),record.discrete_parameters.cti_minus100);
+  assert.equal(record.discrete_parameters.ew_minus100_lt_mm,10);assert.equal(record.discrete_parameters.cw_minus100_lt_mm,20);
+  assert.equal(record.missing_reasons.fixed_100mm,null);assert.match(h.run('measurementCsvText()'),/"0.500"/);
+});
+
+test('save/reload recomputes metrics and preserves only exact modern confirmation',()=>{
+  const h=harness();h.confirm();h.run("window._fmaFile={name:'synthetic.png',size:123};saveWork()");
+  const key=h.run('imageWorkKey(window._fmaFile)'),saved=JSON.parse(h.storage.get(key));
+  assert.equal(saved.axes.schema,'fma_axes_v1');assert.equal(saved.appVersion,'v2.2-axis-split');assert.equal(saved.profileRows,undefined);
+  saved.profileRows=[{CTI:999}];saved.continuousSummary={bogus:true};h.run(`restoreWorkData(${JSON.stringify(saved)})`);
+  assert.deepEqual(h.json('profileRows'),[]);assert.deepEqual(h.json('continuousSummary'),{});assert.ok(h.run('measurementGeometry()'));
+  h.run('calc()');assert.equal(h.get('cti').textContent,'0.500');
+  saved.fields.scale='1.01';h.run(`restoreWorkData(${JSON.stringify(saved)})`);assert.equal(h.run('confirmedLTKey'),null);
+});
+
+test('legacy resume preserves source bytes, freezes ordering once and requires explicit manual STEM adoption',()=>{
+  const h=harness();h.confirm();
+  const legacy={pts:h.json('pts'),annotation:h.json('annotation'),fields:{studyId:'LEGACY',scale:'1',calMode:'manual'},appVersion:'v2.1.2-cloud',profileRows:[{CTI:99}]};
+  legacy.pts.sap=legacy.pts.stem_prox;legacy.pts.sad=legacy.pts.stem_dist;delete legacy.pts.stem_prox;delete legacy.pts.stem_dist;
+  for(const key of ['canal_medial','canal_lateral'])legacy.annotation[key].reverse();
+  const bytes=JSON.stringify(legacy);h.storage.set('FMA_work_v21_synthetic.png_123',bytes);
+  h.run("window._fmaFile={name:'synthetic.png',size:123}");assert.equal(h.run('restoreSavedWork()'),true);
+  assert.equal(h.run('confirmedLTKey'),null);assert.deepEqual(h.json('profileRows'),[]);assert.equal(h.run('pts.stem_prox'),undefined);
+  assert.equal(h.json('axisMetadata()').legacy_source_version,'v2.1.2-cloud');assert.equal(h.get('confirmLegacyStem').hidden,false);
+  const frozen=h.json("getRenderedContour('canal_medial')");h.get('confirmLegacyStem').onclick();
+  assert.deepEqual(h.json('pts.stem_prox'),legacy.pts.sap);assert.equal(h.run('legacyStemCandidate'),null);
+  assert.equal(h.storage.get('FMA_work_v21_synthetic.png_123'),bytes);
+  h.run('pts.stem_dist={x:180,y:50};draw()');assert.deepEqual(h.json("getRenderedContour('canal_medial')"),frozen);
+  assert.equal(h.storage.get('FMA_work_v21_synthetic.png_123'),bytes);
+});
+
+test('record import rejects missing image and malformed JSON without changing geometry',async()=>{
+  const h=harness(),original=h.json('annotation');
+  await h.get('recordFile').onchange({target:{files:[]}});
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>'{'}]}});
+  assert.deepEqual(h.json('annotation'),original);
+  h.run('img={width:256,height:256}');await h.get('recordFile').onchange({target:{files:[{text:async()=>'{'}]}});
+  assert.deepEqual(h.json('annotation'),original);
+});
+
+let chromium;try{chromium=require('playwright').chromium;}catch{}
+test('real Chromium mask PNG pixels are invariant under manual STEM endpoint changes',{skip:process.env.FMA_BROWSER_TESTS!=='1'||!chromium||!fs.existsSync('/usr/bin/chromium')},async()=>{
+  const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+  try{
+    const page=await browser.newPage();await page.goto('file://'+path.join(__dirname,'../index.html'));
+    const result=await page.evaluate(async()=>{
+      $('calMode').value='manual';$('scale').value='1';pts={ltm:{x:95,y:30},stem_prox:{x:100,y:40},stem_dist:{x:100,y:120}};annotation.lt_midpoint={...pts.ltm};
+      for(const[name,x]of [['canal_medial',95],['canal_lateral',105],['femur_medial',90],['femur_lateral',110],['stem_medial',97],['stem_lateral',103]])annotation[name]=[{x,y:0},{x,y:70},{x,y:150}];
+      draw();$('confirmLT').click();
+      const bytes=async()=>Array.from(new Uint8Array(await (await trainingMaskPngBlob()).arrayBuffer()));
+      const before=await bytes(),angle=$('alignVal').textContent;pts.stem_dist={x:120,y:120};draw();
+      return {before,after:await bytes(),angle,newAngle:$('alignVal').textContent,status:axisMetadata().femoral.quality_status};
+    });
+    assert.equal(result.status,'confirmed');assert.notEqual(result.angle,result.newAngle);assert.ok(result.before.length>100);assert.deepEqual(result.before,result.after);
+  }finally{await browser.close();}
+});
+
+test('repeated partial record imports clear unrelated contours and require fresh LT review',async()=>{
+  const h=harness();h.confirm();h.run('img={width:256,height:256}');
+  const raw={annotation_version:'2.1-training',study_id:'SYNTHETIC_IMPORT',image_type:'postop_THA',measurement_points:{ltm:{x:95,y:30}},canal_medial:h.json('annotation.canal_medial'),canal_lateral:h.json('annotation.canal_lateral')};
+  for(let i=0;i<2;i++){
+    await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});
+    assert.equal(h.run('confirmedLTKey'),null);assert.deepEqual(h.json('annotation.femur_medial'),[]);assert.deepEqual(h.json('annotation.stem_medial'),[]);
+    assert.deepEqual(h.json('profileRows'),[]);assert.equal(h.get('cti').textContent,'--');
+  }
+});
+
+test('record calibration is exact, manual, and never inherited when absent',async()=>{
+  const h=harness();h.run("img={width:256,height:256};$('calMode').value='head'");
+  const raw={study_id:'SYNTHETIC',measurement_points:{ltm:{x:95,y:30}},canal_medial:h.json('annotation.canal_medial'),canal_lateral:h.json('annotation.canal_lateral')};
+  let record={raw_annotations:raw,calibration_metrics:{calibrated_mm_per_px:1.23456789,calib_known_mm:32}};
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(record)}]}});
+  assert.equal(h.get('calMode').value,'manual');assert.equal(Number(h.get('scale').value),1.23456789);
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});
+  assert.equal(h.get('scale').value,'');assert.equal(h.json('axisMetadata()').femoral.reason,'invalid_scale');
+});
+
+test('AI STEM points require explicit manual adoption and cannot overwrite manual endpoints',()=>{
+  const h=harness();h.confirm();const before=h.json('[pts.stem_prox,pts.stem_dist]');
+  h.run('applyFullPrediction({measurement_points:{stem_prox:{x:200,y:10},stem_dist:{x:200,y:100}}})');
+  assert.deepEqual(h.json('[pts.stem_prox,pts.stem_dist]'),before);assert.deepEqual(h.json('legacyStemCandidate.proximal'),{x:200,y:10});
+  h.get('confirmLegacyStem').onclick();assert.equal(h.run('pts.stem_prox.x'),200);
+});
+
+test('legacy source file keys are protected while same-Research-ID new snapshots remain allowed',async()=>{
+  const h=harness();h.run("legacySourceId='SYNTHETIC';legacySourceRecordKey='OLD_SNAPSHOT';$('observerId').value='TEST';$('repeatIndex').value='1';$('imageId').value='IMG'");
+  assert.equal(h.run("confirmMissingBeforeSave('test')"),true);
+  assert.equal(h.run('isProtectedSourceKey(newSaveKey())'),false);
+  for(const key of ['SYNTHETIC','OLD_SNAPSHOT']){
+    assert.equal(h.run(`isProtectedSourceKey('${key}')`),true);
+    const result=await h.run(`saveCaseFilesToFolder('${key}')`);assert.equal(result.ok,false);assert.equal(result.reason,'legacy_source_protected');
+  }
+});
+
+test('invalid geometry exports null LDR values and degenerate STEM metadata is unavailable',()=>{
+  const h=harness();const record=h.json('buildDataDictionaryV11Record()');
+  assert.equal(record.discrete_parameters.ldr_alpha,null);assert.equal(record.discrete_parameters.ldr_beta,null);
+  h.run('pts.stem_dist={...pts.stem_prox}');assert.equal(h.json('axisMetadata()').stem.status,'unavailable');
+});
+
+test('Apps Script single inline solver exactly matches the canonical library',()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+  const lib=fs.readFileSync(path.join(__dirname,'../lib/femoral-axis.js'),'utf8');
+  const begin='// BEGIN GENERATED FEMORAL AXIS SOLVER (lib/femoral-axis.js)';
+  const end='// END GENERATED FEMORAL AXIS SOLVER';
+  assert.equal(html.split(begin).length,2);assert.equal(html.split(end).length,2);
+  assert.equal(html.split(begin)[1].split(end)[0].trim(),lib.trim());
+  assert.equal([...html.matchAll(/<script(?:\s[^>]*)?>/g)].length,1,'GAS page must remain self-contained');
+  assert.doesNotMatch(html,/<script[^>]*src=/);
+});
+
+test('AI work provenance survives save/resume and never leaks into manual or unknown legacy work',()=>{
+  const h=harness();h.run("window._fmaFile={name:'ai-synthetic.png',size:456};aiLoaded=true;aiProvenanceKnown=true;aiInitial={synthetic:true};$('modelVersion').value='TEST_MODEL';saveWork()");
+  const data=JSON.parse(h.storage.get(h.run('imageWorkKey(window._fmaFile)')));
+  h.run(`restoreWorkData(${JSON.stringify(data)})`);
+  assert.equal(h.run('aiLoaded'),true);assert.deepEqual(h.json('aiInitial'),{synthetic:true});
+  assert.equal(h.json('buildDataDictionaryV11Record()').provenance_and_split.mask_source_type,'ai_raw');
+  const manual={...data,aiLoaded:false,aiInitial:{shouldNotLeak:true}};h.run(`restoreWorkData(${JSON.stringify(manual)})`);
+  assert.deepEqual(h.json('aiInitial'),{});assert.equal(h.json('buildDataDictionaryV11Record()').provenance_and_split.mask_source_type,'teacher_gt');
+  delete data.aiLoaded;delete data.aiProvenanceKnown;delete data.axes;data.appVersion='v2.1.3-cloud';
+  h.run(`restoreWorkData(${JSON.stringify(data)})`);
+  assert.equal(h.run('aiLoaded'),false);assert.deepEqual(h.json('aiInitial'),{});assert.equal(h.run('aiProvenanceKnown'),false);
+  const provenance=h.json('buildDataDictionaryV11Record()').provenance_and_split;assert.equal(provenance.mask_source_type,'unknown');assert.equal(provenance.model_version,null);
+});
+
+test('standalone annotation import roundtrips identity and AI provenance without prior-case leakage',async()=>{
+  const h=harness();h.run("img={width:256,height:256};$('observerId').value='OBSERVER';$('repeatIndex').value='3';$('imageId').value='SYNTH_IMG';aiLoaded=true;aiProvenanceKnown=true;aiInitial={synthetic:true};$('modelVersion').value='TEST_MODEL'");
+  const raw=h.json('annotationPayload()'),identity=h.json('measurementIdentity()');
+  h.run("$('observerId').value='WRONG';$('repeatIndex').value='9';$('imageId').value='WRONG';aiInitial={leak:true}");
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});
+  assert.deepEqual(h.json('measurementIdentity()'),identity);assert.equal(h.run('aiLoaded'),true);assert.deepEqual(h.json('aiInitial'),{synthetic:true});
+  delete raw.ai_loaded;delete raw.ai_initial_prediction;delete raw.ai_provenance_known;delete raw.model_version;
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});
+  assert.equal(h.run('aiProvenanceKnown'),false);assert.deepEqual(h.json('aiInitial'),{});assert.equal(h.get('modelVersion').value,'');
+});
+
+for(const [version,headSize,headPoints,expectAxis] of [
+  ['v2.1.3-cloud','',false,false],['v2.1.3-cloud','32',false,true],
+  ['v2.1.3-cloud','32',true,true],['v2.1.2-cloud','',false,true]
+])test(`legacy connectivity matches ${version}, diameter '${headSize}', circle landmarks ${headPoints}`,()=>{
+  const h=harness();const points=[{x:30,y:10},{x:10,y:30},{x:20,y:20}];
+  const data={appVersion:version,pts:{sap:{x:0,y:0},sad:{x:100,y:0},ltm:{x:0,y:0}},annotation:{canal_medial:points,canal_lateral:points.map(p=>({x:p.x,y:p.y+5})),head:headPoints?null:{radius_px:16}},fields:{calMode:'head',headSize,scale:'1',ltVisibility:'clear'}};
+  if(headPoints)Object.assign(data.pts,{head1:{x:0,y:16},head2:{x:16,y:0},head3:{x:0,y:-16}});
+  h.run(`restoreWorkData(${JSON.stringify(data)})`);
+  const expected=points.slice().sort((a,b)=>expectAxis?a.x-b.x:a.y-b.y);
+  assert.deepEqual(h.json('annotation.canal_medial'),expected);assert.equal(h.run('confirmedLTKey'),null);
+});
+
+
+function pointer(h,type,x,y,shiftKey=false){
+  h.get('cv').dispatch(type,{clientX:x,clientY:y,button:0,pointerId:1,shiftKey});
+}
+
+for(const target of ['head','stem_interface_anchors'])test('Measurement Shift miss is edit-only with target '+target,()=>{
+  const h=harness();h.confirm();h.get('workMode').value='measurement';h.get('annotationTarget').value=target;
+  h.run('step=0;accepted=true');
+  const points=h.json('pts'),annotation=h.json('annotation'),geometry=h.json('measurementGeometry()'),profiles=h.json('profileRows');
+  pointer(h,'pointerdown',240,240,true);pointer(h,'pointermove',245,245,true);pointer(h,'pointerup',245,245,true);
+  assert.deepEqual(h.json('pts'),points);assert.deepEqual(h.json('annotation'),annotation);
+  assert.equal(h.run('step'),0);assert.equal(h.run('drag'),null);assert.equal(h.run('accepted'),true);assert.equal(h.run('correctionCount'),0);
+  assert.deepEqual(h.json('measurementGeometry()'),geometry);assert.deepEqual(h.json('profileRows'),profiles);
+});
+
+test('Measurement endpoint Shift drag changes only STEM alignment and ends on pointerup',()=>{
+  const h=harness();h.confirm();h.get('workMode').value='measurement';
+  const geometry=h.json('measurementGeometry()'),profiles=h.json('profileRows'),angle=h.get('alignVal').textContent;
+  pointer(h,'pointerdown',100,120,true);pointer(h,'pointermove',120,120,true);pointer(h,'pointerup',120,120,true);
+  assert.deepEqual(h.json('pts.stem_dist'),{x:120,y:120});assert.equal(h.run('drag'),null);assert.equal(h.run('step'),0);
+  assert.notEqual(h.get('alignVal').textContent,angle);assert.deepEqual(h.json('measurementGeometry()'),geometry);assert.deepEqual(h.json('profileRows'),profiles);
+  pointer(h,'pointermove',200,200);assert.deepEqual(h.json('pts.stem_dist'),{x:120,y:120});
+});
+
+test('Measurement LT Shift drag still invalidates confirmation and derived results',()=>{
+  const h=harness();h.confirm();h.get('workMode').value='measurement';
+  pointer(h,'pointerdown',95,30,true);pointer(h,'pointermove',95,32,true);pointer(h,'pointerup',95,32,true);
+  assert.deepEqual(h.json('pts.ltm'),{x:95,y:32});assert.equal(h.run('confirmedLTKey'),null);assert.deepEqual(h.json('profileRows'),[]);
+});
+
+test('Measurement plain click still adds the current point',()=>{
+  const h=harness();h.get('workMode').value='measurement';h.run('step=0');
+  pointer(h,'pointerdown',230,230);pointer(h,'pointerup',230,230);
+  assert.deepEqual(h.json('pts.head1'),{x:230,y:230});assert.equal(h.run('step'),1);
+});
+
+test('Annotation Step 8 Shift click retains existing LT placement behavior',()=>{
+  const h=harness();h.get('annotationTarget').value='lt_midpoint';
+  pointer(h,'pointerdown',110,35,true);pointer(h,'pointerup',110,35,true);
+  assert.deepEqual(h.json('pts.ltm'),{x:110,y:35});assert.deepEqual(h.json('annotation.lt_midpoint'),{x:110,y:35});
+});
+
+test('Local rescue needs only Research ID; missing provenance stays null and cloud remains strict',()=>{
+  const h=harness();assert.equal(h.run('validateLocalIdentity()'),true);assert.equal(h.run('validateIdentity()'),false);
+  const r=h.json('buildDataDictionaryV11Record()');
+  for(const k of ['patient_id','observer_id','repeat_index','image_id'])assert.equal(r.provenance_and_split[k],null,k);
+  assert.equal(r.provenance_and_split.metadata_completeness,'incomplete');
+  assert.equal(r.provenance_and_split.independent_repeat_status,'not_declared');
+  assert.equal(r.raw_annotations.patient_id,null);
+  h.get('studyId').value='';assert.equal(h.run('validateLocalIdentity()'),false);
+  h.get('studyId').value='X';h.get('repeatIndex').value='1.5';assert.equal(h.run('validateLocalIdentity()'),false);
+});
+
+test('Local revisions increment by Research ID without changing declared repeat or image',()=>{
+  const h=harness();h.get('repeatIndex').value='2';h.get('observerId').value='OBS';h.get('imageId').value='AP_A';
+  const a=h.run('newLocalSaveKey()'),first=h.json('buildDataDictionaryV11Record()');
+  const b=h.run('newLocalSaveKey()'),second=h.json('buildDataDictionaryV11Record()');
+  assert.notEqual(a,b);assert.equal(first.provenance_and_split.save_revision,1);assert.equal(second.provenance_and_split.save_revision,2);
+  assert.equal(second.provenance_and_split.repeat_index,2);assert.equal(h.get('repeatIndex').value,'2');
+  h.get('imageId').value='AP_B';h.get('observerId').value='OTHER';h.run('newLocalSaveKey()');
+  assert.equal(h.json('localSaveMetadata()').save_revision,3);assert.equal(h.json('measurementIdentity()').image_id,'AP_B');
+  h.get('studyId').value='OTHER';h.run('newLocalSaveKey()');assert.equal(h.json('localSaveMetadata()').save_revision,1);
+  assert.equal(first.provenance_and_split.save_revision,1,'prior payload immutable');
+  const csv=h.run('measurementCsvText()');assert.match(csv,/Save_revision/);assert.match(csv,/Independent_repeat_status/);
+});
+
+test('Revision uses imported high-water and stored maximum; storage failure still gives unique UUID keys',()=>{
+  const h=harness();h.storage.set('FMA_save_revision_v1_SYNTHETIC','12');h.run("importLocalRevision('SYNTHETIC',{save_revision:8});newLocalSaveKey()");
+  assert.equal(h.json('localSaveMetadata()').save_revision,13);
+  h.run("importLocalRevision('SYNTHETIC',{save_revision:20});newLocalSaveKey()");assert.equal(h.json('localSaveMetadata()').save_revision,21);
+  h.run("localStorage.getItem=()=>{throw Error('blocked')};localStorage.setItem=()=>{throw Error('blocked')}");
+  const a=h.run('newLocalSaveKey()'),b=h.run('newLocalSaveKey()');assert.notEqual(a,b);assert.equal(h.json('localSaveMetadata()').save_revision,23);
+  const fresh=harness();fresh.run("localStorage.getItem=()=>{throw Error('blocked')};localStorage.setItem=()=>{throw Error('blocked')}");
+  const c=fresh.run('newLocalSaveKey()');assert.notEqual(a,c);assert.equal(fresh.json('localSaveMetadata()').save_revision,1);
+});
+
+test('Annotation and full-record imports preserve declared IDs, original source and revision',async()=>{
+  for(const full of [false,true]){
+    const h=harness();h.run('img={};window._fmaFile={name:"renamed_source.jpg",size:50}');
+    const ann=h.json('annotationPayload()');Object.assign(ann,{study_id:'CASE',patient_id:'PATIENT',source_image_filename:'original.jpg',save_revision:7,measurement_identity:{research_id:'CASE',observer_id:'OBS',repeat_index:4,image_id:'AP_01',side:'R',image_stage:'postop_THA'}});
+    const record=full?{raw_annotations:ann,provenance_and_split:{research_id:'CASE',save_revision:7}}:ann;
+    const original=JSON.stringify(record);
+    await h.get('recordFile').onchange({target:{files:[{text:async()=>original}]}});
+    assert.equal(h.get('studyId').value,'CASE');assert.equal(String(h.get('repeatIndex').value),'4');assert.equal(h.get('imageId').value,'AP_01');assert.equal(h.get('patientId').value,'PATIENT');
+    const key=h.run('newLocalSaveKey()');assert.match(key,/CASE__save008__/);
+    const out=h.json('annotationPayload()');assert.equal(out.measurement_identity.observer_id,'OBS');assert.equal(out.source_image_filename,'original.jpg');assert.equal(out.loaded_image_filename,'renamed_source.jpg');assert.equal(JSON.stringify(record),original);
+  }
+});
+
+test('Legacy import lacking IDs can be locally exported without inventing metadata',async()=>{
+  const h=harness();h.run('img={}');
+  const ann=h.json('annotationPayload()');delete ann.measurement_identity;delete ann.save_revision;ann.study_id='LEGACY';ann.patient_id='KNOWN_PATIENT';ann.app_version='v2.1.2-cloud';
+  const source=JSON.stringify(ann);
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>source}]}});
+  assert.equal(h.run('validateLocalIdentity()'),true);assert.equal(h.run('validateIdentity()'),false);
+  h.run('newLocalSaveKey()');const record=h.json('buildDataDictionaryV11Record()');
+  assert.equal(record.provenance_and_split.save_revision,1);assert.equal(record.provenance_and_split.repeat_index,null);assert.equal(record.provenance_and_split.patient_id,'KNOWN_PATIENT');
+  assert.equal(JSON.stringify(ann),source);
+  const before=h.json('pts');await h.get('saveCase').onclick();assert.deepEqual(h.json('pts'),before);
+});
+
+test('Deferred PNG and concurrent edits cannot mutate snapshot JSON, CSV or source',async()=>{
+  const h=harness();
+  h.run(`window._fmaFile={name:'original.jpg',type:'image/jpeg'};
+    globalThis.exports=[];globalThis.resolveMask=null;
+    trainingMaskPngBlob=()=>new Promise(resolve=>{resolveMask=resolve});
+    downloadBlob=(content,type,name)=>exports.push({content,type,name});
+    globalThis.firstKey=newLocalSaveKey();globalThis.pendingSave=saveCaseFilesToFolder(firstKey);`);
+  const original=h.json('pts');
+  h.run(`pts.ltm.x=777;annotation.canal_medial[0].x=888;
+    window._fmaFile={name:'other.jpg',type:'image/jpeg'};
+    newLocalSaveKey();resolveMask(new Blob(['mask']));`);
+  await h.run('pendingSave');
+  const outputs=h.json('exports'),record=JSON.parse(outputs.find(x=>x.name.endsWith('_fma_record.json')).content);
+  assert.deepEqual(record.raw_annotations.measurement_points,original);assert.equal(record.raw_annotations.canal_medial[0].x,95);
+  assert.equal(record.provenance_and_split.save_revision,1);assert.equal(record.raw_annotations.save_revision,1);
+  assert.equal(record.raw_annotations.record_key,h.run('firstKey'));
+  assert.equal(outputs.find(x=>x.name.endsWith('_source.jpg')).content.name,'original.jpg');
+  assert.match(outputs.find(x=>x.name.startsWith('FMA_')).content,/"95.000"/);
+  assert.ok(outputs.every(x=>x.name.includes(h.run('firstKey'))));
+});
+
+test('image-inside contour shortage is blocked until explicit acquisition review; fixed 100 remains missing',()=>{
+  const h=harness(95);h.run('img={width:256,height:256}');
+  assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_effective_field_review_required');
+  h.get('coverageInside').onclick();assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_contour_incomplete');
+  assert.equal(h.run('measurementGeometry()'),null);
+  h.get('coverageOutside').onclick();assert.equal(h.json('axisMetadata()').femoral.levels.distalMm,90);
+  assert.equal(h.run('measurementGeometry()'),null);h.confirm();
+  const r=h.json('buildDataDictionaryV11Record()');
+  for(const k of ['cti_minus100','cw_minus100_lt_mm','ew_minus100_lt_mm','cfi','ccr','cbr'])assert.equal(r.discrete_parameters[k],null,k);
+  assert.equal(r.axes.femoral.inputs.acquisitionReview[100].status,'outside');
+});
+test('90 and 80 review is sequential, never implicitly approved by 100 review',()=>{
+  const h=harness(70);h.run('img={width:256,height:256}');
+  for(const level of [100,90,80]){assert.equal(h.json('axisMetadata()').femoral.reviewLevelMm,level);h.get('coverageOutside').onclick();}
+  assert.equal(h.json('axisMetadata()').femoral.reason,'distal_80_coverage_missing');assert.equal(h.run('measurementGeometry()'),null);
+});
+for(const edit of ['pts.ltm.y+=1',"$('scale').value='1.01'",'annotation.canal_medial[1].x-=1','annotation.femur_medial[1].x-=1'])test('acquisition review expires with bone input change '+edit,()=>{
+  const h=harness(95);h.run('img={}');h.get('coverageOutside').onclick();h.confirm();h.run(edit+';calc()');
+  assert.deepEqual(h.json('acquisitionReview'),{});assert.equal(h.run('confirmedLTKey'),null);assert.equal(h.run('measurementGeometry()'),null);assert.deepEqual(h.json('profileRows'),[]);
+});
+test('STEM edits preserve acquisition review and all bone measurements',()=>{
+  const h=harness(85);h.run('img={}');h.get('coverageOutside').onclick();h.get('coverageOutside').onclick();h.confirm();
+  const review=h.json('acquisitionReview'),geometry=h.json('measurementGeometry()'),profiles=h.json('profileRows');
+  h.run('pts.stem_dist.x+=20;draw()');assert.deepEqual(h.json('acquisitionReview'),review);assert.deepEqual(h.json('measurementGeometry()'),geometry);assert.deepEqual(h.json('profileRows'),profiles);
+});
+test('fallback resume and imported old/new records require fresh acquisition review',async()=>{
+  const h=harness(95);h.run('img={};window._fmaFile={name:"synthetic.jpg",size:1}');h.get('coverageOutside').onclick();h.confirm();h.run('saveWork()');
+  const record=h.json('buildDataDictionaryV11Record()'),saved=JSON.parse(h.storage.get(h.run('imageWorkKey(window._fmaFile)')));
+  h.run('restoreWorkData('+JSON.stringify(saved)+');calc()');assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_effective_field_review_required');
+  for(const source of [record,{...record,axes:{femoral:{version:'1.0.0',fallbackReasons:[{reason:'true_distal_coverage_missing'}]}}}]){
+    await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(source)}]}});
+    assert.deepEqual(h.json('acquisitionReview'),{});assert.equal(h.run('measurementGeometry()'),null);
+  }
+});
+
+test('normal 100 mm success hides acquisition review and ignores hidden review actions',()=>{
+  const h=harness();h.run('img={width:256,height:256};calc()');
+  assert.equal(h.get('coverageReview').hidden,true);h.get('coverageOutside').onclick();assert.deepEqual(h.json('acquisitionReview'),{});
+  h.confirm();assert.equal(h.json('axisMetadata()').femoral.levels.distalMm,100);assert.equal(h.get('coverageReview').hidden,true);
+});
+test('review UI is available only for eligible missing sections; cancel never confirms',()=>{
+  const h=harness(95);h.run('img={width:256,height:256};calc()');
+  assert.equal(h.get('coverageReview').hidden,false);assert.match(h.get('coverageMessage').textContent,/100 mm/);
+  h.run('confirm=()=>false');h.get('coverageOutside').onclick();assert.deepEqual(h.json('acquisitionReview'),{});
+  assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_effective_field_review_required');
+  h.run("$('scale').value='0';calc()");assert.equal(h.get('coverageReview').hidden,true);h.get('coverageOutside').onclick();assert.deepEqual(h.json('acquisitionReview'),{});
+});
+test('new image selection clears effective field review before image decoding completes',()=>{
+  const h=harness(95);h.run('img={};window._fmaFile={name:"first.jpg",size:1}');h.get('coverageOutside').onclick();h.confirm();
+  h.get('file').onchange({target:{files:[{name:'second.jpg',size:2}]}});
+  assert.deepEqual(h.json('acquisitionReview'),{});assert.equal(h.run('confirmedLTKey'),null);assert.deepEqual(h.json('profileRows'),[]);
+});
+
+test('acquisition approval can be revoked after successful fallback without changing geometry',()=>{
+  const h=harness(85);h.run('img={}');h.get('coverageOutside').onclick();h.get('coverageOutside').onclick();h.confirm();
+  assert.equal(h.get('coverageReview').hidden,true);assert.equal(h.get('clearCoverageReview').hidden,false);const pts=h.json('pts');
+  h.get('clearCoverageReview').onclick();assert.deepEqual(h.json('pts'),pts);assert.deepEqual(h.json('acquisitionReview'),{});
+  assert.equal(h.run('confirmedLTKey'),null);assert.equal(h.run('measurementGeometry()'),null);assert.deepEqual(h.json('profileRows'),[]);
+  assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_effective_field_review_required');assert.equal(h.get('clearCoverageReview').hidden,true);
+  const normal=harness();assert.equal(normal.get('clearCoverageReview').hidden,true);
+});
+
+test('calibration landmark translation invalidates review even when fitted scale is unchanged',()=>{
+  const h=harness(95);h.run("img={};$('calMode').value='head';$('headSize').value='32';pts.head1={x:16,y:0};pts.head2={x:0,y:16};pts.head3={x:-16,y:0};calc()");
+  h.get('coverageOutside').onclick();h.confirm();assert.ok(h.run('measurementGeometry()'));const scale=h.run('calibrationScale()');
+  h.run('for(const k of ["head1","head2","head3"])pts[k].x+=5;calc()');
+  assert.equal(h.run('calibrationScale()'),scale);assert.deepEqual(h.json('acquisitionReview'),{});assert.equal(h.run('confirmedLTKey'),null);
+  assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_effective_field_review_required');
+});
+
+test('JSON-first waits, applies once after image decode and resets LT confirmation',async()=>{
+  const h=harness();h.confirm();const raw=h.json('annotationPayload()');raw.study_id='QUEUED';raw.measurement_identity.research_id='QUEUED';
+  const original=JSON.stringify(raw),target={value:'synthetic.json',files:[{name:'synthetic.json',text:async()=>original}]};
+  await h.get('recordFile').onchange({target});assert.equal(target.value,'');assert.ok(h.json('pendingRecordImport'));
+  assert.equal(h.get('studyId').value,'SYNTHETIC');
+  h.run('globalThis.decoded=[];Image=function(){decoded.push(this)};buildGrayCache=()=>{}');
+  h.get('file').onchange({target:{files:[{name:'synthetic.png',size:123}]}});
+  h.run('decoded[0].width=256;decoded[0].height=256;decoded[0].onload()');
+  assert.equal(h.get('studyId').value,'QUEUED');assert.equal(h.run('pendingRecordImport'),null);
+  assert.equal(h.run('confirmedLTKey'),null);assert.equal(h.run('measurementGeometry()'),null);
+  assert.equal(h.json('annotationPayload()').canal_medial[0].x,raw.canal_medial[0].x);assert.equal(JSON.stringify(raw),original);
+});
+
+test('record picker resets on malformed or cancelled import so the same file can be reselected',async()=>{
+  const h=harness();h.run('img={}');const original=h.json('annotation');
+  for(const source of ['{',JSON.stringify(h.json('annotationPayload()'))]){
+    h.run('confirm=()=>false');const target={value:'same.json',files:[{text:async()=>source}]};
+    await h.get('recordFile').onchange({target});assert.equal(target.value,'');assert.deepEqual(h.json('annotation'),original);
+  }
+});
+
+test('latest selected JSON wins even if reads finish out of order',async()=>{
+  const h=harness();let resolveFirst;const raw=h.json('annotationPayload()');
+  const first=h.get('recordFile').onchange({target:{files:[{name:'first.json',text:()=>new Promise(r=>resolveFirst=r)}]}});
+  await h.get('recordFile').onchange({target:{files:[{name:'second.json',text:async()=>JSON.stringify(raw)}]}});
+  resolveFirst(JSON.stringify({...raw,study_id:'OLD'}));await first;
+  assert.equal(h.json('pendingRecordImport').filename,'second.json');
+});
+
+test('JSON selected during image decode is queued rather than applied to the previous image',async()=>{
+  const h=harness();h.run('img={}');const raw=h.json('annotationPayload()');
+  h.get('file').onchange({target:{files:[{name:'new.png',size:1}]}});
+  await h.get('recordFile').onchange({target:{files:[{name:'new.json',text:async()=>JSON.stringify(raw)}]}});
+  assert.ok(h.run('imageLoading'));assert.ok(h.json('pendingRecordImport'));assert.equal(h.run('img'),null);
+});
+
+test('image decode failure retains queued JSON; stale decode cannot consume it',async()=>{
+  const h=harness();const raw=h.json('annotationPayload()');
+  await h.get('recordFile').onchange({target:{files:[{name:'record.json',text:async()=>JSON.stringify(raw)}]}});
+  h.run('globalThis.decoded=[];Image=function(){decoded.push(this)};buildGrayCache=()=>{}');
+  for(const name of ['old.png','new.png'])h.get('file').onchange({target:{files:[{name,size:1}]}});
+  h.run('decoded[0].width=256;decoded[0].height=256;decoded[0].onload()');
+  assert.equal(h.run('img'),null);assert.ok(h.json('pendingRecordImport'));
+  h.run('decoded[1].onerror()');assert.equal(h.run('imageLoading'),false);assert.ok(h.json('pendingRecordImport'));
+});
+
+test('cancelled image picker preserves loaded image and current record provenance',()=>{
+  const h=harness();h.run('img={width:256};window._fmaFile={name:"original.png"};importedSourceFilename="source.png"');
+  h.get('file').onchange({target:{files:[]}});
+  assert.equal(h.json('img').width,256);assert.equal(h.run('window._fmaFile.name'),'original.png');assert.equal(h.run('importedSourceFilename'),'source.png');
+});
+
+test('displayed Mod MCI ratios are explicit additive fields, never substituted for dictionary MCI',()=>{
+  const h=harness();h.confirm();const r=h.json('buildDataDictionaryV11Record()');
+  assert.equal(r.discrete_parameters.mci,2); // Frozen outer(+20) / canal(+70).
+  assert.equal(r.displayed_ratio_metrics.values.mod_mci,1); // Displayed canal(0) / canal(+70).
+  assert.equal(r.displayed_ratio_metrics.values.p10d20,1);assert.equal(r.displayed_ratio_metrics.values.p10d30,1);
+  assert.equal(h.get('mci').textContent,'1.00 / 1.00');
+  assert.equal(r.displayed_ratio_metrics.definitions.mod_mci,'canal_width_mm(0) / canal_width_mm(70)');
+  const rows=h.run('measurementCsvText()').split('\n').map(row=>row.split(',').map(x=>x.replace(/^"|"$/g,'')));
+  for(const name of ['Displayed_Mod_MCI_EW0_over_EW_distal70','Displayed_P10D20_EW_proximal10_over_EW_distal20','Displayed_P10D30_EW_proximal10_over_EW_distal30'])assert.equal(rows[1][rows[0].indexOf(name)],'1');
+});
+
+test('added displayed ratios remain missing until LT confirmation and on missing fixed levels',()=>{
+  const h=harness();assert.deepEqual(h.json('buildDataDictionaryV11Record()').displayed_ratio_metrics.values,{mod_mci:null,p10d20:null,p10d30:null});
+  h.confirm();h.run("for(const name of ['canal_medial','canal_lateral','femur_medial','femur_lateral'])annotation[name][0].y=30;calc()");h.confirm();
+  const r=h.json('buildDataDictionaryV11Record()');assert.equal(r.displayed_ratio_metrics.values.p10d20,null);assert.equal(r.displayed_ratio_metrics.values.p10d30,null);
+});
+
+test('build display and saved provenance distinguish exact commit, local build and reference documents',()=>{
+  const h=harness(),r=h.json('buildDataDictionaryV11Record()'),a=h.json('annotationPayload()');
+  assert.equal(r.provenance_and_split.algorithm_git_hash,null);assert.equal(r.provenance_and_split.build_id,'axis-split-import-save-v1');
+  assert.equal(a.build_id,r.provenance_and_split.build_id);assert.deepEqual(a.version_context,r.provenance_and_split.version_context);
+  assert.equal(a.version_context.whole_rule_conformance,'not_verified');assert.equal(a.version_context.reference_documents.annotation_rule,'v1.1');
+  assert.equal(r.provenance_and_split.annotation_rule_ver,'v1.0'); // Historical field retained; no silent compliance promotion.
+  assert.equal(a.version_context.lt_runtime_confirmed,false);assert.match(h.get('buildIdentity').textContent,/未刻印/);
+  h.confirm();assert.equal(h.json('annotationPayload()').version_context.lt_runtime_confirmed,true);assert.match(h.get('confirmLT').textContent,/確認済み/);
+  h.run('pts.ltm.x+=1;calc()');assert.equal(h.json('annotationPayload()').version_context.lt_runtime_confirmed,false);assert.doesNotMatch(h.get('confirmLT').textContent,/確認済み/);
+});
+
+test('completed input guide does not claim LT confirmation before or after invalidation',()=>{
+  const h=harness();h.run("$('workMode').value='measurement';step=steps.length;guide()");assert.match(h.get('guide').textContent,/未確認/);
+  h.confirm();h.run('guide()');assert.match(h.get('guide').textContent,/LT確認済み/);
+  h.run('pts.ltm.x+=1;guide()');assert.match(h.get('guide').textContent,/未確認/);
+});
+
+for(const [name,edit]of [
+ ['null contour point',r=>r.canal_medial=[null,{x:1,y:2}]],
+ ['nonfinite point',r=>r.canal_medial=[{x:'1',y:2}]],
+ ['bad landmark',r=>r.measurement_points={ltm:{x:1}}],
+ ['head missing center',r=>r.head={radius_px:1}],
+ ['head string residual',r=>r.head={center:{x:1,y:2},radius_px:1,rmse_px:'bad'}],
+ ['bad closure flag',r=>r.contour_closed={canal_medial:'true'}],
+ ['bad metadata',r=>r.study_id={bad:1}],
+ ['bad AI contour',r=>r.ai_initial_prediction={annotation:{canal_medial:[null]}}],
+ ['bad anchors',r=>r._manualAnchors={canal_medial:[null]}],
+ ['bad correction counter',r=>r.annotation_correction_count={bad:1}]
+])test('malformed import preserves complete prior work: '+name,async()=>{
+  const h=harness();h.run('img={};window._fmaFile={name:"original.png",size:12}');h.confirm();h.run('saveWork()');
+  const raw=h.json('annotationPayload()');raw.study_id='BAD';edit(raw);
+  const pts=h.json('pts'),ann=h.json('annotation'),lt=h.run('confirmedLTKey'),storage=[...h.storage.entries()];
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});
+  assert.deepEqual(h.json('pts'),pts);assert.deepEqual(h.json('annotation'),ann);assert.equal(h.get('studyId').value,'SYNTHETIC');assert.equal(h.run('confirmedLTKey'),lt);assert.deepEqual([...h.storage.entries()],storage);
+});
+
+test('decoding cannot save old contours under new image identity or export an old/new mixture',async()=>{
+  const h=harness();h.run('img={};window._fmaFile={name:"old.png",size:1};saveWork();globalThis.decoded=[];Image=function(){decoded.push(this)};buildGrayCache=()=>{}');
+  const storage=[...h.storage.entries()];
+  h.get('file').onchange({target:{files:[{name:'new.png',size:2}]}});
+  assert.equal(h.run('window._fmaFile.name'),'old.png');h.run('saveWork()');assert.deepEqual([...h.storage.entries()],storage);
+  assert.equal(h.run('validateLocalIdentity()'),false);assert.equal(h.run('validateIdentity()'),false);assert.equal((await h.run('saveCaseFilesToFolder("test")')).ok,false);
+  h.run('decoded[0].width=256;decoded[0].height=256;decoded[0].onload()');
+  assert.equal(h.run('window._fmaFile.name'),'new.png');assert.deepEqual(h.json('annotation.canal_medial'),[]);
+  assert.equal(h.storage.has('FMA_work_axes_v1_new.png_2'),false);
+});
+
+test('failed image decoding blocks cache and exports until a successful image load',async()=>{
+  const h=harness();h.run('img={};window._fmaFile={name:"old.png",size:1};saveWork();globalThis.decoded=[];Image=function(){decoded.push(this)}');
+  const storage=[...h.storage.entries()];h.get('file').onchange({target:{files:[{name:'bad.png',size:2}]}});h.run('decoded[0].onerror();saveWork()');
+  assert.deepEqual([...h.storage.entries()],storage);assert.equal(h.run('validateLocalIdentity()'),false);assert.equal((await h.run('saveCaseFilesToFolder("test")')).ok,false);
+  assert.equal(h.run('window._fmaFile.name'),'old.png');assert.equal(h.run('confirmedLTKey'),null);
+});
+
+test('present null wall arrays and nonboolean AI provenance are rejected before import',async()=>{
+  for(const edit of [r=>r.femur_medial=null,r=>r.ai_loaded='true',r=>r.ai_provenance_known=1,r=>r.annotation_correction_count=1.5]){
+    const h=harness();h.run('img={}');const ann=h.json('annotation'),raw=h.json('annotationPayload()');edit(raw);
+    await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});assert.deepEqual(h.json('annotation'),ann);
+  }
+});
+
+test('record import uses a fixed annotation schema and does not adopt editor-internal IDs',async()=>{
+  const h=harness();h.run('img={};annotation._manualAnchors={canal_medial:[]};annotation._head_points=[]');
+  const raw=h.json('annotationPayload()');raw._manualAnchors={canal_medial:[{id:99,x:95,y:50}]};raw._head_points=[{x:1,y:2}];
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});
+  assert.equal(h.run('annotation._manualAnchors'),undefined);assert.equal(h.run('annotation._head_points'),undefined);
+});
