@@ -258,6 +258,7 @@ Key Rules for AI Assistants modifying this file:
 
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
 const APP_VERSION='v2.2-axis-split';
+let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false;
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
 const guidedStages=['head','femur_lateral','canal_lateral','stem_lateral','stem_medial','canal_medial','femur_medial','lt_midpoint','stem_adjust'];
@@ -1315,9 +1316,10 @@ $('zoomOut').onclick=()=>setZoom(zoom/1.25);
 $('zoomReset').onclick=()=>{zoom=1;panX=0;panY=0;$('zoomLabel').textContent='100%';draw()};
 
 $('file').onchange=e=>{
+  const f=e.target.files?.[0];e.target.value='';if(!f)return;
+  const loadSequence=++imageLoadSequence;imageLoading=true;
   activeLocalSnapshot=null;importedSourceFilename=null;$('saveRevisionDisplay').value='';
-  window._fmaFile=e.target.files&&e.target.files[0]?e.target.files[0]:null;
-  const f=e.target.files[0];if(!f)return;
+  window._fmaFile=f;
   // Invalidate before asynchronous decoding, including load failures.
   acquisitionReview={};acquisitionInputKey=null;axisInputKey=null;confirmedLTKey=null;femoralAxisResult=null;
   profileRows=[];continuousSlices=[];continuousSummary={};accepted=false;
@@ -1327,19 +1329,22 @@ $('file').onchange=e=>{
   }
   $('headSize').value=defaultCalibrationDiameter($('imageType').value);$('scale').value='';$('ltVisibility').value='';$('doubleCortex').value='';$('exclusionFlag').value='';$('modelVersion').value=DEFAULT_PILOT_MODEL_VERSION;$('imageId').value='';$('repeatIndex').value='';$('stemFamily').value='';pendingAiPrediction=null;
   calc();
-  const u=URL.createObjectURL(f);img=new Image();
-  img.onload=()=>{
+  const u=URL.createObjectURL(f),loadedImage=new Image();img=null;
+  loadedImage.onload=()=>{
+    URL.revokeObjectURL(u);if(loadSequence!==imageLoadSequence)return;
+    img=loadedImage;imageLoading=false;
     const ratio=img.height/img.width;cv.width=1200;cv.height=Math.round(1200*ratio);
     buildGrayCache();pts={};$('scale').value='';step=0;start=Date.now();elapsedSec=null;zoom=1;panX=0;panY=0;$('zoomLabel').textContent='100%';
     accepted=false;correctionCount=0;aiInitial={};aiLoaded=false;aiProvenanceKnown=true;autoStemInfo=null;profileRows=[];continuousSlices=[];continuousSummary={};
     annotation={version:'2.1-training',head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};
     annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,osteotomy_line:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};
     annotationCorrectionCount=0;acquisitionReview={};acquisitionInputKey=null;axisInputKey=null;confirmedLTKey=null;femoralAxisResult=null;legacySourceId=null;legacySourceRecordKey=null;legacySourceVersion=null;legacyStemCandidate=null;$('confirmLegacyStem').hidden=true;guidedStage=0;$('workMode').value='annotation';$('annotationTarget').value='head';
-    restoreSavedWork();draw();guide();
+    if(!pendingRecordImport)restoreSavedWork();draw();guide();
     $('guide').innerHTML='<span class="status">画像を読み込みました。Step 1/9：Head(または25mm鉄球)から開始、またはAI Mask512 PNGを読み込んでください。</span>';
-    URL.revokeObjectURL(u);
+    if(pendingRecordImport){const pending=pendingRecordImport;pendingRecordImport=null;try{applyRecordImport(pending.record,pending.filename);}catch(err){alert('記録JSONの読込エラー: '+err.message);}}
   };
-  img.src=u;
+  loadedImage.onerror=()=>{URL.revokeObjectURL(u);if(loadSequence!==imageLoadSequence)return;imageLoading=false;img=null;alert('画像を読み込めませんでした。対応する元画像を選び直してください。記録JSONは待機状態を保持します。');};
+  loadedImage.src=u;
 };
 
 function setGuidedStage(i){
@@ -1885,13 +1890,15 @@ function restoreSavedWork(){
     restoreWorkData(JSON.parse(current||old));return true;
   }catch(e){alert('作業データの読込に失敗しました: '+e.message);return false;}
 }
-$('recordFile').onchange=async e=>{
-  const file=e.target.files?.[0];if(!file)return;
-  if(!img){alert('対応する元画像を先に読み込んでください。');return;}
-  try{
-    const record=JSON.parse(await file.text()),raw=record.raw_annotations||record;
-    if(!Array.isArray(raw.canal_medial)||!Array.isArray(raw.canal_lateral))throw Error('対応するannotationではありません');
-    if(!confirm('対応する画像であることを確認してください。旧記録の軸は未確認です。原本・保存済みマスクを変更せず、作業用コピーを読み込みます。'))return;
+function validateRecordImport(record){
+  const raw=record?.raw_annotations||record;
+  if(!raw||!Array.isArray(raw.canal_medial)||!Array.isArray(raw.canal_lateral))throw Error('対応するannotationではありません');
+  return raw;
+}
+function applyRecordImport(record,filename=''){
+    const raw=validateRecordImport(record);
+    if(!img||imageLoading)throw Error('対応する元画像の読込完了を待ってください');
+    if(!confirm('記録JSON: '+filename+'\n読込中の画像: '+(window._fmaFile?.name||'名称不明')+'\n記録内の元画像: '+(raw.source_image_filename||'名称不明')+'\n\n対応する画像であることを確認してください。LT・旧記録の軸は未確認です。原本・保存済みマスクを変更せず、作業用コピーを読み込みます。'))return false;
     const axes=raw.axes||record.axes;
     const ann={};for(const k of Object.keys(annotation))if(raw[k]!==undefined)ann[k]=raw[k];
     ann.version=raw.annotation_version||annotation.version;
@@ -1915,7 +1922,21 @@ $('recordFile').onchange=async e=>{
         headSize:record.calibration_metrics?.calib_known_mm||raw.calibration?.known_mm||'',
         stemFamily:raw.stem_family||'',implantCollar:raw.implant_collar||'NA'}});
     draw();saveWork();guide();
-  }catch(err){alert('記録JSONの読込エラー: '+err.message);}
+    $('guide').textContent='記録JSONを読み込みました。自動FEMORAL軸とLTを確認してください。';
+    return true;
+}
+$('recordFile').onchange=async e=>{
+  const file=e.target.files?.[0];e.target.value='';if(!file)return;
+  const sequence=++recordImportSequence;pendingRecordImport=null;
+  try{
+    const record=JSON.parse(await file.text());if(sequence!==recordImportSequence)return;
+    validateRecordImport(record);
+    if(!img||imageLoading){
+      pendingRecordImport={record,filename:file.name||''};
+      $('guide').textContent='記録JSONを待機中です。対応する元画像を選ぶと、組合せを確認して読み込みます。';return;
+    }
+    applyRecordImport(record,file.name||'');
+  }catch(err){if(sequence===recordImportSequence)alert('記録JSONの読込エラー: '+err.message);}
 };
 function esc(v){v=String(v??'');return '"'+v.replaceAll('"','""')+'"'}
 

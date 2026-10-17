@@ -412,3 +412,55 @@ test('calibration landmark translation invalidates review even when fitted scale
   assert.equal(h.run('calibrationScale()'),scale);assert.deepEqual(h.json('acquisitionReview'),{});assert.equal(h.run('confirmedLTKey'),null);
   assert.equal(h.json('axisMetadata()').femoral.reason,'distal_100_effective_field_review_required');
 });
+
+test('JSON-first waits, applies once after image decode and resets LT confirmation',async()=>{
+  const h=harness();h.confirm();const raw=h.json('annotationPayload()');raw.study_id='QUEUED';raw.measurement_identity.research_id='QUEUED';
+  const original=JSON.stringify(raw),target={value:'synthetic.json',files:[{name:'synthetic.json',text:async()=>original}]};
+  await h.get('recordFile').onchange({target});assert.equal(target.value,'');assert.ok(h.json('pendingRecordImport'));
+  assert.equal(h.get('studyId').value,'SYNTHETIC');
+  h.run('globalThis.decoded=[];Image=function(){decoded.push(this)};buildGrayCache=()=>{}');
+  h.get('file').onchange({target:{files:[{name:'synthetic.png',size:123}]}});
+  h.run('decoded[0].width=256;decoded[0].height=256;decoded[0].onload()');
+  assert.equal(h.get('studyId').value,'QUEUED');assert.equal(h.run('pendingRecordImport'),null);
+  assert.equal(h.run('confirmedLTKey'),null);assert.equal(h.run('measurementGeometry()'),null);
+  assert.equal(h.json('annotationPayload()').canal_medial[0].x,raw.canal_medial[0].x);assert.equal(JSON.stringify(raw),original);
+});
+
+test('record picker resets on malformed or cancelled import so the same file can be reselected',async()=>{
+  const h=harness();h.run('img={}');const original=h.json('annotation');
+  for(const source of ['{',JSON.stringify(h.json('annotationPayload()'))]){
+    h.run('confirm=()=>false');const target={value:'same.json',files:[{text:async()=>source}]};
+    await h.get('recordFile').onchange({target});assert.equal(target.value,'');assert.deepEqual(h.json('annotation'),original);
+  }
+});
+
+test('latest selected JSON wins even if reads finish out of order',async()=>{
+  const h=harness();let resolveFirst;const raw=h.json('annotationPayload()');
+  const first=h.get('recordFile').onchange({target:{files:[{name:'first.json',text:()=>new Promise(r=>resolveFirst=r)}]}});
+  await h.get('recordFile').onchange({target:{files:[{name:'second.json',text:async()=>JSON.stringify(raw)}]}});
+  resolveFirst(JSON.stringify({...raw,study_id:'OLD'}));await first;
+  assert.equal(h.json('pendingRecordImport').filename,'second.json');
+});
+
+test('JSON selected during image decode is queued rather than applied to the previous image',async()=>{
+  const h=harness();h.run('img={}');const raw=h.json('annotationPayload()');
+  h.get('file').onchange({target:{files:[{name:'new.png',size:1}]}});
+  await h.get('recordFile').onchange({target:{files:[{name:'new.json',text:async()=>JSON.stringify(raw)}]}});
+  assert.ok(h.run('imageLoading'));assert.ok(h.json('pendingRecordImport'));assert.equal(h.run('img'),null);
+});
+
+test('image decode failure retains queued JSON; stale decode cannot consume it',async()=>{
+  const h=harness();const raw=h.json('annotationPayload()');
+  await h.get('recordFile').onchange({target:{files:[{name:'record.json',text:async()=>JSON.stringify(raw)}]}});
+  h.run('globalThis.decoded=[];Image=function(){decoded.push(this)};buildGrayCache=()=>{}');
+  for(const name of ['old.png','new.png'])h.get('file').onchange({target:{files:[{name,size:1}]}});
+  h.run('decoded[0].width=256;decoded[0].height=256;decoded[0].onload()');
+  assert.equal(h.run('img'),null);assert.ok(h.json('pendingRecordImport'));
+  h.run('decoded[1].onerror()');assert.equal(h.run('imageLoading'),false);assert.ok(h.json('pendingRecordImport'));
+});
+
+test('cancelled image picker preserves loaded image and current record provenance',()=>{
+  const h=harness();h.run('img={width:256};window._fmaFile={name:"original.png"};importedSourceFilename="source.png"');
+  h.get('file').onchange({target:{files:[]}});
+  assert.equal(h.json('img').width,256);assert.equal(h.run('window._fmaFile.name'),'original.png');assert.equal(h.run('importedSourceFilename'),'source.png');
+});
