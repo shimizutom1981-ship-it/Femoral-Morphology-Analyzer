@@ -464,3 +464,37 @@ test('cancelled image picker preserves loaded image and current record provenanc
   h.get('file').onchange({target:{files:[]}});
   assert.equal(h.json('img').width,256);assert.equal(h.run('window._fmaFile.name'),'original.png');assert.equal(h.run('importedSourceFilename'),'source.png');
 });
+
+test('displayed Mod MCI ratios are explicit additive fields, never substituted for dictionary MCI',()=>{
+  const h=harness();h.confirm();const r=h.json('buildDataDictionaryV11Record()');
+  assert.equal(r.discrete_parameters.mci,2); // Frozen outer(+20) / canal(+70).
+  assert.equal(r.displayed_ratio_metrics.values.mod_mci,1); // Displayed canal(0) / canal(+70).
+  assert.equal(r.displayed_ratio_metrics.values.p10d20,1);assert.equal(r.displayed_ratio_metrics.values.p10d30,1);
+  assert.equal(h.get('mci').textContent,'1.00 / 1.00');
+  assert.equal(r.displayed_ratio_metrics.definitions.mod_mci,'canal_width_mm(0) / canal_width_mm(70)');
+  const rows=h.run('measurementCsvText()').split('\n').map(row=>row.split(',').map(x=>x.replace(/^"|"$/g,'')));
+  for(const name of ['Displayed_Mod_MCI_EW0_over_EW_distal70','Displayed_P10D20_EW_proximal10_over_EW_distal20','Displayed_P10D30_EW_proximal10_over_EW_distal30'])assert.equal(rows[1][rows[0].indexOf(name)],'1');
+});
+
+test('added displayed ratios remain missing until LT confirmation and on missing fixed levels',()=>{
+  const h=harness();assert.deepEqual(h.json('buildDataDictionaryV11Record()').displayed_ratio_metrics.values,{mod_mci:null,p10d20:null,p10d30:null});
+  h.confirm();h.run("for(const name of ['canal_medial','canal_lateral','femur_medial','femur_lateral'])annotation[name][0].y=30;calc()");h.confirm();
+  const r=h.json('buildDataDictionaryV11Record()');assert.equal(r.displayed_ratio_metrics.values.p10d20,null);assert.equal(r.displayed_ratio_metrics.values.p10d30,null);
+});
+
+test('build display and saved provenance distinguish exact commit, local build and reference documents',()=>{
+  const h=harness(),r=h.json('buildDataDictionaryV11Record()'),a=h.json('annotationPayload()');
+  assert.equal(r.provenance_and_split.algorithm_git_hash,null);assert.equal(r.provenance_and_split.build_id,'axis-split-import-save-v1');
+  assert.equal(a.build_id,r.provenance_and_split.build_id);assert.deepEqual(a.version_context,r.provenance_and_split.version_context);
+  assert.equal(a.version_context.whole_rule_conformance,'not_verified');assert.equal(a.version_context.reference_documents.annotation_rule,'v1.1');
+  assert.equal(r.provenance_and_split.annotation_rule_ver,'v1.0'); // Historical field retained; no silent compliance promotion.
+  assert.equal(a.version_context.lt_runtime_confirmed,false);assert.match(h.get('buildIdentity').textContent,/未刻印/);
+  h.confirm();assert.equal(h.json('annotationPayload()').version_context.lt_runtime_confirmed,true);assert.match(h.get('confirmLT').textContent,/確認済み/);
+  h.run('pts.ltm.x+=1;calc()');assert.equal(h.json('annotationPayload()').version_context.lt_runtime_confirmed,false);assert.doesNotMatch(h.get('confirmLT').textContent,/確認済み/);
+});
+
+test('completed input guide does not claim LT confirmation before or after invalidation',()=>{
+  const h=harness();h.run("$('workMode').value='measurement';step=steps.length;guide()");assert.match(h.get('guide').textContent,/未確認/);
+  h.confirm();h.run('guide()');assert.match(h.get('guide').textContent,/LT確認済み/);
+  h.run('pts.ltm.x+=1;guide()');assert.match(h.get('guide').textContent,/未確認/);
+});

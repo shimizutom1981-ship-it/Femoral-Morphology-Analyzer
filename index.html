@@ -20,11 +20,11 @@ Key Rules for AI Assistants modifying this file:
     Class 0: rgb(0,0,0) bg, Class 1: rgb(1,1,1) femur outer, Class 2: rgb(2,2,2) canal, Class 3: rgb(3,3,3) stem.
 ================================================================================
 -->
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Femoral Morphology Analyzer v2.1</title><style>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Femoral Morphology Analyzer v2.2-axis-split</title><style>
 :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--cloud:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:980px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.cloudBtn{background:var(--cloud);color:#fff;border-color:#7c3aed}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.result{background:#0f172a;padding:9px;border-radius:8px;text-align:center}.val{font-size:1.15rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}.filterBar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#0f172a;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:.75rem}.filterBar label{display:flex;align-items:center;gap:6px;margin:0;color:var(--text)}.filterBar input[type=range]{width:110px;padding:0}
 #workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
 </style></head><body><div class="app">
-<div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub">v2.2-axis-split · Protocol v2.1 / Annotation Rule v1.0 / Data Dictionary v1.1 · Google Cloud & Local Hybrid</div></div>
+<div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub" id="buildIdentity"></div><div class="sub">参照文書：Protocol v2.1 / Annotation Rule v1.1 / Data Dictionary v1.2（2026-10-16 LT定義改訂）。実装済み保存形式：v1.1＋明示的な追補項目。全規約への適合は未検証。</div></div>
 
 <!-- Metadata & Protocol v2.1 Governance Card -->
 <div class="card"><div class="grid">
@@ -114,7 +114,7 @@ Key Rules for AI Assistants modifying this file:
   </div>
 
   <div class="canvasWrap"><canvas id="cv" width="900" height="650"></canvas></div>
-  <div class="small" style="margin-top:6px">操作ヒント：Alt+ドラッグ（または中ボタン）で画面移動、ホイールで拡大縮小、Shift+ドラッグで既存の点を微調整。LTが内旋で見えない場合は「LT Visibility」を Occluded に設定するとLT基準項目のみN.A.となり、0–100%連続Stem-Fit解析はそのまま実行できます。</div>
+  <div class="small" style="margin-top:6px">操作ヒント：Alt+ドラッグ（または中ボタン）で画面移動、ホイールで拡大縮小、Shift+ドラッグで既存の点を微調整。LTが同定できない場合は「LT Visibility」を Occluded に設定してください。この試験版では自動FEMORAL軸とそれに依存する計測値は未計測になります。輪郭の途中保存は可能です。</div>
 </div>
 
 <!-- Summary Metrics Card (Existing + v2.1 Continuous & Jang Metrics) -->
@@ -128,7 +128,7 @@ Key Rules for AI Assistants modifying this file:
     <div class="result"><div class="small">Mean Fill (0-100%)</div><div class="val" id="meanFillVal">--</div></div>
     <div class="result"><div class="small">Prox / Mid / Dist Fill</div><div class="val" id="zoneFillVal" style="font-size:.95rem">--</div></div>
     <div class="result"><div class="small">LDR-α / LDR-β</div><div class="val" id="ldra" style="font-size:.95rem">--</div><div id="ldrb" style="display:none">--</div></div>
-    <div class="result"><div class="small">Mod MCI / P10D20</div><div class="val" id="mci" style="font-size:.95rem">--</div><div id="p20d20" style="display:none">--</div><div id="p20d30" style="display:none">--</div></div>
+    <div class="result"><div class="small" title="Mod MCI = canal(0)/canal(+70); P10D20 = canal(-10)/canal(+20)。距離はLTから遠位が正。JSON mci = outer(+20)/canal(+70)とは別項目。">Mod MCI / P10D20</div><div class="val" id="mci" style="font-size:.95rem">--</div><div id="p20d20" style="display:none">--</div><div id="p20d30" style="display:none">--</div></div>
     <div class="result"><div class="small">測定時間 / 修正誤差</div><div class="val" id="time" style="font-size:.95rem">--</div></div>
   </div>
 </div>
@@ -258,6 +258,7 @@ Key Rules for AI Assistants modifying this file:
 
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
 const APP_VERSION='v2.2-axis-split';
+const BUILD_ID='axis-split-import-save-v1';
 let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false;
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
@@ -720,7 +721,7 @@ function guide(){
     $('guide').innerHTML='<span class="status">Annotation / '+label+': '+count+'点。近位→遠位の順に皮質に沿ってクリック → 完了したら「次へ ▶」。</span>';return;
   }
   if(step<steps.length)$('guide').innerHTML=(step+1)+'/'+steps.length+': <b>'+steps[step][0]+'</b> をクリック';
-  else $('guide').innerHTML='<span class="status">Measurement基準入力完了。オレンジ線がLT基準の自動measurement levelsです。</span>';
+  else $('guide').textContent=measurementGeometry()?'基準入力・LT確認済み。オレンジ線はLT基準の計測レベルです。':'基準入力済み。自動FEMORAL軸とLTは未確認です。LT確認ボタンと軸の状態を確認してください。';
 }
 
 cv.addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault()});
@@ -1162,7 +1163,7 @@ function buildDataDictionaryV11Record(){
       image_id:$('imageId').value.trim()||null,
       side:$('side').value,
       measurement_key:measurementKey(),
-      app_version:APP_VERSION,
+      app_version:APP_VERSION,build_id:BUILD_ID,version_context:versionContext(),
       dataset_partition:$('exclusionFlag').value==='legacy_pilot'?'legacy_pilot':'unassigned',
       timestamp_utc:new Date().toISOString(),
       model_version:aiProvenanceKnown&&aiLoaded?($('modelVersion').value.trim()||null):null,
@@ -1220,6 +1221,7 @@ function buildDataDictionaryV11Record(){
       ldr_alpha:g&&Number.isFinite(parseFloat($('ldra').textContent))?parseFloat($('ldra').textContent):null,
       ldr_beta:g&&Number.isFinite(parseFloat($('ldrb').textContent))?parseFloat($('ldrb').textContent):null
     },
+    displayed_ratio_metrics:displayedRatioMetrics(),
     continuous_profile:{
       valid_span_length_mm:continuousSummary.valid_span_length_mm||null,
       sampling_step_pct:2.0,
@@ -1495,7 +1497,7 @@ function annotationPayload(){
     contour_closed:annotationClosed,annotation_correction_count:annotationCorrectionCount,
     ai_loaded:aiProvenanceKnown?aiLoaded:null,ai_provenance_known:aiProvenanceKnown,ai_initial_prediction:aiLoaded?aiInitial:null,
     axes:axisMetadata(),contour_geometry_version:CONTOUR_GEOMETRY_VERSION,
-    app_version:APP_VERSION,timestamp:new Date().toISOString()
+    app_version:APP_VERSION,build_id:BUILD_ID,version_context:versionContext(),timestamp:new Date().toISOString()
   };
 }
 function profileCsvText(){
@@ -1505,13 +1507,13 @@ function profileCsvText(){
 }
 function measurementCsvText(){
   calc();
-  let s=parseFloat($('scale').value)||'',rows=[['Study_ID','Patient_ID','Observer_ID','Image_type','Stem_family','Side','Implant_collar','Landmark_name','X_px','Y_px','Image_width_px','Image_height_px','Scale_mm_per_px','Head_diameter_mm','Calibration_source','AP_CTI','CFI','CCR','CBR','Stem_Align_deg','Mean_Stem_Fill','Measurement_time_sec','AI_loaded','Correction_count','App_version','Timestamp','Repeat_index','Image_ID','Measurement_key','Code_commit','Model_version','Femoral_axis_status','Femoral_axis_distal_mm','Axis_missing_reason','Fixed_100_missing_reason','Save_revision','Snapshot_UUID','Metadata_completeness','Missing_identity_fields','Independent_repeat_status']];
+  let s=parseFloat($('scale').value)||'',rows=[['Study_ID','Patient_ID','Observer_ID','Image_type','Stem_family','Side','Implant_collar','Landmark_name','X_px','Y_px','Image_width_px','Image_height_px','Scale_mm_per_px','Head_diameter_mm','Calibration_source','AP_CTI','CFI','CCR','CBR','Stem_Align_deg','Mean_Stem_Fill','Measurement_time_sec','AI_loaded','Correction_count','App_version','Timestamp','Repeat_index','Image_ID','Measurement_key','Code_commit','Model_version','Femoral_axis_status','Femoral_axis_distal_mm','Axis_missing_reason','Fixed_100_missing_reason','Save_revision','Snapshot_UUID','Metadata_completeness','Missing_identity_fields','Independent_repeat_status','Displayed_Mod_MCI_EW0_over_EW_distal70','Displayed_P10D20_EW_proximal10_over_EW_distal20','Displayed_P10D30_EW_proximal10_over_EW_distal30','Build_ID']];
   for(const[name,k]of steps){
     let p=pts[k];if(!p)continue;
     rows.push([ensureCaseId(),$('patientId').value||'',$('observerId').value,$('imageType').value,$('stemFamily').value,$('side').value,$('implantCollar').value,k,p.x.toFixed(3),p.y.toFixed(3),cv.width,cv.height,s,$('headSize').value,$('calMode').value,$('cti').textContent,$('cfiVal').textContent,$('ccrVal').textContent,$('cbrVal').textContent,$('alignVal').textContent,$('meanFillVal').textContent,elapsedSec!=null?elapsedSec:(start?Math.round((Date.now()-start)/1000):''),aiLoaded?'true':'false',correctionCount+annotationCorrectionCount,APP_VERSION,new Date().toISOString(),measurementIdentity().repeat_index,$('imageId').value,measurementKey(),codeCommit(),aiLoaded?$('modelVersion').value:'',axisMetadata().femoral.quality_status,femoralAxisResult.levels?.distalMm??'',axisMetadata().femoral.reason??'',!measurementGeometry()?axisMetadata().femoral.reason:$('cti').textContent==='--'?'contour_missing_or_ambiguous':'']);
   }
-  const meta=localSaveMetadata();
-  for(const row of rows.slice(1))row.push(meta.save_revision??'',meta.snapshot_uuid??'',meta.metadata_completeness,meta.missing_identity_fields.join(';'),meta.independent_repeat_status);
+  const meta=localSaveMetadata(),ratios=displayedRatioMetrics().values;
+  for(const row of rows.slice(1))row.push(meta.save_revision??'',meta.snapshot_uuid??'',meta.metadata_completeness,meta.missing_identity_fields.join(';'),meta.independent_repeat_status,ratios.mod_mci??'',ratios.p10d20??'',ratios.p10d30??'',BUILD_ID);
   return rows.map(r=>r.map(v=>esc(v==='--'?'':v)).join(',')).join('\n');
 }
 
@@ -1775,6 +1777,21 @@ function measurementKey(){
 function newSaveKey(){return measurementKey()+'__'+crypto.randomUUID()}
 function isProtectedSourceKey(key){return Boolean(key&&(key===legacySourceId||key===legacySourceRecordKey));}
 function codeCommit(){return /^[a-f0-9]{40}$/.test(BUILD_COMMIT)?BUILD_COMMIT:null}
+function versionContext(){return {
+  build_id:BUILD_ID,algorithm_git_hash:codeCommit(),axis_solver_version:FemoralAxis.version,
+  implemented_record_schema:'v1.1+displayed_ratios_v1',
+  reference_documents:{protocol:'v2.1',annotation_rule:'v1.1',data_dictionary:'v1.2',lt_revision_date:'2026-10-16'},
+  whole_rule_conformance:'not_verified',
+  lt_definition:'medial_most_projected_prominence_perpendicular_to_femoral_axis',
+  lt_runtime_confirmed:axisMetadata().femoral.lt_confirmed
+};}
+function displayedRatioMetrics(){
+  const by=new Map(profileRows.map(r=>[r.distance_from_LT_mm,r]));
+  const ratio=(a,b)=>{const x=by.get(a)?.canal_width_mm,y=by.get(b)?.canal_width_mm;return measurementGeometry()&&Number.isFinite(x)&&Number.isFinite(y)&&y>0?Number((x/y).toFixed(4)):null;};
+  return {schema:'displayed_ratios_v1',distance_convention:'LT mm; proximal negative, distal positive',
+    definitions:{mod_mci:'canal_width_mm(0) / canal_width_mm(70)',p10d20:'canal_width_mm(-10) / canal_width_mm(20)',p10d30:'canal_width_mm(-10) / canal_width_mm(30)'},
+    values:{mod_mci:ratio(0,70),p10d20:ratio(-10,20),p10d30:ratio(-10,30)}};
+}
 function calc(){
   calibrationScale();
   profileRows=[];continuousSlices=[];continuousSummary={};
@@ -1783,6 +1800,7 @@ function calc(){
   $('axisStatus').textContent=a.status==='ok'?'FEMORAL: 10 / '+a.levels.distalMm+' mm — '+(g?'LT confirmed':'LT confirmation required')+(a.fallbackReasons?.length?' | '+JSON.stringify(a.fallbackReasons):''):'FEMORAL: unavailable / '+a.reason;
   if(legacySourceVersion)$('axisStatus').textContent+=' | Legacy '+legacySourceVersion+': original preserved; copied connectivity frozen; new immutable snapshot on save';
   $('confirmLT').disabled=a.status!=='ok';
+  $('confirmLT').textContent=g?'LT確認済み（入力変更で再確認が必要）':'自動FEMORAL軸に垂直な内側突出点としてLTを確認';
   $('coverageReview').hidden=!a.reviewLevelMm;
   $('clearCoverageReview').hidden=Object.keys(acquisitionReview).length===0;
   $('coverageMessage').textContent=a.reviewLevelMm? a.reviewLevelMm+' mmの髄腔輪郭が不足しています。有効撮影範囲を確認してください。範囲内なら輪郭の補完が必要です。自動切替は保留しています。':'';
@@ -1951,5 +1969,6 @@ $('annotationTarget').onchange=()=>{$('workMode').value='annotation';guide();sav
 ['pointerup'].forEach(ev=>cv.addEventListener(ev,()=>setTimeout(saveWork,0)));
 ['studyId','patientId','observerId','repeatIndex','imageId','modelVersion','imageType','stemFamily','side','implantCollar','headSize','calMode','scale','ltVisibility','doubleCortex','exclusionFlag','workMode','annotationTarget'].forEach(id=>{if($(id))$(id).addEventListener('change',saveWork)});
 window.addEventListener('beforeunload',saveWork);
+$('buildIdentity').textContent=APP_VERSION+' · Build '+BUILD_ID+' · Git '+(codeCommit()||'未刻印（commit未確認）')+' · FEMORAL solver '+FemoralAxis.version;
 guide();draw();
 </script></body></html>
