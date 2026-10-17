@@ -13,6 +13,7 @@ the working copy is applied. Import never inherits LT confirmation. Original
 record bytes and saved masks remain unchanged. The file input is reset after
 capture so cancelled/failed imports can select the same file again. Latest-file
 sequence checks prevent out-of-order reads/decodes applying stale selections.
+Supported imported geometry/metadata are validated before applying a record; malformed input cannot partially replace the current working copy. Save/cache/export are blocked during decoding and after failure, and the new image file identity is committed only on successful decode.
 Image decode failure keeps the queued JSON; selecting a replacement JSON replaces
 that pending entry. Cancelling an image picker leaves current work intact.
 
@@ -78,8 +79,11 @@ item, not a resolved scientific change.
 - The separate label app's optional browser fixture predates its full-outline
   requirements; it needs a fully valid synthetic fixture before a browser pass
   can mean anything. Label gates must not be disabled to pass that test.
-- Python/Torch loss/gradient tests and actual browser PNG encode/decode remain
-  separately reported gates. A JavaScript command recorder is not PNG testing.
+- The separately fetched label package passed its original five Python tests in
+  an isolated official CPU Torch environment (torch 2.14.1+cpu, torchvision
+  0.29.1+cpu), including loss/gradient/metric ignore behavior and paired
+  augmentation. No training ran. Browser PNG encode/decode remains a separately
+  reported gate. A JavaScript command recorder is not PNG testing.
 - Patient-level adoption, anatomical contour review, acquisition evidence and
   untouched final-test partitioning are not established by software tests.
 

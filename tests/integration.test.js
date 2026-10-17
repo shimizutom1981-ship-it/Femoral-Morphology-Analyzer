@@ -498,3 +498,54 @@ test('completed input guide does not claim LT confirmation before or after inval
   h.confirm();h.run('guide()');assert.match(h.get('guide').textContent,/LT確認済み/);
   h.run('pts.ltm.x+=1;guide()');assert.match(h.get('guide').textContent,/未確認/);
 });
+
+for(const [name,edit]of [
+ ['null contour point',r=>r.canal_medial=[null,{x:1,y:2}]],
+ ['nonfinite point',r=>r.canal_medial=[{x:'1',y:2}]],
+ ['bad landmark',r=>r.measurement_points={ltm:{x:1}}],
+ ['head missing center',r=>r.head={radius_px:1}],
+ ['head string residual',r=>r.head={center:{x:1,y:2},radius_px:1,rmse_px:'bad'}],
+ ['bad closure flag',r=>r.contour_closed={canal_medial:'true'}],
+ ['bad metadata',r=>r.study_id={bad:1}],
+ ['bad AI contour',r=>r.ai_initial_prediction={annotation:{canal_medial:[null]}}],
+ ['bad anchors',r=>r._manualAnchors={canal_medial:[null]}],
+ ['bad correction counter',r=>r.annotation_correction_count={bad:1}]
+])test('malformed import preserves complete prior work: '+name,async()=>{
+  const h=harness();h.run('img={};window._fmaFile={name:"original.png",size:12}');h.confirm();h.run('saveWork()');
+  const raw=h.json('annotationPayload()');raw.study_id='BAD';edit(raw);
+  const pts=h.json('pts'),ann=h.json('annotation'),lt=h.run('confirmedLTKey'),storage=[...h.storage.entries()];
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});
+  assert.deepEqual(h.json('pts'),pts);assert.deepEqual(h.json('annotation'),ann);assert.equal(h.get('studyId').value,'SYNTHETIC');assert.equal(h.run('confirmedLTKey'),lt);assert.deepEqual([...h.storage.entries()],storage);
+});
+
+test('decoding cannot save old contours under new image identity or export an old/new mixture',async()=>{
+  const h=harness();h.run('img={};window._fmaFile={name:"old.png",size:1};saveWork();globalThis.decoded=[];Image=function(){decoded.push(this)};buildGrayCache=()=>{}');
+  const storage=[...h.storage.entries()];
+  h.get('file').onchange({target:{files:[{name:'new.png',size:2}]}});
+  assert.equal(h.run('window._fmaFile.name'),'old.png');h.run('saveWork()');assert.deepEqual([...h.storage.entries()],storage);
+  assert.equal(h.run('validateLocalIdentity()'),false);assert.equal(h.run('validateIdentity()'),false);assert.equal((await h.run('saveCaseFilesToFolder("test")')).ok,false);
+  h.run('decoded[0].width=256;decoded[0].height=256;decoded[0].onload()');
+  assert.equal(h.run('window._fmaFile.name'),'new.png');assert.deepEqual(h.json('annotation.canal_medial'),[]);
+  assert.equal(h.storage.has('FMA_work_axes_v1_new.png_2'),false);
+});
+
+test('failed image decoding blocks cache and exports until a successful image load',async()=>{
+  const h=harness();h.run('img={};window._fmaFile={name:"old.png",size:1};saveWork();globalThis.decoded=[];Image=function(){decoded.push(this)}');
+  const storage=[...h.storage.entries()];h.get('file').onchange({target:{files:[{name:'bad.png',size:2}]}});h.run('decoded[0].onerror();saveWork()');
+  assert.deepEqual([...h.storage.entries()],storage);assert.equal(h.run('validateLocalIdentity()'),false);assert.equal((await h.run('saveCaseFilesToFolder("test")')).ok,false);
+  assert.equal(h.run('window._fmaFile.name'),'old.png');assert.equal(h.run('confirmedLTKey'),null);
+});
+
+test('present null wall arrays and nonboolean AI provenance are rejected before import',async()=>{
+  for(const edit of [r=>r.femur_medial=null,r=>r.ai_loaded='true',r=>r.ai_provenance_known=1,r=>r.annotation_correction_count=1.5]){
+    const h=harness();h.run('img={}');const ann=h.json('annotation'),raw=h.json('annotationPayload()');edit(raw);
+    await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});assert.deepEqual(h.json('annotation'),ann);
+  }
+});
+
+test('record import uses a fixed annotation schema and does not adopt editor-internal IDs',async()=>{
+  const h=harness();h.run('img={};annotation._manualAnchors={canal_medial:[]};annotation._head_points=[]');
+  const raw=h.json('annotationPayload()');raw._manualAnchors={canal_medial:[{id:99,x:95,y:50}]};raw._head_points=[{x:1,y:2}];
+  await h.get('recordFile').onchange({target:{files:[{text:async()=>JSON.stringify(raw)}]}});
+  assert.equal(h.run('annotation._manualAnchors'),undefined);assert.equal(h.run('annotation._head_points'),undefined);
+});

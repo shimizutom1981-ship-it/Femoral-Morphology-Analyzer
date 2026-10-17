@@ -259,7 +259,7 @@ Key Rules for AI Assistants modifying this file:
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
 const APP_VERSION='v2.2-axis-split';
 const BUILD_ID='axis-split-import-save-v1';
-let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false;
+let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false,imageLoadFailed=false;
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
 const guidedStages=['head','femur_lateral','canal_lateral','stem_lateral','stem_medial','canal_medial','femur_medial','lt_midpoint','stem_adjust'];
@@ -571,6 +571,7 @@ $('clearCoverageReview').onclick=()=>{
 $('coverageInside').onclick=()=>reviewAcquisition('inside');
 $('coverageOutside').onclick=()=>reviewAcquisition('outside');
 $('confirmLT').onclick=()=>{
+  if(imageLoading||imageLoadFailed)return;
   const a=refreshFemoralAxis();if(!a||a.status!=='ok')return;
   confirmedLTKey=axisInputKey;draw();saveWork();
 };
@@ -741,6 +742,7 @@ function nearestContourInsertIndex(arr,p){
 }
 
 cv.addEventListener('pointerdown',e=>{
+  if(imageLoading||imageLoadFailed)return;
   if(e.button===1||e.altKey){isPanning=true;panStart={...screenPos(e),panX,panY};cv.setPointerCapture(e.pointerId);return}
   if(!start&&img)start=Date.now();
   if($('workMode').value==='annotation'){
@@ -816,6 +818,7 @@ cv.addEventListener('pointerdown',e=>{
 });
 
 cv.addEventListener('pointermove',e=>{
+  if(imageLoading||imageLoadFailed)return;
   if(isPanning&&panStart){const p=screenPos(e);panX=panStart.panX+p.x-panStart.x;panY=panStart.panY+p.y-panStart.y;draw();return}
   if(annotationDrag){
     annotation[annotationDrag.target][annotationDrag.index]={...annotation[annotationDrag.target][annotationDrag.index],...pos(e)};
@@ -1319,9 +1322,9 @@ $('zoomReset').onclick=()=>{zoom=1;panX=0;panY=0;$('zoomLabel').textContent='100
 
 $('file').onchange=e=>{
   const f=e.target.files?.[0];e.target.value='';if(!f)return;
-  const loadSequence=++imageLoadSequence;imageLoading=true;
+  const loadSequence=++imageLoadSequence;imageLoading=true;imageLoadFailed=false;
+  drag=null;annotationDrag=null;isPanning=false;panStart=null;grayCache=null;
   activeLocalSnapshot=null;importedSourceFilename=null;$('saveRevisionDisplay').value='';
-  window._fmaFile=f;
   // Invalidate before asynchronous decoding, including load failures.
   acquisitionReview={};acquisitionInputKey=null;axisInputKey=null;confirmedLTKey=null;femoralAxisResult=null;
   profileRows=[];continuousSlices=[];continuousSummary={};accepted=false;
@@ -1334,7 +1337,7 @@ $('file').onchange=e=>{
   const u=URL.createObjectURL(f),loadedImage=new Image();img=null;
   loadedImage.onload=()=>{
     URL.revokeObjectURL(u);if(loadSequence!==imageLoadSequence)return;
-    img=loadedImage;imageLoading=false;
+    img=loadedImage;window._fmaFile=f;imageLoading=false;imageLoadFailed=false;
     const ratio=img.height/img.width;cv.width=1200;cv.height=Math.round(1200*ratio);
     buildGrayCache();pts={};$('scale').value='';step=0;start=Date.now();elapsedSec=null;zoom=1;panX=0;panY=0;$('zoomLabel').textContent='100%';
     accepted=false;correctionCount=0;aiInitial={};aiLoaded=false;aiProvenanceKnown=true;autoStemInfo=null;profileRows=[];continuousSlices=[];continuousSummary={};
@@ -1345,7 +1348,8 @@ $('file').onchange=e=>{
     $('guide').innerHTML='<span class="status">画像を読み込みました。Step 1/9：Head(または25mm鉄球)から開始、またはAI Mask512 PNGを読み込んでください。</span>';
     if(pendingRecordImport){const pending=pendingRecordImport;pendingRecordImport=null;try{applyRecordImport(pending.record,pending.filename);}catch(err){alert('記録JSONの読込エラー: '+err.message);}}
   };
-  loadedImage.onerror=()=>{URL.revokeObjectURL(u);if(loadSequence!==imageLoadSequence)return;imageLoading=false;img=null;alert('画像を読み込めませんでした。対応する元画像を選び直してください。記録JSONは待機状態を保持します。');};
+  loadedImage.onerror=()=>{URL.revokeObjectURL(u);if(loadSequence!==imageLoadSequence)return;imageLoading=false;imageLoadFailed=true;img=null;grayCache=null;$('guide').textContent='画像読込に失敗しました。保存は停止中です。対応する元画像を選び直してください。';alert('画像を読み込めませんでした。対応する元画像を選び直してください。記録JSONは待機状態を保持します。');};
+  $('guide').textContent='画像を読み込み中です。完了するまで編集・保存は停止しています。';
   loadedImage.src=u;
 };
 
@@ -1446,6 +1450,7 @@ function trainingMaskPngBlob(){
   });
 }
 async function saveCaseFilesToFolder(id){
+  if(!imageReadyForSave())return {ok:false,image_unavailable:true};
   if(isProtectedSourceKey(id)){alert('旧記録の保存先には書き込めません。新しいスナップショットとして保存してください。');return {ok:false,reason:'legacy_source_protected'};}
   const fmaRecord=JSON.parse(JSON.stringify(buildDataDictionaryV11Record()));
   const profileCsv=profileCsvText(),measurementCsv=measurementCsvText(),manifest=trainingManifestText();
@@ -1740,9 +1745,14 @@ function importLocalRevision(id,metadata){
   rememberLocalRevision(id,metadata?.save_revision);
 }
 function validateLocalIdentity(){
+  if(!imageReadyForSave())return false;
   if(!ensureCaseId()){alert('Research IDを入力してください。');$('studyId').focus();return false}
   const value=$('repeatIndex').value.trim(),n=Number(value);
   if(value&&(!Number.isSafeInteger(n)||n<1)){alert('研究用反復番号は空欄、または1以上の整数にしてください。');return false}
+  return true;
+}
+function imageReadyForSave(){
+  if(imageLoading||imageLoadFailed){alert('画像の読込が完了していないため保存できません。元画像を選び直し、表示を確認してください。');return false;}
   return true;
 }
 function newLocalSaveKey(){
@@ -1764,6 +1774,7 @@ function localSaveMetadata(){
     independent_repeat_status:v.repeat_index==null?'not_declared':'user_declared_not_validated'};
 }
 function validateIdentity(){
+  if(!imageReadyForSave())return false;
   const v=measurementIdentity();
   if(!v.research_id||!v.observer_id||!v.image_id||!Number.isInteger(v.repeat_index)||v.repeat_index<1){
     alert('Research ID・Observer ID・反復番号（1以上の整数）・匿名Image IDを入力してください。');return false;
@@ -1840,7 +1851,7 @@ function calc(){
 // v2 work keys are read-only. New work uses a distinct namespace.
 function imageWorkKey(file){return file?'FMA_work_axes_v1_'+[file.name,file.size].join('_'):null}
 function saveWork(){
-  if(!window._fmaFile)return;
+  if(!window._fmaFile||imageLoading||imageLoadFailed)return;
   const key=imageWorkKey(window._fmaFile);if(!key)return;
   const data={pts,step,zoom,panX,panY,annotation,annotationClosed,annotationCorrectionCount,correctionCount,autoStemInfo,start,elapsedSec,aiLoaded,aiInitial,aiProvenanceKnown,
     importedSourceFilename,localSave:localSaveMetadata(),axes:axisMetadata(),confirmedLTKey,legacyStemCandidate,legacySourceVersion,legacySourceId,legacySourceRecordKey,
@@ -1855,7 +1866,7 @@ function restoreWorkData(data){
   annotation={...emptyAnnotation(),...JSON.parse(JSON.stringify(data.annotation||{}))};
   annotationClosed=Object.fromEntries(Object.keys(annotationClosed).map(k=>[k,false]));
   Object.assign(annotationClosed,data.annotationClosed||{});
-  for(const[k,v]of Object.entries(data.fields||{}))if($(k))$(k).value=v;
+  for(const[k,v]of Object.entries(data.fields||{}))if($(k))$(k).value=String(v??'');
   importedSourceFilename=data.importedSourceFilename||null;
   importLocalRevision(ensureCaseId(),data.localSave);
   step=data.step||0;zoom=data.zoom||1;panX=data.panX||0;panY=data.panY||0;
@@ -1911,6 +1922,30 @@ function restoreSavedWork(){
 function validateRecordImport(record){
   const raw=record?.raw_annotations||record;
   if(!raw||!Array.isArray(raw.canal_medial)||!Array.isArray(raw.canal_lateral))throw Error('対応するannotationではありません');
+  const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
+  const fail=name=>{throw Error('不正な記録項目: '+name);};
+  const point=(p,name)=>{if(!object(p)||!Number.isFinite(p.x)||!Number.isFinite(p.y))fail(name);};
+  const points=(a,name)=>{if(!Array.isArray(a))fail(name);for(const p of a)point(p,name);};
+  const geometry=(a,name)=>{
+    if(!object(a))fail(name);
+    for(const k of ['osteotomy_line','stem_interface_anchors','lt_region','femur_mask','canal_mask','stem_mask','femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral','_head_points'])if(a[k]!==undefined)points(a[k],name+'.'+k);
+    if(a.lt_midpoint!=null)point(a.lt_midpoint,name+'.lt_midpoint');
+    if(a.head!=null){point(a.head.center,name+'.head.center');if(!Number.isFinite(a.head.radius_px)||a.head.radius_px<=0)fail(name+'.head.radius_px');if(a.head.rmse_px!=null&&!Number.isFinite(a.head.rmse_px))fail(name+'.head.rmse_px');}
+    if(a._manualAnchors!=null){if(!object(a._manualAnchors))fail(name+'._manualAnchors');for(const [k,v]of Object.entries(a._manualAnchors))points(v,name+'._manualAnchors.'+k);}
+  };
+  geometry(raw,'annotation');
+  for(const k of ['ai_loaded','ai_provenance_known'])if(raw[k]!=null&&typeof raw[k]!=='boolean')fail(k);
+  if(raw.annotation_correction_count!=null&&(!Number.isSafeInteger(raw.annotation_correction_count)||raw.annotation_correction_count<0))fail('annotation_correction_count');
+  if(raw.measurement_points!=null){if(!object(raw.measurement_points))fail('measurement_points');for(const [k,v]of Object.entries(raw.measurement_points))if(v!=null)point(v,'measurement_points.'+k);}
+  if(raw.contour_closed!=null){if(!object(raw.contour_closed)||Object.values(raw.contour_closed).some(v=>typeof v!=='boolean'))fail('contour_closed');}
+  if(raw.ai_initial_prediction!=null){if(!object(raw.ai_initial_prediction))fail('ai_initial_prediction');if(raw.ai_initial_prediction.annotation!=null)geometry(raw.ai_initial_prediction.annotation,'ai_initial_prediction.annotation');}
+  for(const [name,fields]of [['measurement_identity',['research_id','observer_id','repeat_index','image_id','side','image_stage']],['calibration',['mode','mm_per_px','known_mm']]]){
+    if(raw[name]!=null){if(!object(raw[name]))fail(name);for(const k of fields)if(raw[name][k]!=null&&!(typeof raw[name][k]==='string'||typeof raw[name][k]==='number'&&Number.isFinite(raw[name][k])))fail(name+'.'+k);}
+  }
+  for(const k of ['study_id','patient_id','observer_id','repeat_index','image_id','side','image_type','model_version','double_cortex','lt_visibility','stem_family','implant_collar','source_image_filename','app_version','annotation_version','record_key'])if(raw[k]!=null&&!(typeof raw[k]==='string'||typeof raw[k]==='number'&&Number.isFinite(raw[k])))fail(k);
+  for(const [name,fields]of [['provenance_and_split',['research_id','patient_id','observer_id','repeat_index','image_id','model_version','record_key']],['calibration_metrics',['calibrated_mm_per_px','calib_known_mm']],['segmentation_qc',['double_cortex_grade']],['meta_input',['exclusion_flag']]]){
+    if(record[name]!=null){if(!object(record[name]))fail(name);for(const k of fields)if(record[name][k]!=null&&!(typeof record[name][k]==='string'||typeof record[name][k]==='number'&&Number.isFinite(record[name][k])))fail(name+'.'+k);}
+  }
   return raw;
 }
 function applyRecordImport(record,filename=''){
@@ -1918,7 +1953,7 @@ function applyRecordImport(record,filename=''){
     if(!img||imageLoading)throw Error('対応する元画像の読込完了を待ってください');
     if(!confirm('記録JSON: '+filename+'\n読込中の画像: '+(window._fmaFile?.name||'名称不明')+'\n記録内の元画像: '+(raw.source_image_filename||'名称不明')+'\n\n対応する画像であることを確認してください。LT・旧記録の軸は未確認です。原本・保存済みマスクを変更せず、作業用コピーを読み込みます。'))return false;
     const axes=raw.axes||record.axes;
-    const ann={};for(const k of Object.keys(annotation))if(raw[k]!==undefined)ann[k]=raw[k];
+    const ann={};for(const k of Object.keys(emptyAnnotation()))if(raw[k]!==undefined)ann[k]=raw[k];
     ann.version=raw.annotation_version||annotation.version;
     restoreWorkData({pts:raw.measurement_points||{},annotation:ann,annotationClosed:raw.contour_closed||{},axes,
       importedSourceFilename:raw.source_image_filename||null,
