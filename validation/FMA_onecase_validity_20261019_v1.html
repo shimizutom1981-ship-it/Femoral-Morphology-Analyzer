@@ -20,10 +20,10 @@ Key Rules for AI Assistants modifying this file:
     Class 0: rgb(0,0,0) bg, Class 1: rgb(1,1,1) femur outer, Class 2: rgb(2,2,2) canal, Class 3: rgb(3,3,3) stem.
 ================================================================================
 -->
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261020-v5</title><style>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261020-v6</title><style>
 :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--cloud:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:980px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.cloudBtn{background:var(--cloud);color:#fff;border-color:#7c3aed}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.result{background:#0f172a;padding:9px;border-radius:8px;text-align:center}.val{font-size:1.15rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}.filterBar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#0f172a;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:.75rem}.filterBar label{display:flex;align-items:center;gap:6px;margin:0;color:var(--text)}.filterBar input[type=range]{width:110px;padding:0}
 #workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
-</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261020-v5 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
+</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261020-v6 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
 <div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub" id="buildIdentity"></div><div class="sub">参照文書：Protocol v2.1 / Annotation Rule v1.1 / Data Dictionary v1.2（2026-10-16 LT定義改訂）。実装済み保存形式：v1.1＋明示的な追補項目。全規約への適合は未検証。</div></div>
 
 <!-- Metadata & Protocol v2.1 Governance Card -->
@@ -259,7 +259,7 @@ Key Rules for AI Assistants modifying this file:
 
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
 const APP_VERSION='v2.2-axis-split';
-const BUILD_ID='onecase-validity-20261020-v5';
+const BUILD_ID='onecase-validity-20261020-v6';
 let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false,imageLoadFailed=false;
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
@@ -2085,6 +2085,7 @@ function restoreWorkData(data){
   annotationClosed=Object.fromEntries(Object.keys(annotationClosed).map(k=>[k,false]));
   Object.assign(annotationClosed,data.annotationClosed||{});
   for(const[k,v]of Object.entries(data.fields||{}))if($(k))$(k).value=String(v??'');
+  if(!String($('headSize').value).trim())$('headSize').value=defaultCalibrationDiameter($('imageType').value)||'32';
   importedSourceFilename=data.importedSourceFilename||null;
   importLocalRevision(ensureCaseId(),data.localSave);
   step=data.step||0;zoom=data.zoom||1;panX=data.panX||0;panY=data.panY||0;
@@ -2218,7 +2219,7 @@ function applyRecordImport(record,filename=''){
         doubleCortex:raw.double_cortex||record.segmentation_qc?.double_cortex_grade||'',
         exclusionFlag:record.meta_input?.exclusion_flag||'',
         ltVisibility:raw.lt_visibility||'',
-        calMode:'manual',scale:record.calibration_metrics?.calibrated_mm_per_px||raw.calibration?.mm_per_px||'',
+        calMode:(record.calibration_metrics?.calibrated_mm_per_px||raw.calibration?.mm_per_px)?'manual':'head',scale:record.calibration_metrics?.calibrated_mm_per_px||raw.calibration?.mm_per_px||'',
         headSize:record.calibration_metrics?.calib_known_mm||raw.calibration?.known_mm||'',
         stemFamily:raw.stem_family||'',implantCollar:raw.implant_collar||'NA'}});
     draw();saveWork();guide();
@@ -2281,7 +2282,7 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
  const axis=document.getElementById('axisStatus').parentElement;panels.axis.append(axis);
  const outline=document.getElementById('traceImplantLabel').parentElement;
  const exclusion=document.getElementById('markArtificialEdge').parentElement;panels.exclude.append(exclusion);panels.outline.append(outline);
- const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261020-v5';stage.append(status);
+ const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261020-v6';stage.append(status);
  move('guide',stage);stage.append(main.querySelector('.canvasWrap'));
  const footer=document.createElement('div');footer.className='compactFooter';stage.append(footer);
  for(const id of ['saveLabelDraft','saveCase'])move(id,footer);
