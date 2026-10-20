@@ -2198,4 +2198,51 @@ $('annotationTarget').onchange=()=>{$('workMode').value='annotation';guide();sav
 window.addEventListener('beforeunload',saveWork);
 $('buildIdentity').textContent=APP_VERSION+' · Build '+BUILD_ID+' · Git '+(codeCommit()||'未刻印（commit未確認）')+' · FEMORAL solver '+FemoralAxis.version;
 guide();draw();
-</script></body></html>
+</script><style>
+body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;padding:5px 9px!important;font-size:11px}.app>.card:first-child{padding:8px;margin-bottom:6px}h1{font-size:17px}.compactLayout{display:grid;grid-template-columns:320px minmax(0,1fr);gap:8px;height:calc(100vh - 130px);min-height:420px}.compactSide{overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px}.compactTabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;position:sticky;top:-8px;background:var(--card);padding:6px 0;z-index:2}.compactTabs button{font-size:12px;padding:8px 3px}.compactTabs button[aria-pressed=true]{background:var(--accent);color:#082f49}.compactPanel[hidden]{display:none!important}.compactPanel .card{border:0;padding:4px;margin:0}.compactPanel .grid{grid-template-columns:1fr 1fr}.compactPanel p{font-size:12px;line-height:1.5}.compactPanel button{margin:3px 0;font-size:12px}.compactPanel .guide{padding:7px}.compactPanel .small{font-size:11px}.compactStage{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--card);border-radius:10px;padding:8px}.compactQuick{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.compactQuick>*{width:auto!important;order:0!important;font-size:12px;padding:7px!important}.compactQuick select{flex:1;min-width:180px;max-width:440px}.compactStage #guide{margin:5px 0;padding:6px;font-size:12px}.compactStage .canvasWrap{flex:1;min-height:160px;border:1px solid var(--line)}.compactStage canvas{width:auto;height:auto;max-width:100%;max-height:100%;flex:none}.compactFooter{display:flex;gap:5px;margin-top:6px}.compactFooter button{font-size:12px;padding:7px}.compactPanel table{display:block;overflow:auto}.compactPanel .results{grid-template-columns:1fr 1fr}.compactPanel .filterBar{display:grid;gap:10px}.compactPanel summary{cursor:pointer;font-size:12px;padding:7px}.compactStatus{font-size:11px;color:var(--muted);padding:5px 0}.compactPanel input[type=file]{font-size:11px}
+@media(max-width:700px){.compactLayout{grid-template-columns:1fr;height:auto}.compactSide{max-height:36vh}.compactStage{height:62vh;min-height:370px}.app>.card:first-child .sub{font-size:10px}.compactTabs{grid-template-columns:repeat(6,1fr)}.compactTabs button{font-size:10px}}
+</style>
+<script>
+// Presentation-only layout: move existing nodes, preserving IDs, values and handlers.
+(()=>{
+ const app=document.querySelector('.app'),cards=Array.from(app.children),meta=cards[1],main=cards[2];
+ const layout=document.createElement('div');layout.className='compactLayout';app.append(layout);
+ const side=document.createElement('aside');side.className='compactSide';layout.append(side);
+ const nav=document.createElement('nav');nav.className='compactTabs';nav.setAttribute('aria-label','操作パネル');side.append(nav);
+ const panels={};let active='load';
+ for(const [key,label] of [['load','読込'],['settings','設定'],['outline','外周'],['exclude','除外'],['axis','軸・画質'],['results','結果']]){
+  const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.panel=key;b.setAttribute('aria-controls','compact-'+key);nav.append(b);
+  const p=document.createElement('section');p.id='compact-'+key;p.className='compactPanel';p.hidden=key!==active;side.append(p);panels[key]=p;
+  b.setAttribute('aria-pressed',String(key===active));b.onclick=()=>{active=key;for(const [k,v] of Object.entries(panels))v.hidden=k!==key;for(const x of nav.children)x.setAttribute('aria-pressed',String(x===b));};
+ }
+ const stage=document.createElement('section');stage.className='compactStage';layout.append(stage);
+ const quick=document.createElement('div');quick.className='compactQuick';stage.append(quick);
+ const move=(id,parent)=>{const el=document.getElementById(id);if(el)parent.append(el);};
+ panels.settings.append(meta);
+ for(const id of ['file','aiMaskFile','aiJsonFile'])panels.load.append(document.getElementById(id).parentElement);
+ panels.load.append(document.getElementById('recordFile').parentElement);
+ for(const id of ['aiSuggest','autoStem','autoHead'])move(id,panels.load);
+ for(const id of ['annotationTarget','workflowBack','workflowNext','undoAnnotation','zoomOut','zoomLabel','zoomIn','zoomReset'])move(id,quick);
+ const axis=document.getElementById('axisStatus').parentElement;panels.axis.append(axis);
+ const outline=document.getElementById('traceImplantLabel').parentElement;
+ const exclusion=document.getElementById('markArtificialEdge').parentElement;panels.exclude.append(exclusion);panels.outline.append(outline);
+ const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261020-v1';stage.append(status);
+ move('guide',stage);stage.append(main.querySelector('.canvasWrap'));
+ const footer=document.createElement('div');footer.className='compactFooter';stage.append(footer);
+ for(const id of ['saveLabelDraft','saveCase'])move(id,footer);
+ for(const id of ['accept','export','exportProfile','saveCloud'])move(id,panels.results);
+ for(const id of ['clearCoverageReview','coverageReview'])move(id,panels.axis);
+ panels.axis.append(main.querySelector('.filterBar'));
+ const hints=main.querySelector('.small');if(hints)panels.axis.append(hints);
+ panels.results.append(cards[3],cards[4]);
+ // Retain remaining hidden/legacy controls without changing their visibility logic.
+ panels.axis.append(main);main.style.padding='0';main.style.border='0';
+ const help=document.createElement('p');help.className='small';help.textContent='画像と既存記録を読み込み →「外周」で編集。症例情報・左右・校正径は「設定」で確認。';panels.load.prepend(help);
+ // Fit the CSS display only; canvas pixels and coordinate conversion remain unchanged.
+ const canvas=document.getElementById('cv'),wrap=canvas.parentElement;
+ const fit=()=>{const w=wrap.clientWidth,h=wrap.clientHeight;if(!w||!h)return;const scale=Math.min(w/canvas.width,h/canvas.height);canvas.style.width=Math.floor(canvas.width*scale)+'px';canvas.style.height=Math.floor(canvas.height*scale)+'px';};
+ new ResizeObserver(fit).observe(wrap);new MutationObserver(fit).observe(canvas,{attributes:true,attributeFilter:['width','height']});fit();
+})();
+</script>
+
+</body></html>
