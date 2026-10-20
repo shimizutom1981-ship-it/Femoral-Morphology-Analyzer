@@ -20,10 +20,10 @@ Key Rules for AI Assistants modifying this file:
     Class 0: rgb(0,0,0) bg, Class 1: rgb(1,1,1) femur outer, Class 2: rgb(2,2,2) canal, Class 3: rgb(3,3,3) stem.
 ================================================================================
 -->
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261020-v2</title><style>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261020-v3</title><style>
 :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--cloud:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:980px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.cloudBtn{background:var(--cloud);color:#fff;border-color:#7c3aed}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.result{background:#0f172a;padding:9px;border-radius:8px;text-align:center}.val{font-size:1.15rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}.filterBar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#0f172a;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:.75rem}.filterBar label{display:flex;align-items:center;gap:6px;margin:0;color:var(--text)}.filterBar input[type=range]{width:110px;padding:0}
 #workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
-</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261020-v2 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
+</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261020-v3 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
 <div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub" id="buildIdentity"></div><div class="sub">参照文書：Protocol v2.1 / Annotation Rule v1.1 / Data Dictionary v1.2（2026-10-16 LT定義改訂）。実装済み保存形式：v1.1＋明示的な追補項目。全規約への適合は未検証。</div></div>
 
 <!-- Metadata & Protocol v2.1 Governance Card -->
@@ -80,7 +80,7 @@ Key Rules for AI Assistants modifying this file:
       <option value="lt_region">Opt: LT region contour</option>
       <option value="femur_mask">Legacy: Femur contour</option>
       <option value="canal_mask">Legacy: Canal contour</option>
-      <option value="stem_mask">Legacy: Stem contour</option><option value="implant_label_outline">ラベル専用：カラー・ネック込みインプラント外周（骨頭除外）</option><option value="artificial_edge">便宜的閉鎖辺</option><option value="ignore_region">除外領域（validity=0）</option><option value="implant_collar_contact">内側髄腔のカラー接点</option>
+      <option value="stem_mask">Legacy: Stem contour</option><option value="implant_proximal_bridge">追加：近位（内側→外側）</option><option value="implant_distal_bridge">追加：先端（外側→内側）</option><option value="implant_label_outline">ラベル専用：カラー・ネック込みインプラント外周（骨頭除外）</option><option value="artificial_edge">便宜的閉鎖辺</option><option value="ignore_region">除外領域（validity=0）</option><option value="implant_collar_contact">内側髄腔のカラー接点</option>
     </select>
     <button id="undoAnnotation">1点戻す</button>
     <button id="clearStemAnchors" style="display:none">補正点クリア</button>
@@ -96,7 +96,7 @@ Key Rules for AI Assistants modifying this file:
   </div>
 
   <div class="guide"><div id="axisStatus">FEMORAL axis: awaiting contours / LT / calibration</div><button id="confirmLT">自動FEMORAL軸に垂直な内側突出点としてLTを確認</button><label>既存Annotation / FMA record（原本は変更しません）<input id="recordFile" type="file" accept=".json,application/json"></label><button id="confirmLegacyStem" hidden>旧2点を手動STEM軸候補として確認</button></div>
-  <div class="guide"><b>教師ラベル専用輪郭（計測側線とは別）</b><p>画像で見えるカラー・ネックを含むインプラント外周を順に入力。骨頭は含めません。既存の側線から近位形状を自動推定しません。外側髄腔は観測できる皮質内縁で止め、近位へ外挿しません。</p><button id="traceImplantLabel">外周の末尾に追加・点を移動</button><button id="insertImplantPoint">紫の辺に点を挿入</button><button id="undoImplantInsert">点挿入を取り消す</button><div id="implantInsertHint"></div><button id="pickCollarContact">内側カラー接点を指定</button><button id="applyCollarContact">内側髄腔始点を接点へ移す（確認あり）</button><button id="clearImplantLabel">ラベル輪郭をやり直す</button><label>領域の確認<select id="labelRegionEvidence"><option value="unknown">未確認</option><option value="observed">全領域を確認・不確かな閉鎖領域なし</option><option value="uncertain">不確かな領域あり（mask出力保留）</option></select></label><button id="confirmImplantLabel">ラベル領域を確認</button><div><b>便宜的閉鎖・除外領域</b><button id="markArtificialEdge">便宜的な閉鎖辺を指定</button><button id="traceIgnoreRegion">除外領域を描き直す</button><button id="undoIgnorePoint">除外領域の1点を戻す</button><button id="confirmIgnoreRegion">除外範囲を確認</button><button id="clearIgnoreRegion">除外指定を解除</button><div id="ignoreRegionStatus"></div><p>赤い領域はvalidity=0。背景や骨の正解にはしません。閉鎖辺の周囲だけを順に囲み、カラー・髄腔・ステム本体を不要に含めないでください。</p></div><button id="saveLabelDraft">確認途中の注釈JSONを保存</button><div id="implantLabelStatus"></div><p>紫破線はラベル専用外周、黄丸は指定接点。計測用ステム側線とは別です。見えない領域は推定して正解にせず、mask出力を保留します。</p></div>
+  <div class="guide"><b>ステム側線を共用して教師領域を作成</b><p>①既存側線を使用 → ②不足部分だけ追加 → ③追加部分を確認。近位は内側の上端からカラー・ネックを経て外側の上端へ、先端は外側の下端から内側の下端へ入力。端点は自動接続します。見えない部分は推定しません。</p><button id="useSharedStem">既存のステム側線を使用</button><button id="addProximalBridge">近位の不足部分を追加</button><button id="addDistalBridge">先端の不足部分を追加</button><button id="confirmSharedBridges">追加部分・端点の接続を確認</button><div id="sharedStemStatus"></div><p>従来方式の外周入力は旧記録用です。共有方式では上のボタンで不足部分のみ入力。骨頭は含めません。既存の側線から近位形状を自動推定しません。外側髄腔は観測できる皮質内縁で止め、近位へ外挿しません。</p><button id="traceImplantLabel">外周の末尾に追加・点を移動</button><button id="insertImplantPoint">紫の辺に点を挿入</button><button id="undoImplantInsert">点挿入を取り消す</button><div id="implantInsertHint"></div><button id="pickCollarContact">内側カラー接点を指定</button><button id="applyCollarContact">内側髄腔始点を接点へ移す（確認あり）</button><button id="clearImplantLabel">ラベル輪郭をやり直す</button><label>領域の確認<select id="labelRegionEvidence"><option value="unknown">未確認</option><option value="observed">全領域を確認・不確かな閉鎖領域なし</option><option value="uncertain">不確かな領域あり（mask出力保留）</option></select></label><button id="confirmImplantLabel">ラベル領域を確認</button><div><b>便宜的閉鎖・除外領域</b><button id="markArtificialEdge">便宜的な閉鎖辺を指定</button><button id="traceIgnoreRegion">除外領域を描き直す</button><button id="undoIgnorePoint">除外領域の1点を戻す</button><button id="confirmIgnoreRegion">除外範囲を確認</button><button id="clearIgnoreRegion">除外指定を解除</button><div id="ignoreRegionStatus"></div><p>赤い領域はvalidity=0。背景や骨の正解にはしません。閉鎖辺の周囲だけを順に囲み、カラー・髄腔・ステム本体を不要に含めないでください。</p></div><button id="saveLabelDraft">確認途中の注釈JSONを保存</button><div id="implantLabelStatus"></div><p>紫破線は教師領域の外周、黄丸は指定接点。共有方式ではステム本体は計測側線と同じ座標です。見えない領域は推定して正解にせず、mask出力を保留します。</p></div>
   <button id="clearCoverageReview" hidden>撮影範囲の確認を取り消す（未確認に戻す）</button>
   <div id="coverageReview" class="guide" hidden><span id="coverageMessage"></span>
 <button id="coverageInside">必要な断面は有効撮影範囲内（輪郭を補完）</button>
@@ -259,7 +259,7 @@ Key Rules for AI Assistants modifying this file:
 
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
 const APP_VERSION='v2.2-axis-split';
-const BUILD_ID='onecase-validity-20261020-v2';
+const BUILD_ID='onecase-validity-20261020-v3';
 let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false,imageLoadFailed=false;
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
@@ -267,7 +267,7 @@ const guidedStages=['head','femur_lateral','canal_lateral','stem_lateral','stem_
 let guidedStage=0;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 let img=null,grayCache=null,pts={},step=0,start=null,elapsedSec=null,drag=null,zoom=1,panX=0,panY=0,isPanning=false,panStart=null,accepted=false,correctionCount=0,aiInitial={},aiLoaded=false,aiProvenanceKnown=true,profileRows=[],continuousSlices=[],continuousSummary={};
-function emptyAnnotation(){return {contour_interpolation:null,stem_boundary_alignment:null,version:'2.1-training',implant_label_outline:[],implant_collar_contact:null,label_region_review:null,label_region_evidence:null,label_exclusion:null,label_endpoint_edit:null,head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};}
+function emptyAnnotation(){return {shared_stem_boundary:null,implant_proximal_bridge:[],implant_distal_bridge:[],contour_interpolation:null,stem_boundary_alignment:null,version:'2.1-training',implant_label_outline:[],implant_collar_contact:null,label_region_review:null,label_region_evidence:null,label_exclusion:null,label_endpoint_edit:null,head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};}
 let annotation=emptyAnnotation();
 let annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,osteotomy_line:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};
 let annotationDrag=null,annotationCorrectionCount=0;
@@ -402,6 +402,7 @@ function drawAnnotation(){
 }
 
 function draw(){
+  syncSharedStem();
   ctx.clearRect(0,0,cv.width,cv.height);ctx.save();ctx.setTransform(zoom,0,0,zoom,panX,panY);
   if(img)ctx.drawImage(img,0,0,cv.width,cv.height);
   let hc=circle3(pts.head1,pts.head2,pts.head3);
@@ -753,6 +754,7 @@ cv.addEventListener('pointerdown',e=>{
   if(!start&&img)start=Date.now();
   if($('workMode').value==='annotation'){
     let p=pos(e);const t=$('annotationTarget').value;
+    if(t==='implant_label_outline'&&annotation.shared_stem_boundary){$('guide').textContent='本体はステム側線で、追加部分は近位・先端ボタンで編集してください';return;}
     if(t==='artificial_edge'||t==='ignore_region'){if(e.button===0&&!e.shiftKey&&!e.ctrlKey&&!e.metaKey)handleIgnoreClick(t,p);return;}
     if(t==='implant_label_outline'&&implantInsertMode){if(e.button!==0||e.shiftKey||e.ctrlKey||e.metaKey)return;handleImplantInsert(p);return;}
     if(t==='implant_collar_contact'){const a=annotation.implant_label_outline||[],q=a.length>=3?FmaLabelRaster.nearestBoundary(p,a):null;if(!q||q.distance>10/zoom){alert('ラベル専用輪郭上の内側カラー接点をクリックしてください');return;}annotation.implant_collar_contact={x:q.x,y:q.y};annotation.label_region_review=null;draw();saveWork();return;}
@@ -1521,7 +1523,46 @@ function trainingValidityPngBlob(rasters){return rasterPngBlob(FmaValidity.rgba(
 
 const LABEL_SCHEMA='AP_observed_implant_validity_v2';
 function labelReviewKey(){return JSON.stringify({exclusion:exclusionGeometry(),outline:annotation.implant_label_outline,contact:annotation.implant_collar_contact,canal:[annotation.canal_medial,annotation.canal_lateral],outer:[annotation.femur_medial,annotation.femur_lateral],stem:[annotation.stem_medial,annotation.stem_lateral],rendered:['femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral'].map(k=>getRenderedContour(k)),image:[window._fmaFile?.name||importedSourceFilename||null,window._fmaFile?.size||null,window._fmaFile?.lastModified||null],width:cv.width,height:cv.height,side:$('side').value,type:$('imageType').value});}
+
+function sharedStemParts(){
+ const orient=k=>{const a=getRenderedContour(k).map(p=>({x:p.x,y:p.y}));return a.length>1&&a[0].y>a.at(-1).y?a.reverse():a;};
+ return {m:orient('stem_medial'),l:orient('stem_lateral')};
+}
+function sharedStemKey(){const {m,l}=sharedStemParts();return JSON.stringify([m,l,annotation.implant_proximal_bridge,annotation.implant_distal_bridge]);}
+function syncSharedStem(){
+ const h=annotation.shared_stem_boundary;for(const id of ['traceImplantLabel','insertImplantPoint','undoImplantInsert'])if($(id))$(id).disabled=!!h;if(!h){if($('sharedStemStatus'))$('sharedStemStatus').textContent='未使用：既存の側線から作成できます';return;}
+ const {m,l}=sharedStemParts();
+ const a=m.length>=2&&l.length>=2?[...m.slice().reverse(),...(annotation.implant_proximal_bridge||[]),...l,...(annotation.implant_distal_bridge||[])]:[];
+ annotation.implant_label_outline=a.filter((p,i)=>!i||p.x!==a[i-1].x||p.y!==a[i-1].y);
+ const q=annotation.implant_label_outline;if(q.length>1&&q[0].x===q.at(-1).x&&q[0].y===q.at(-1).y)q.pop();
+ const el=$('sharedStemStatus');if(el)el.textContent=h.review_key===sharedStemKey()?'共有側線と追加部分を確認済み':'共有中：不足部分と端点の接続を確認してください。側線の修正は自動反映されます。';
+ for(const id of ['traceImplantLabel','insertImplantPoint','undoImplantInsert'])if($(id))$(id).disabled=true;
+}
+$('useSharedStem').onclick=()=>{
+ if(annotation.shared_stem_boundary)return;
+ const {m,l}=sharedStemParts();if(m.length<2||l.length<2){alert('先にステムの内側・外側を入力してください');return;}
+ if(annotation.implant_label_outline?.length&&!confirm('既存の外周は履歴に保持し、現在のステム側線を共用します。近位・先端の不足部分を追加してください。'))return;
+ annotation.shared_stem_boundary={schema:'shared_stem_boundary_v1',previous_outline:JSON.parse(JSON.stringify(annotation.implant_label_outline||[])),review_key:null};
+ annotation.implant_proximal_bridge=[];annotation.implant_distal_bridge=[];annotation.label_region_review=null;
+ syncSharedStem();draw();saveWork();
+};
+function selectSharedBridge(k){
+ if(!annotation.shared_stem_boundary){alert('先に「既存のステム側線を使用」を押してください');return;}
+ resetImplantInsert();$('workMode').value='annotation';$('annotationTarget').value=k;annotationClosed[k]=false;
+ $('guide').textContent=k==='implant_proximal_bridge'?'内側上端→カラー・ネック→外側上端の順に不足点だけ追加。端点は自動接続。Shiftで点移動。':'外側下端→先端→内側下端の順に不足点だけ追加。端点は自動接続。Shiftで点移動。';
+}
+$('addProximalBridge').onclick=()=>selectSharedBridge('implant_proximal_bridge');
+$('addDistalBridge').onclick=()=>selectSharedBridge('implant_distal_bridge');
+$('confirmSharedBridges').onclick=()=>{
+ if(!annotation.shared_stem_boundary)return;
+ syncSharedStem();const err=FmaLabelRaster.polygonError(annotation.implant_label_outline);if(err){alert('接続形状を修正してください: '+err);return;}
+ if(!confirm('近位・先端と側線の接続を画像上で確認しましたか？見えない閉鎖部分は、この後「除外」で指定してください。'))return;
+ annotation.shared_stem_boundary.review_key=sharedStemKey();draw();saveWork();
+};
+
 function labelGeometryStatus(requireReview=true){
+ syncSharedStem();
+ if(annotation.shared_stem_boundary&&annotation.shared_stem_boundary.review_key!==sharedStemKey())return {ok:false,reason:"共有側線の不足部分・端点の接続を確認してください"};
  const outline=annotation.implant_label_outline||[];
  for(const [m,l] of [['femur_medial','femur_lateral'],['canal_medial','canal_lateral']]){if((annotation[m]||[]).length<2||(annotation[l]||[]).length<2)return {ok:false,reason:'骨・髄腔の両側輪郭が必要です'};const err=FmaLabelRaster.polygonError(getRenderedContour(m).concat(getRenderedContour(l).slice().reverse()));if(err)return {ok:false,reason:'骨・髄腔領域の交差または不正点: '+err};}
  if($('imageType').value==='postop_THA'){
@@ -1597,7 +1638,7 @@ function drawImplantLabelOutline(){
 }
 $('traceImplantLabel').onclick=()=>{resetImplantInsert();$('workMode').value='annotation';$('annotationTarget').value='implant_label_outline';annotationClosed.implant_label_outline=false;guide();};
 $('pickCollarContact').onclick=()=>{resetImplantInsert();$('workMode').value='annotation';$('annotationTarget').value='implant_collar_contact';guide();};
-$('clearImplantLabel').onclick=()=>{if(!confirm('ラベル専用輪郭とカラー接点を作業コピーから消します。計測側線は保持します。'))return;annotation.implant_label_outline=[];annotation.implant_collar_contact=null;annotation.label_region_review=null;draw();saveWork();};
+$('clearImplantLabel').onclick=()=>{if(!confirm('ラベル専用輪郭とカラー接点を作業コピーから消します。計測側線は保持します。'))return;annotation.shared_stem_boundary=null;annotation.implant_proximal_bridge=[];annotation.implant_distal_bridge=[];for(const id of ['traceImplantLabel','insertImplantPoint','undoImplantInsert'])$(id).disabled=false;annotation.implant_label_outline=[];annotation.implant_collar_contact=null;annotation.label_region_review=null;draw();saveWork();};
 $('applyCollarContact').onclick=()=>{
  const p=annotation.implant_collar_contact,a=annotation.canal_medial;if(!p||!a?.length||!FmaLabelRaster.boundaryPoint(p,annotation.implant_label_outline||[])){alert('先にラベル輪郭上の内側カラー接点を指定してください');return;}
  if(!confirm('作業コピーの内側髄腔の最初の点だけを、指定したカラー接点へ移します。骨軸・髄腔計測は再確認が必要です。原本は変更しません。'))return;
@@ -1650,6 +1691,7 @@ async function saveCaseFilesToFolder(id){
 
 function ensureCaseId(){return $('studyId').value.trim()}
 function annotationPayload(){
+  syncSharedStem();
   syncExclusionReview();
   syncLabelEvidence();
   return {
@@ -1669,7 +1711,7 @@ function annotationPayload(){
     femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,
     canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,
     stem_medial:annotation.stem_medial,stem_lateral:annotation.stem_lateral,
-    contour_interpolation:annotation.contour_interpolation,stem_boundary_alignment:annotation.stem_boundary_alignment,
+    shared_stem_boundary:annotation.shared_stem_boundary,implant_proximal_bridge:annotation.implant_proximal_bridge,implant_distal_bridge:annotation.implant_distal_bridge,contour_interpolation:annotation.contour_interpolation,stem_boundary_alignment:annotation.stem_boundary_alignment,
     contour_closed:annotationClosed,annotation_correction_count:annotationCorrectionCount,
     ai_loaded:aiProvenanceKnown?aiLoaded:null,ai_provenance_known:aiProvenanceKnown,ai_initial_prediction:aiLoaded?aiInitial:null,
     axes:axisMetadata(),contour_geometry_version:CONTOUR_GEOMETRY_VERSION,
@@ -2128,6 +2170,8 @@ function validateRecordImport(record){
     if(a._manualAnchors!=null){if(!object(a._manualAnchors))fail(name+'._manualAnchors');for(const [k,v]of Object.entries(a._manualAnchors))points(v,name+'._manualAnchors.'+k);}
   };
   geometry(raw,'annotation');
+  for(const k of ['implant_proximal_bridge','implant_distal_bridge'])if(raw[k]!=null)points(raw[k],k);
+  if(raw.shared_stem_boundary!=null){const h=raw.shared_stem_boundary;if(!object(h)||h.schema!=='shared_stem_boundary_v1'||!(h.review_key==null||typeof h.review_key==='string'))fail('shared_stem_boundary');points(h.previous_outline,'shared_stem_boundary.previous_outline');}
   if(raw.contour_interpolation!=null){
     if(!object(raw.contour_interpolation))fail('contour_interpolation');
     for(const [k,v] of Object.entries(raw.contour_interpolation))if(!['stem_medial','stem_lateral'].includes(k)||v!=='polyline')fail('contour_interpolation.'+k);
@@ -2236,7 +2280,7 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
  const axis=document.getElementById('axisStatus').parentElement;panels.axis.append(axis);
  const outline=document.getElementById('traceImplantLabel').parentElement;
  const exclusion=document.getElementById('markArtificialEdge').parentElement;panels.exclude.append(exclusion);panels.outline.append(outline);
- const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261020-v2';stage.append(status);
+ const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261020-v3';stage.append(status);
  move('guide',stage);stage.append(main.querySelector('.canvasWrap'));
  const footer=document.createElement('div');footer.className='compactFooter';stage.append(footer);
  for(const id of ['saveLabelDraft','saveCase'])move(id,footer);
