@@ -20,10 +20,10 @@ Key Rules for AI Assistants modifying this file:
     Class 0: rgb(0,0,0) bg, Class 1: rgb(1,1,1) femur outer, Class 2: rgb(2,2,2) canal, Class 3: rgb(3,3,3) stem.
 ================================================================================
 -->
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261020-v6</title><style>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261021-v7</title><style>
 :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--cloud:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:980px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.cloudBtn{background:var(--cloud);color:#fff;border-color:#7c3aed}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.result{background:#0f172a;padding:9px;border-radius:8px;text-align:center}.val{font-size:1.15rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}.filterBar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#0f172a;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:.75rem}.filterBar label{display:flex;align-items:center;gap:6px;margin:0;color:var(--text)}.filterBar input[type=range]{width:110px;padding:0}
 #workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
-</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261020-v6 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
+</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261021-v7 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
 <div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub" id="buildIdentity"></div><div class="sub">参照文書：Protocol v2.1 / Annotation Rule v1.1 / Data Dictionary v1.2（2026-10-16 LT定義改訂）。実装済み保存形式：v1.1＋明示的な追補項目。全規約への適合は未検証。</div></div>
 
 <!-- Metadata & Protocol v2.1 Governance Card -->
@@ -259,7 +259,7 @@ Key Rules for AI Assistants modifying this file:
 
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
 const APP_VERSION='v2.2-axis-split';
-const BUILD_ID='onecase-validity-20261020-v6';
+const BUILD_ID='onecase-validity-20261021-v7';
 let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false,imageLoadFailed=false;
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
@@ -2282,7 +2282,7 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
  const axis=document.getElementById('axisStatus').parentElement;panels.axis.append(axis);
  const outline=document.getElementById('traceImplantLabel').parentElement;
  const exclusion=document.getElementById('markArtificialEdge').parentElement;panels.exclude.append(exclusion);panels.outline.append(outline);
- const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261020-v6';stage.append(status);
+ const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261021-v7';stage.append(status);
  move('guide',stage);stage.append(main.querySelector('.canvasWrap'));
  const footer=document.createElement('div');footer.className='compactFooter';stage.append(footer);
  for(const id of ['saveLabelDraft','saveCase'])move(id,footer);
@@ -2294,6 +2294,53 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
  // Retain remaining hidden/legacy controls without changing their visibility logic.
  panels.axis.append(main);main.style.padding='0';main.style.border='0';
  const help=document.createElement('p');help.className='small';help.textContent='画像と既存記録を読み込み →「外周」で編集。症例情報・左右・校正径は「設定」で確認。';panels.load.prepend(help);
+
+ // Guided order for teacher-contour review. Move the original controls; do not
+ // duplicate handlers or change annotation/confirmation/save semantics.
+ const flow=panels.load;help.textContent='上から順に進めます。各工程を開き、必要な操作を済ませて次の工程へ。確認済みの項目や「必要な場合だけ」の操作は繰り返さなくて構いません。';
+ const sections=[];
+ const section=(title,note)=>{
+  const d=document.createElement('details');d.className='flowStep';
+  const s=document.createElement('summary');s.textContent=title;d.append(s);
+  if(note){const p=document.createElement('p');p.className='small';p.textContent=note;d.append(p);}
+  flow.append(d);sections.push(d);return d;
+ };
+ const fold=(parent,title)=>{const d=document.createElement('details'),s=document.createElement('summary');s.textContent=title;d.append(s);parent.append(d);return d;};
+ const inputLabel=(id,parent)=>parent.append(document.getElementById(id).parentElement);
+ const read=section('1　画像・既存JSONを読み込む','画像を選び、対応する既存JSONを読み込みます。');
+ inputLabel('file',read);inputLabel('recordFile',read);
+ const ai=fold(read,'AI入力・自動検出（使用する場合だけ）');
+ for(const id of ['aiMaskFile','aiJsonFile'])inputLabel(id,ai);
+ for(const id of ['aiSuggest','autoStem','autoHead'])move(id,ai);
+ const setup=section('2　症例情報・骨頭径を確認','ID・左右・画像種別・実際の骨頭径を確認。術後の初期値は32 mmです。');
+ setup.append(meta);
+ const shape=section('3　ステム輪郭をつなぐ','既存側線を使用 → 近位は内側上端から外側上端へ → 先端は外側下端から内側下端へ。見えない部分は推定しません。');
+ for(const id of ['useSharedStem','addProximalBridge','addDistalBridge','confirmSharedBridges','sharedStemStatus'])move(id,shape);
+ const legacy=fold(shape,'旧方式の輪郭編集・やり直し（必要な場合だけ）');
+ for(const id of ['traceImplantLabel','insertImplantPoint','undoImplantInsert','implantInsertHint','clearImplantLabel'])move(id,legacy);
+ const contact=section('4　内側接点・髄腔始点を合わせる','接点と始点が既に一致していれば変更不要です。始点を移す場合は、この工程で済ませます。');
+ for(const id of ['pickCollarContact','applyCollarContact'])move(id,contact);
+ const ignore=section('5　見えない部分を除外する','不確かな閉鎖部分がある場合だけ、閉鎖辺を指定して周囲を囲みます。既存の除外範囲が正しければ描き直さず確認します。');
+ for(const id of ['markArtificialEdge','traceIgnoreRegion','undoIgnorePoint','confirmIgnoreRegion','ignoreRegionStatus'])move(id,ignore);
+ const remove=fold(ignore,'除外指定の解除（必要な場合だけ）');move('clearIgnoreRegion',remove);
+ const axes=section('6　撮影範囲・軸を整える','警告が出た場合だけ撮影範囲を確認します。範囲内なら不足輪郭を補完。範囲外と判断できない場合は未確認のまま保存できます。ステム軸の修正も最終確認の前に済ませます。');
+ move('axisStatus',axes);move('coverageReview',axes);move('confirmLegacyStem',axes);
+ const axisReset=fold(axes,'撮影範囲の確認を取り消す（必要な場合だけ）');move('clearCoverageReview',axisReset);
+ const finish=section('7　領域 → LTの順に確認','輪郭・接点・除外・校正の変更後、ここで最終確認します。LTを押せない場合は工程6の警告を確認してください。');
+ inputLabel('labelRegionEvidence',finish);move('confirmImplantLabel',finish);move('implantLabelStatus',finish);move('confirmLT',finish);
+ const save=section('8　保存する','確認が済んだらLocal Save。未確認部分が残る場合は途中の注釈JSONを保存できます。');
+ move('saveCase',save);move('saveLabelDraft',save);footer.remove();
+ for(let i=0;i<sections.length;i++){
+  const d=sections[i];d.open=i===0;
+  d.addEventListener('toggle',()=>{if(d.open)for(const other of sections)if(other!==d)other.open=false;});
+  if(i<sections.length-1){const next=document.createElement('button');next.type='button';next.className='flowNext';next.textContent='次の工程へ：'+sections[i+1].querySelector('summary').textContent;
+   next.onclick=()=>{d.open=false;sections[i+1].open=true;sections[i+1].scrollIntoView({block:'nearest'});};d.append(next);}
+ }
+ for(const key of ['settings','outline','exclude']){nav.querySelector('[data-panel="'+key+'"]').remove();panels[key].hidden=true;}
+ nav.querySelector('[data-panel="load"]').textContent='手順';
+ nav.querySelector('[data-panel="axis"]').textContent='画質・補助';
+ const style=document.createElement('style');style.textContent='.flowStep{border:1px solid var(--line);border-radius:8px;margin:6px 0;background:#0f172a}.flowStep>summary{font-weight:700;color:var(--accent);padding:12px 8px}.flowStep[open]{padding:0 7px 7px}.flowStep .flowNext{margin-top:12px;border-color:var(--accent);color:var(--accent)}.flowStep details{margin-top:8px;border-top:1px solid var(--line)}.compactPanel button:disabled{opacity:.4;cursor:not-allowed}.compactTabs{grid-template-columns:repeat(3,1fr)}#axisStatus{font-size:12px;overflow-wrap:anywhere;margin:8px 0}';document.head.append(style);
+
  // Fit the CSS display only; canvas pixels and coordinate conversion remain unchanged.
  const canvas=document.getElementById('cv'),wrap=canvas.parentElement;
  const fit=()=>{const w=wrap.clientWidth,h=wrap.clientHeight;if(!w||!h)return;const scale=Math.min(w/canvas.width,h/canvas.height);canvas.style.width=Math.floor(canvas.width*scale)+'px';canvas.style.height=Math.floor(canvas.height*scale)+'px';};
