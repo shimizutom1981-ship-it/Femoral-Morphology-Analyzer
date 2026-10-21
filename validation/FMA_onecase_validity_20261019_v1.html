@@ -2314,7 +2314,7 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
 <script>
 // Presentation-only layout: move existing nodes, preserving IDs, values and handlers.
 (()=>{
- const app=document.querySelector('.app'),cards=Array.from(app.children),meta=cards[1],main=cards[2];
+ const app=document.querySelector('.app'),cards=Array.from(app.children).filter(el=>el.id!=='lmPanel'),meta=cards[1],main=cards[2];
  const layout=document.createElement('div');layout.className='compactLayout';app.append(layout);
  const side=document.createElement('aside');side.className='compactSide';layout.append(side);
  const nav=document.createElement('nav');nav.className='compactTabs';nav.setAttribute('aria-label','操作パネル');side.append(nav);
