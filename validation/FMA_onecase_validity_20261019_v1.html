@@ -20,10 +20,10 @@ Key Rules for AI Assistants modifying this file:
     Class 0: rgb(0,0,0) bg, Class 1: rgb(1,1,1) femur outer, Class 2: rgb(2,2,2) canal, Class 3: rgb(3,3,3) stem.
 ================================================================================
 -->
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261021-v8</title><style>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261021-v9</title><style>
 :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--cloud:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:980px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.cloudBtn{background:var(--cloud);color:#fff;border-color:#7c3aed}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.result{background:#0f172a;padding:9px;border-radius:8px;text-align:center}.val{font-size:1.15rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}.filterBar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#0f172a;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:.75rem}.filterBar label{display:flex;align-items:center;gap:6px;margin:0;color:var(--text)}.filterBar input[type=range]{width:110px;padding:0}
 #workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
-</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261021-v8 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
+</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261021-v9 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
 <div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub" id="buildIdentity"></div><div class="sub">参照文書：Protocol v2.1 / Annotation Rule v1.1 / Data Dictionary v1.2（2026-10-16 LT定義改訂）。実装済み保存形式：v1.1＋明示的な追補項目。全規約への適合は未検証。</div></div>
 
 <!-- Metadata & Protocol v2.1 Governance Card -->
@@ -75,6 +75,7 @@ Key Rules for AI Assistants modifying this file:
       <option value="canal_medial">Step 6: Canal - medial</option>
       <option value="femur_medial">Step 7: Outer cortex - medial</option>
       <option value="lt_midpoint">Step 8: Provisional LT medial prominence</option>
+      <option value="stem_adjust">Step 9: 手動ステム軸（近位→遠位）</option>
       <option value="osteotomy_line">Opt: Osteotomy line (近位0%境界)</option>
       <option value="stem_interface_anchors">Opt: Stem/cortex PCHIP補正点</option>
       <option value="lt_region">Opt: LT region contour</option>
@@ -259,7 +260,7 @@ Key Rules for AI Assistants modifying this file:
 
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
 const APP_VERSION='v2.2-axis-split';
-const BUILD_ID='onecase-validity-20261021-v8';
+const BUILD_ID='onecase-validity-20261021-v9';
 let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false,imageLoadFailed=false;
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
@@ -709,7 +710,10 @@ function computeObserverCanalShiftMm(){
   return cnt>0?(sumPx/cnt)*g.mmPerPx:null;
 }
 
+function stemEditActive(){return $('annotationTarget').value==='stem_adjust'||($('workMode').value==='measurement'&&guidedStages[guidedStage]==='stem_adjust');}
+function stemEditGuide(){return !pts.stem_prox?'ステム軸：近位点をクリック（骨頭の点は動きません）。':!pts.stem_dist?'ステム軸：遠位点をクリック。':'ステム軸：赤い2点だけをShift＋ドラッグで調整。変更不要なら工程7へ。';}
 function guide(){
+  if(stemEditActive()){$('guide').textContent=stemEditGuide();return;}
   const mode=$('workMode').value;
   if(mode==='annotation'){
     const t=$('annotationTarget').value;
@@ -753,6 +757,20 @@ cv.addEventListener('pointerdown',e=>{
   if(imageLoading||imageLoadFailed)return;
   if(e.button===1||e.altKey){isPanning=true;panStart={...screenPos(e),panX,panY};cv.setPointerCapture(e.pointerId);return}
   if(!start&&img)start=Date.now();
+  // Route stem editing by explicit target, never by the restored legacy step counter.
+  if(stemEditActive()){
+    if(e.button!==0)return;
+    const p=pos(e);
+    if(e.shiftKey){
+      let best=null,d=18/zoom;
+      for(const k of ['stem_prox','stem_dist']){const q=pts[k];if(!q)continue;const z=Math.hypot(p.x-q.x,p.y-q.y);if(z<d){d=z;best=k;}}
+      if(best){drag=best;accepted=false;correctionCount++;cv.setPointerCapture(e.pointerId);}
+    }else{
+      const k=!pts.stem_prox?'stem_prox':!pts.stem_dist?'stem_dist':null;
+      if(k){pts[k]=p;accepted=false;step=pts.stem_dist?steps.length:5;draw();saveWork();}
+    }
+    guide();return;
+  }
   if($('workMode').value==='annotation'){
     let p=pos(e);const t=$('annotationTarget').value;
     if(t==='implant_label_outline'&&annotation.shared_stem_boundary){$('guide').textContent='本体はステム側線で、追加部分は近位・先端ボタンで編集してください';return;}
@@ -841,7 +859,7 @@ cv.addEventListener('pointermove',e=>{
     }
     draw();return;
   }
-  if(drag){pts[drag]=pos(e);draw()}
+  if(drag){if(stemEditActive()&&!['stem_prox','stem_dist'].includes(drag)){drag=null;return;}pts[drag]=pos(e);draw()}
 });
 cv.addEventListener('pointerup',()=>{if(annotationDrag)saveWork();drag=null;annotationDrag=null;isPanning=false;panStart=null});
 cv.addEventListener('wheel',e=>{e.preventDefault();const p=screenPos(e);setZoom(zoom*(e.deltaY<0?1.15:1/1.15),p.x,p.y)},{passive:false});
@@ -1372,10 +1390,12 @@ $('file').onchange=e=>{
 function setGuidedStage(i){
   guidedStage=Math.max(0,Math.min(guidedStages.length-1,i));
   const k=guidedStages[guidedStage];
+  drag=null;annotationDrag=null;
+  $('annotationTarget').value=k;
   if(k==='stem_adjust'){
     if(annotation.lt_midpoint)pts.ltm={x:annotation.lt_midpoint.x,y:annotation.lt_midpoint.y};
-    $('workMode').value='measurement';step=4;
-    $('guide').innerHTML='<span class="status">Step 9/9：テンプレートに合わせて手動STEM軸の近位→遠位2点を指定してください。FEMORAL軸は髄腔から自動計算されます。</span>';
+    $('workMode').value='measurement';step=!pts.stem_prox?4:!pts.stem_dist?5:steps.length;
+    guide();
     draw();saveWork();return;
   }
   $('workMode').value='annotation';$('annotationTarget').value=k;
@@ -1391,7 +1411,7 @@ $('workflowBack').onclick=()=>{
 };
 $('workflowNext').onclick=()=>{
   const k=guidedStages[guidedStage];
-  if(k==='stem_adjust'&&$('imageType').value==='postop_THA'&&(!pts.stem_prox||!pts.stem_dist)){$('guide').innerHTML='<span class="status" style="color:#fbbf24">手動STEM軸の近位→遠位2点をクリックしてください（nativeでは不要）。</span>';return}
+  if(k==='stem_adjust'&&$('imageType').value==='postop_THA'&&(!pts.stem_prox||!pts.stem_dist)){setGuidedStage(guidedStages.indexOf('stem_adjust'));return}
   if(k!=='head'&&k!=='lt_midpoint'&&k!=='stem_adjust'&&Array.isArray(annotation[k]))annotationClosed[k]=true;
   if(guidedStage<guidedStages.length-1)setGuidedStage(guidedStage+1);
   else{$('guide').innerHTML='<span class="status">全ステップ完了 ✓ 「Local Save」で保存できます（この版ではCloud Saveは停止中）。</span>';saveWork()}
@@ -2248,7 +2268,7 @@ $('export').onclick=()=>{
   downloadBlob(csv,'text/csv;charset=utf-8',`FMA_${id}.csv`);
 };
 $('workMode').onchange=()=>{guide();saveWork()};
-$('annotationTarget').onchange=()=>{$('workMode').value='annotation';guide();saveWork()};
+$('annotationTarget').onchange=()=>{const i=guidedStages.indexOf($('annotationTarget').value);if(i>=0){setGuidedStage(i);return;}drag=null;annotationDrag=null;$('workMode').value='annotation';guide();saveWork()};
 ['pointerup'].forEach(ev=>cv.addEventListener(ev,()=>setTimeout(saveWork,0)));
 ['studyId','patientId','observerId','repeatIndex','imageId','modelVersion','imageType','stemFamily','side','implantCollar','headSize','calMode','scale','ltVisibility','doubleCortex','exclusionFlag','workMode','annotationTarget'].forEach(id=>{if($(id))$(id).addEventListener('change',saveWork)});
 window.addEventListener('beforeunload',saveWork);
@@ -2282,7 +2302,7 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
  const axis=document.getElementById('axisStatus').parentElement;panels.axis.append(axis);
  const outline=document.getElementById('traceImplantLabel').parentElement;
  const exclusion=document.getElementById('markArtificialEdge').parentElement;panels.exclude.append(exclusion);panels.outline.append(outline);
- const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261021-v8';stage.append(status);
+ const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261021-v9';stage.append(status);
  move('guide',stage);stage.append(main.querySelector('.canvasWrap'));
  const footer=document.createElement('div');footer.className='compactFooter';stage.append(footer);
  for(const id of ['saveLabelDraft','saveCase'])move(id,footer);
@@ -2333,15 +2353,7 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
  };
  const beginStemAdjustment=()=>{
   if(!img||imageLoading||imageLoadFailed){$('guide').textContent='先に画像を読み込んでください。';return;}
-  $('workMode').value='measurement';
-  $('annotationTarget').value='lt_midpoint'; // Avoid the legacy interface-anchor click action.
-  guidedStage=guidedStages.indexOf('stem_adjust');
-  step=pts.stem_prox?(pts.stem_dist?steps.length:5):4;
-  draw();
-  $('guide').textContent=step===steps.length
-   ?'ステム軸の調整：赤い上下の点をShift＋ドラッグ。合っていれば変更せず工程7へ。'
-   :'ステム軸の指定：不足する近位→遠位の点をクリック。指定後はShift＋ドラッグで微調整できます。';
-  saveWork();
+  setGuidedStage(guidedStages.indexOf('stem_adjust'));
  };
  const beginLTAdjustment=()=>{
   if(!img||imageLoading||imageLoadFailed){$('guide').textContent='先に画像を読み込んでください。';return;}
