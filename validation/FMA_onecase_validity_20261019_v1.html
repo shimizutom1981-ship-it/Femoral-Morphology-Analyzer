@@ -20,10 +20,10 @@ Key Rules for AI Assistants modifying this file:
     Class 0: rgb(0,0,0) bg, Class 1: rgb(1,1,1) femur outer, Class 2: rgb(2,2,2) canal, Class 3: rgb(3,3,3) stem.
 ================================================================================
 -->
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261021-v7</title><style>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261021-v8</title><style>
 :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--cloud:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:980px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.cloudBtn{background:var(--cloud);color:#fff;border-color:#7c3aed}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.result{background:#0f172a;padding:9px;border-radius:8px;text-align:center}.val{font-size:1.15rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}.filterBar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#0f172a;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:.75rem}.filterBar label{display:flex;align-items:center;gap:6px;margin:0;color:var(--text)}.filterBar input[type=range]{width:110px;padding:0}
 #workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
-</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261021-v7 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
+</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261021-v8 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
 <div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub" id="buildIdentity"></div><div class="sub">参照文書：Protocol v2.1 / Annotation Rule v1.1 / Data Dictionary v1.2（2026-10-16 LT定義改訂）。実装済み保存形式：v1.1＋明示的な追補項目。全規約への適合は未検証。</div></div>
 
 <!-- Metadata & Protocol v2.1 Governance Card -->
@@ -259,7 +259,7 @@ Key Rules for AI Assistants modifying this file:
 
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
 const APP_VERSION='v2.2-axis-split';
-const BUILD_ID='onecase-validity-20261021-v7';
+const BUILD_ID='onecase-validity-20261021-v8';
 let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false,imageLoadFailed=false;
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
@@ -2282,7 +2282,7 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
  const axis=document.getElementById('axisStatus').parentElement;panels.axis.append(axis);
  const outline=document.getElementById('traceImplantLabel').parentElement;
  const exclusion=document.getElementById('markArtificialEdge').parentElement;panels.exclude.append(exclusion);panels.outline.append(outline);
- const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261021-v7';stage.append(status);
+ const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261021-v8';stage.append(status);
  move('guide',stage);stage.append(main.querySelector('.canvasWrap'));
  const footer=document.createElement('div');footer.className='compactFooter';stage.append(footer);
  for(const id of ['saveLabelDraft','saveCase'])move(id,footer);
@@ -2326,7 +2326,36 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
  const axes=section('6　撮影範囲・軸を整える','警告が出た場合だけ撮影範囲を確認します。範囲内なら不足輪郭を補完。範囲外と判断できない場合は未確認のまま保存できます。ステム軸の修正も最終確認の前に済ませます。');
  move('axisStatus',axes);move('coverageReview',axes);move('confirmLegacyStem',axes);
  const axisReset=fold(axes,'撮影範囲の確認を取り消す（必要な場合だけ）');move('clearCoverageReview',axisReset);
- const finish=section('7　領域 → LTの順に確認','輪郭・接点・除外・校正の変更後、ここで最終確認します。LTを押せない場合は工程6の警告を確認してください。');
+
+ // Direct editing shortcuts preserve geometry until the user edits a point.
+ const editButton=(id,label,parent,handler)=>{
+  const b=document.createElement('button');b.id=id;b.type='button';b.textContent=label;b.onclick=handler;parent.append(b);return b;
+ };
+ const beginStemAdjustment=()=>{
+  if(!img||imageLoading||imageLoadFailed){$('guide').textContent='先に画像を読み込んでください。';return;}
+  $('workMode').value='measurement';
+  $('annotationTarget').value='lt_midpoint'; // Avoid the legacy interface-anchor click action.
+  guidedStage=guidedStages.indexOf('stem_adjust');
+  step=pts.stem_prox?(pts.stem_dist?steps.length:5):4;
+  draw();
+  $('guide').textContent=step===steps.length
+   ?'ステム軸の調整：赤い上下の点をShift＋ドラッグ。合っていれば変更せず工程7へ。'
+   :'ステム軸の指定：不足する近位→遠位の点をクリック。指定後はShift＋ドラッグで微調整できます。';
+  saveWork();
+ };
+ const beginLTAdjustment=()=>{
+  if(!img||imageLoading||imageLoadFailed){$('guide').textContent='先に画像を読み込んでください。';return;}
+  $('workMode').value='annotation';$('annotationTarget').value='lt_midpoint';
+  guidedStage=guidedStages.indexOf('lt_midpoint');
+  draw();guide();saveWork();
+ };
+ editButton('flowAdjustStem','ステム軸を調整（必要な場合だけ）',axes,beginStemAdjustment);
+ const stemHelp=document.createElement('p');stemHelp.className='small';
+ stemHelp.textContent='赤い軸の上下の点をShift＋ドラッグ。水色の大腿骨軸は自動計算です。合っていれば変更不要です。';axes.append(stemHelp);
+
+ const finish=section('7　LT位置を調整 → 領域・LTを確認','輪郭・接点・除外・校正の変更後、ここで最終確認します。LTを押せない場合は工程6の警告を確認してください。');
+ editButton('flowAdjustLT','LTの位置を調整（必要な場合だけ）',finish,beginLTAdjustment);
+ const ltHelp=document.createElement('p');ltHelp.className='small';ltHelp.textContent='ボタンを押し、画像上の移動先を1回クリック。位置を決めてから、下の領域確認 → LT確認の順に進めます。';finish.append(ltHelp);
  inputLabel('labelRegionEvidence',finish);move('confirmImplantLabel',finish);move('implantLabelStatus',finish);move('confirmLT',finish);
  const save=section('8　保存する','確認が済んだらLocal Save。未確認部分が残る場合は途中の注釈JSONを保存できます。');
  move('saveCase',save);move('saveLabelDraft',save);footer.remove();
