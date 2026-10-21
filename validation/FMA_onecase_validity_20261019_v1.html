@@ -20,10 +20,10 @@ Key Rules for AI Assistants modifying this file:
     Class 0: rgb(0,0,0) bg, Class 1: rgb(1,1,1) femur outer, Class 2: rgb(2,2,2) canal, Class 3: rgb(3,3,3) stem.
 ================================================================================
 -->
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261021-v10</title><style>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261021-v11</title><style>
 :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--cloud:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:980px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.cloudBtn{background:var(--cloud);color:#fff;border-color:#7c3aed}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.result{background:#0f172a;padding:9px;border-radius:8px;text-align:center}.val{font-size:1.15rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}.filterBar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#0f172a;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:.75rem}.filterBar label{display:flex;align-items:center;gap:6px;margin:0;color:var(--text)}.filterBar input[type=range]{width:110px;padding:0}
 #workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
-</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261021-v10 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
+</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261021-v11 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
 <div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub" id="buildIdentity"></div><div class="sub">参照文書：Protocol v2.1 / Annotation Rule v1.1 / Data Dictionary v1.2（2026-10-16 LT定義改訂）。実装済み保存形式：v1.1＋明示的な追補項目。全規約への適合は未検証。</div></div>
 
 <!-- Metadata & Protocol v2.1 Governance Card -->
@@ -136,6 +136,17 @@ Key Rules for AI Assistants modifying this file:
   </div>
 </div>
 
+<div id="lmPanel"><b>沈下用の3点（ステム軸とは別に保存）</b>
+<div class="row"><button id="lmSequence">① 大転子 → ② 肩 → ③ 先端</button><button id="lmCancel">入力終了 / Esc</button></div>
+<div class="row"><button id="lmEdit0">大転子を修正</button><button id="lmEdit1">肩を修正</button><button id="lmEdit2">先端を修正</button></div>
+<div class="small" id="lmStatus"></div><div class="small">骨軸方向の大転子最上端・近位外側の肩・金属ステム最遠位端を指定。見えない点は推測せず入力終了。3点後は通常操作へ戻ります。</div>
+<label>画像の撮影日 <input type="date" id="lmDate"></label>
+<details><summary>2時点の沈下・内反外反を比較</summary><p class="small">確認して保存したrecordまたはannotation JSONを2つ選択。同じ骨軸の高さが必要です。未指定項目は未計測と表示します。</p>
+<label>術直後（基準）<input type="file" accept=".json" id="lmFile0"></label><span id="lmFileStatus0"></span><br>
+<label>経過画像<input type="file" accept=".json" id="lmFile1"></label><span id="lmFileStatus1"></span><br>
+<label><input type="checkbox" id="lmPairConfirmed">同一症例・同側・AP像で、通常の左右表示（左右反転なし）と比較可能な撮影肢位を確認</label><br>
+<button id="lmCompare">比較する</button><button id="lmCompareSave" disabled>比較結果JSONを保存</button><p id="lmCompareResult"></p>
+<p class="small">沈下は遠位を＋。角度は内反を＋。2D投影計測・精度検証前。側面の前屈／後屈は未対応。</p></details></div>
 <!-- Fixed Level Table -->
 <div class="card"><table><thead><tr><th>Level (from LT)</th><th>Canal px</th><th>Canal mm</th><th>Outer px</th><th>Outer mm</th><th>Stem manual mm</th><th>Stem AUTO mm</th><th>ΔStem mm</th><th>CTI</th><th>CFR manual</th><th>CFR AUTO</th></tr></thead><tbody id="tbl"></tbody></table></div>
 </div>
@@ -264,7 +275,7 @@ Key Rules for AI Assistants modifying this file:
 
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
 const APP_VERSION='v2.2-axis-split';
-const BUILD_ID='onecase-validity-20261021-v10';
+const BUILD_ID='onecase-validity-20261021-v11';
 let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false,imageLoadFailed=false;
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
@@ -272,7 +283,7 @@ const guidedStages=['head','femur_lateral','canal_lateral','stem_lateral','stem_
 let guidedStage=0;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 let img=null,grayCache=null,pts={},step=0,start=null,elapsedSec=null,drag=null,zoom=1,panX=0,panY=0,isPanning=false,panStart=null,accepted=false,correctionCount=0,aiInitial={},aiLoaded=false,aiProvenanceKnown=true,profileRows=[],continuousSlices=[],continuousSummary={};
-function emptyAnnotation(){return {shared_stem_boundary:null,implant_proximal_bridge:[],implant_distal_bridge:[],contour_interpolation:null,stem_boundary_alignment:null,version:'2.1-training',implant_label_outline:[],implant_collar_contact:null,label_region_review:null,label_region_evidence:null,label_exclusion:null,label_endpoint_edit:null,head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};}
+function emptyAnnotation(){return {longitudinal_landmarks:null,shared_stem_boundary:null,implant_proximal_bridge:[],implant_distal_bridge:[],contour_interpolation:null,stem_boundary_alignment:null,version:'2.1-training',implant_label_outline:[],implant_collar_contact:null,label_region_review:null,label_region_evidence:null,label_exclusion:null,label_endpoint_edit:null,head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};}
 let annotation=emptyAnnotation();
 let annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,osteotomy_line:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};
 let annotationDrag=null,annotationCorrectionCount=0;
@@ -1748,7 +1759,7 @@ function annotationPayload(){
     stem_family:$('stemFamily').value,side:$('side').value,implant_collar:$('implantCollar').value,
     lt_visibility:$('ltVisibility').value,double_cortex:$('doubleCortex').value,
     calibration:{mode:$('calMode').value,mm_per_px:Number($('scale').value)||null,known_mm:Number($('headSize').value)||null},
-    head:annotation.head,measurement_points:pts,lt_midpoint:annotation.lt_midpoint,osteotomy_line:annotation.osteotomy_line,
+    longitudinal_landmarks:annotation.longitudinal_landmarks,head:annotation.head,measurement_points:pts,lt_midpoint:annotation.lt_midpoint,osteotomy_line:annotation.osteotomy_line,
     stem_interface_anchors:annotation.stem_interface_anchors,lt_region:annotation.lt_region,
     femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,
     canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,
@@ -2186,6 +2197,7 @@ function validateRecordImport(record){
   const fail=name=>{throw Error('不正な記録項目: '+name);};
   const point=(p,name)=>{if(!object(p)||!Number.isFinite(p.x)||!Number.isFinite(p.y))fail(name);};
   const points=(a,name)=>{if(!Array.isArray(a))fail(name);for(const p of a)point(p,name);};
+  if(raw.longitudinal_landmarks!=null){const d=raw.longitudinal_landmarks;if(!object(d)||d.schema!=='fma_longitudinal_landmarks_v1'||!object(d.points))fail('longitudinal_landmarks');for(const k of ['gt_apex','stem_shoulder','stem_tip'])if(d.points[k]!=null)point(d.points[k],k);if(d.acquisition_date!=null&&typeof d.acquisition_date!=='string')fail('acquisition_date');}
   const geometry=(a,name)=>{
     if(!object(a))fail(name);
     for(const k of ['osteotomy_line','stem_interface_anchors','lt_region','femur_mask','canal_mask','stem_mask','femur_medial','femur_lateral','canal_medial','canal_lateral','stem_medial','stem_lateral','_head_points'])if(a[k]!==undefined)points(a[k],name+'.'+k);
@@ -2323,7 +2335,7 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
  const axis=document.getElementById('axisStatus').parentElement;panels.axis.append(axis);
  const outline=document.getElementById('traceImplantLabel').parentElement;
  const exclusion=document.getElementById('markArtificialEdge').parentElement;panels.exclude.append(exclusion);panels.outline.append(outline);
- const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261021-v10';stage.append(status);
+ const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261021-v11';stage.append(status);
  move('guide',stage);stage.append(main.querySelector('.canvasWrap'));
  const footer=document.createElement('div');footer.className='compactFooter';stage.append(footer);
  for(const id of ['saveLabelDraft','saveCase'])move(id,footer);
@@ -2386,11 +2398,12 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
  const stemHelp=document.createElement('p');stemHelp.className='small';
  stemHelp.textContent='赤い軸の上下の点をShift＋ドラッグ。水色の大腿骨軸は自動計算です。合っていれば変更不要です。';axes.append(stemHelp);
 
- const finish=section('7　LT位置を調整 → 領域・LTを確認','輪郭・接点・除外・校正の変更後、ここで最終確認します。LTを押せない場合は工程6の警告を確認してください。');
+ const landmarks=section('7　沈下用の3点を指定する','大転子頂部 → ステム肩 → 金属ステム最遠位端の順にクリック。既存のステム軸は動きません。');landmarks.append($('lmPanel'));
+ const finish=section('8　LT位置を調整 → 領域・LTを確認','輪郭・接点・除外・校正の変更後、ここで最終確認します。LTを押せない場合は工程6の警告を確認してください。');
  editButton('flowAdjustLT','LTの位置を調整（必要な場合だけ）',finish,beginLTAdjustment);
  const ltHelp=document.createElement('p');ltHelp.className='small';ltHelp.textContent='ボタンを押し、画像上の移動先を1回クリック。位置を決めてから、下の領域確認 → LT確認の順に進めます。';finish.append(ltHelp);
  inputLabel('labelRegionEvidence',finish);move('confirmImplantLabel',finish);move('implantLabelStatus',finish);move('confirmLT',finish);
- const save=section('8　保存する','確認が済んだらLocal Save。未確認部分が残る場合は途中の注釈JSONを保存できます。');
+ const save=section('9　保存する','確認が済んだらLocal Save。未確認部分が残る場合は途中の注釈JSONを保存できます。');
  move('saveCase',save);move('saveLabelDraft',save);footer.remove();
  for(let i=0;i<sections.length;i++){
   const d=sections[i];d.open=i===0;
@@ -2410,4 +2423,78 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
 })();
 </script>
 
+<script>
+// Longitudinal AP measurements: bone frame, independent of manual stem-axis endpoints.
+const lmKeys=['gt_apex','stem_shoulder','stem_tip'];
+const lmNames=['大転子頂部','ステム肩','ステム最遠位'];
+let lmQueue=[],lmActive=false;
+function lmData(){return annotation.longitudinal_landmarks||(annotation.longitudinal_landmarks={schema:'fma_longitudinal_landmarks_v1',points:{},acquisition_date:''});}
+function lmStatus(){
+ const d=annotation.longitudinal_landmarks;
+ $('lmStatus').textContent=lmActive?'次：'+lmNames[lmKeys.indexOf(lmQueue[0])]+'をクリック（Alt＋ドラッグで移動）':lmKeys.map((k,i)=>lmNames[i]+(d?.points?.[k]?' ✓':' 未指定')).join(' ／ ');
+ if(document.activeElement!==$('lmDate'))$('lmDate').value=d?.acquisition_date||'';
+}
+function lmStart(keys){if(!img||imageLoading||imageLoadFailed){alert('元画像を読み込んでください');return;}lmQueue=keys.slice();lmActive=true;drag=null;annotationDrag=null;lmStatus();}
+function lmStop(){lmActive=false;lmQueue=[];lmStatus();}
+cv.addEventListener('pointerdown',e=>{
+ if(!lmActive)return;
+ if(e.button===1||e.altKey)return;
+ e.stopImmediatePropagation();e.preventDefault();
+ if(e.button!==0||imageLoading||imageLoadFailed||!img)return;
+ const p=pos(e);if(p.x<0||p.y<0||p.x>cv.width||p.y>cv.height)return;
+ const key=lmQueue.shift();lmData().points[key]={x:p.x,y:p.y};
+ annotationCorrectionCount++;if(!lmQueue.length)lmActive=false;
+ draw();saveWork();lmStatus();
+},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')lmStop();});
+// Switching operation ends landmark input; prevents hidden click interception.
+document.addEventListener('click',e=>{if(lmActive&&!e.target.closest('#lmPanel')&&e.target!==cv)lmStop();},true);
+const drawBeforeLandmarks=draw;
+draw=function(){drawBeforeLandmarks();if(!img)return;ctx.save();ctx.setTransform(zoom,0,0,zoom,panX,panY);
+ const d=annotation.longitudinal_landmarks;
+ lmKeys.forEach((k,i)=>{const p=d?.points?.[k];if(!p)return;ctx.strokeStyle='#fbbf24';ctx.fillStyle='#fbbf24';ctx.lineWidth=2/zoom;ctx.beginPath();ctx.arc(p.x,p.y,8/zoom,0,Math.PI*2);ctx.stroke();ctx.font=(14/zoom)+'px sans-serif';ctx.fillText((i+1)+' '+lmNames[i],p.x+11/zoom,p.y-10/zoom);});ctx.restore();lmStatus();};
+const restoreBeforeLandmarks=restoreWorkData;
+restoreWorkData=function(data){lmActive=false;lmQueue=[];restoreBeforeLandmarks(data);lmStatus();};
+function longitudinalSnapshot(record){
+ const raw=record.raw_annotations||record,axes=record.axes||raw.axes,f=axes?.femoral,s=axes?.stem;
+ const err=t=>{throw Error(t);};
+ if(raw.image_type!=='postop_THA'&&record.meta_input?.image_stage!=='postop_ap')err('術後AP像の記録を指定してください');
+ if(!['R','L'].includes(raw.side))err('左右が未設定です');
+ if(f?.status!=='ok'||f.quality_status!=='confirmed')err('骨軸・LTが未確認です');
+ const unit=(a,b)=>{if(!a||!b||![a.x,a.y,b.x,b.y].every(Number.isFinite))err('軸点が不足しています');const dx=b.x-a.x,dy=b.y-a.y,n=Math.hypot(dx,dy);if(n<1e-8)err('軸点が同一点です');return {x:dx/n,y:dy/n};};
+ const bone=unit(f.endpoints?.proximal,f.endpoints?.distal);
+ const st=s?.status==='manual'?unit(s.proximal,s.distal):null;
+ if(!Number.isFinite(f.levels?.proximalMm)||!Number.isFinite(f.levels?.distalMm))err('骨軸の高さがありません');
+ const d=raw.longitudinal_landmarks,scale=record.calibration_metrics?.calibrated_mm_per_px||f.geometry?.mmPerPx;
+ const dot=(a,b)=>a.x*b.x+a.y*b.y;
+ const projection=k=>{const p=d?.points?.[k],g=d?.points?.gt_apex;if(!p||!g||![p.x,p.y,g.x,g.y,scale].every(Number.isFinite)||scale<=0)return null;return dot({x:p.x-g.x,y:p.y-g.y},bone)*scale;};
+ // Standard non-mirrored AP: right femur on image-left. Positive = varus.
+ const angle=st?Math.atan2(bone.x*st.y-bone.y*st.x,dot(bone,st))*180/Math.PI*(raw.side==='R'?1:-1):null;
+ const normalized=angle==null?null:((angle+90)%180+180)%180-90;
+ return {research_id:raw.study_id||record.provenance_and_split?.research_id||null,patient_id:raw.patient_id||record.provenance_and_split?.patient_id||null,side:raw.side,image_id:raw.measurement_identity?.image_id||raw.source_image_filename||null,date:d?.acquisition_date||null,record_key:raw.record_key||record.provenance_and_split?.record_key||null,axis:{method:f.method,version:f.version,levels:f.levels},shoulder_mm:projection('stem_shoulder'),tip_mm:projection('stem_tip'),varus_deg:normalized};
+}
+function compareLongitudinal(a,b,confirmed){
+ if(!confirmed)throw Error('画像の対応・左右表示・撮影肢位を確認してください');
+ if(!a.research_id||a.research_id!==b.research_id||a.side!==b.side)throw Error('研究ID・左右が一致しません');
+ if(a.patient_id&&b.patient_id&&a.patient_id!==b.patient_id)throw Error('患者IDが一致しません');
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(a.date||'')||!/^\d{4}-\d{2}-\d{2}$/.test(b.date||'')||!(Date.parse(b.date)>Date.parse(a.date)))throw Error('撮影日を指定し、経過画像を後の日付にしてください');
+ if(a.axis.method!==b.axis.method||a.axis.version!==b.axis.version||a.axis.levels.proximalMm!==b.axis.levels.proximalMm||a.axis.levels.distalMm!==b.axis.levels.distalMm)throw Error('骨軸の定義・高さが不一致です。同じ高さで確認・保存してください');
+ const diff=(x,y)=>Number.isFinite(x)&&Number.isFinite(y)?y-x:null;
+ const angle=diff(a.varus_deg,b.varus_deg);
+ return {schema:'fma_longitudinal_ap_v1',reference:'proximal_femoral_canal_axis',positive_direction:{subsidence:'distal',angle:'varus'},accuracy_validated:false,baseline:a,followup:b,shoulder_subsidence_mm:diff(a.shoulder_mm,b.shoulder_mm),tip_subsidence_mm:diff(a.tip_mm,b.tip_mm),varus_change_deg:angle==null?null:((angle+90)%180+180)%180-90,limitations:'2D AP projection; landmark motion includes rotation; not 3D translation or flexion/extension'};
+}
+let comparisonInputs=[null,null],comparisonOutput=null,comparisonSeq=[0,0];
+function clearComparison(){comparisonOutput=null;$('lmCompareSave').disabled=true;$('lmCompareResult').textContent='';}
+for(let i=0;i<2;i++)$('lmFile'+i).onchange=async e=>{const file=e.target.files?.[0],seq=++comparisonSeq[i];comparisonInputs[i]=null;clearComparison();$('lmPairConfirmed').checked=false;if(!file)return;try{const r=JSON.parse(await file.text());if(seq!==comparisonSeq[i])return;validateRecordImport(r);comparisonInputs[i]=longitudinalSnapshot(r);$('lmFileStatus'+i).textContent='読込済：'+(comparisonInputs[i].date||'撮影日なし');}catch(err){$('lmFileStatus'+i).textContent=err.message;}};
+$('lmPairConfirmed').onchange=clearComparison;
+$('lmCompare').onclick=()=>{clearComparison();try{if(comparisonInputs.some(x=>!x))throw Error('2つの保存JSONを選択してください');comparisonOutput=compareLongitudinal(...comparisonInputs,$('lmPairConfirmed').checked);const r=comparisonOutput,fmt=(v,u)=>v==null?'未計測':v.toFixed(2)+u;$('lmCompareResult').textContent='肩法：'+fmt(r.shoulder_subsidence_mm,' mm')+' ／ 先端法：'+fmt(r.tip_subsidence_mm,' mm')+' ／ 角度変化：'+(r.varus_change_deg==null?'未計測':Math.abs(r.varus_change_deg).toFixed(2)+'° '+(r.varus_change_deg>0?'内反方向':r.varus_change_deg<0?'外反方向':'変化なし'));$('lmCompareSave').disabled=false;}catch(err){$('lmCompareResult').textContent=err.message;}};
+$('lmCompareSave').onclick=()=>{if(comparisonOutput)downloadBlob(JSON.stringify(comparisonOutput,null,2),'application/json','FMA_longitudinal_comparison.json');};
+$('lmSequence').onclick=()=>lmStart(lmKeys);
+lmKeys.forEach((k,i)=>$('lmEdit'+i).onclick=()=>lmStart([k]));
+$('lmCancel').onclick=lmStop;
+$('lmDate').onchange=()=>{lmData().acquisition_date=$('lmDate').value;saveWork();};
+lmStatus();
+
+</script>
 </body></html>
+
