@@ -20,10 +20,10 @@ Key Rules for AI Assistants modifying this file:
     Class 0: rgb(0,0,0) bg, Class 1: rgb(1,1,1) femur outer, Class 2: rgb(2,2,2) canal, Class 3: rgb(3,3,3) stem.
 ================================================================================
 -->
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261021-v9</title><style>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FMA one-case verification | onecase-validity-20261021-v10</title><style>
 :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--cloud:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:980px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.cloudBtn{background:var(--cloud);color:#fff;border-color:#7c3aed}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.result{background:#0f172a;padding:9px;border-radius:8px;text-align:center}.val{font-size:1.15rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}.filterBar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#0f172a;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:.75rem}.filterBar label{display:flex;align-items:center;gap:6px;margin:0;color:var(--text)}.filterBar input[type=range]{width:110px;padding:0}
 #workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
-</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261021-v9 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
+</style></head><body><p id="localBuild" style="padding:10px;background:#fff3cd;color:#222">Local candidate: onecase-validity-20261021-v10 / 作業コピーの保存・再読込確認用。研究教師データへの正式採用は保留。再読込み前に注釈JSONを保存してください。</p><div class="app">
 <div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub" id="buildIdentity"></div><div class="sub">参照文書：Protocol v2.1 / Annotation Rule v1.1 / Data Dictionary v1.2（2026-10-16 LT定義改訂）。実装済み保存形式：v1.1＋明示的な追補項目。全規約への適合は未検証。</div></div>
 
 <!-- Metadata & Protocol v2.1 Governance Card -->
@@ -100,6 +100,7 @@ Key Rules for AI Assistants modifying this file:
   <div class="guide"><b>ステム側線を共用して教師領域を作成</b><p>①既存側線を使用 → ②不足部分だけ追加 → ③追加部分を確認。近位は内側の上端からカラー・ネックを経て外側の上端へ、先端は外側の下端から内側の下端へ入力。端点は自動接続します。見えない部分は推定しません。</p><button id="useSharedStem">既存のステム側線を使用</button><button id="addProximalBridge">近位の不足部分を追加</button><button id="addDistalBridge">先端の不足部分を追加</button><button id="confirmSharedBridges">追加部分・端点の接続を確認</button><div id="sharedStemStatus"></div><p>従来方式の外周入力は旧記録用です。共有方式では上のボタンで不足部分のみ入力。骨頭は含めません。既存の側線から近位形状を自動推定しません。外側髄腔は観測できる皮質内縁で止め、近位へ外挿しません。</p><button id="traceImplantLabel">外周の末尾に追加・点を移動</button><button id="insertImplantPoint">紫の辺に点を挿入</button><button id="undoImplantInsert">点挿入を取り消す</button><div id="implantInsertHint"></div><button id="pickCollarContact">内側カラー接点を指定</button><button id="applyCollarContact">内側髄腔始点を接点へ移す（確認あり）</button><button id="clearImplantLabel">ラベル輪郭をやり直す</button><label>領域の確認<select id="labelRegionEvidence"><option value="unknown">未確認</option><option value="observed">全領域を確認・不確かな閉鎖領域なし</option><option value="uncertain">不確かな領域あり（mask出力保留）</option></select></label><button id="confirmImplantLabel">ラベル領域を確認</button><div><b>便宜的閉鎖・除外領域</b><button id="markArtificialEdge">便宜的な閉鎖辺を指定</button><button id="traceIgnoreRegion">除外領域を描き直す</button><button id="undoIgnorePoint">除外領域の1点を戻す</button><button id="confirmIgnoreRegion">除外範囲を確認</button><button id="clearIgnoreRegion">除外指定を解除</button><div id="ignoreRegionStatus"></div><p>赤い領域はvalidity=0。背景や骨の正解にはしません。閉鎖辺の周囲だけを順に囲み、カラー・髄腔・ステム本体を不要に含めないでください。</p></div><button id="saveLabelDraft">確認途中の注釈JSONを保存</button><div id="implantLabelStatus"></div><p>紫破線は教師領域の外周、黄丸は指定接点。共有方式ではステム本体は計測側線と同じ座標です。見えない領域は推定して正解にせず、mask出力を保留します。</p></div>
   <button id="clearCoverageReview" hidden>撮影範囲の確認を取り消す（未確認に戻す）</button>
   <div id="coverageReview" class="guide" hidden><span id="coverageMessage"></span>
+    <button id="showCoverageGuide" type="button">不足断面の破線を画面中央に表示</button>
 <button id="coverageInside">必要な断面は有効撮影範囲内（輪郭を補完）</button>
 <button id="coverageOutside">必要な断面が有効撮影範囲外と確認</button>
 <div>黒い余白・写真枠・輪郭の終端だけでは範囲外と判断しないでください。有効撮影範囲を確定できない不足断面だけ確認が必要です。通常の100 mm計算に追加確認はありません。不明なら未確認のままにします。確認後もLTの再確認が必要です。</div></div>
@@ -222,13 +223,16 @@ Key Rules for AI Assistants modifying this file:
           // black pixels and imported legacy fallback flags are never accepted.
           const review=input.acquisitionReview?.[level];
           result.reviewLevelMm=level;
+          // Display-only plane used by the failing section; never measurement geometry.
+          const reference=sub(a.mid,mul(v,dot(a.mid,v)));
+          result.coverageGuide={provisional:true,levelMm:level,center:world(add(reference,mul(v,level))),ltReference:world(reference),vx:v.x,vy:v.y,source:'current_solver_iteration',missingWalls:b.missingWalls.map(k=>k===0?'medial':'lateral')};
           if(review?.source!=='user_confirmed_effective_field' || !['outside','inside'].includes(review.status))
             return fail('distal_'+level+'_effective_field_review_required');
           if(review.status==='inside') return fail('distal_'+level+'_contour_incomplete');
           result.fallbackReasons.push({levelMm:level,reason:'user_confirmed_outside_effective_field',
             wall:proven.map(k=>k===0?'medial':'lateral'),certificate:'contour_radial_bound_and_explicit_acquisition_review',
             acquisitionReview:{...review}});
-          delete result.reviewLevelMm;
+          delete result.reviewLevelMm;delete result.coverageGuide;
           missing=true;break;
         }
         const next=unit(sub(b.mid,a.mid));
@@ -260,7 +264,7 @@ Key Rules for AI Assistants modifying this file:
 
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
 const APP_VERSION='v2.2-axis-split';
-const BUILD_ID='onecase-validity-20261021-v9';
+const BUILD_ID='onecase-validity-20261021-v10';
 let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false,imageLoadFailed=false;
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
@@ -426,6 +430,7 @@ function draw(){
     const L=Math.max(cv.width,cv.height)*2;ctx.beginPath();const axisAnchor=sg.lt;
     ctx.moveTo(axisAnchor.x-sg.vx*L,axisAnchor.y-sg.vy*L);ctx.lineTo(axisAnchor.x+sg.vx*L,axisAnchor.y+sg.vy*L);ctx.stroke();ctx.fillStyle='#38bdf8';ctx.font=(13/zoom)+'px sans-serif';ctx.fillText('Auto FEMORAL 10 / '+femoralAxisResult.levels.distalMm+' mm',sg.lt.x+10/zoom,sg.lt.y-20/zoom);ctx.restore();
   }
+  drawCoverageGuide();
   const lc=levelCenters();
   if(Object.keys(lc).length&&$('ltVisibility').value!=='occluded_unidentifiable'){
     ctx.save();ctx.strokeStyle='#f59e0b';ctx.fillStyle='#f59e0b';ctx.lineWidth=1/zoom;
@@ -542,6 +547,22 @@ function measurementGeometry(){
   return a&&a.status==='ok'&&confirmedLTKey===axisInputKey?a.geometry:null;
 }
 function femoralPreviewGeometry(){const a=refreshFemoralAxis();return a&&a.status==='ok'?a.geometry:null;}
+function drawCoverageGuide(){
+  const a=femoralAxisResult,g=a?.coverageGuide;
+  if(a?.status==='ok'||!g)return;
+  const p=g.center,n={x:-g.vy,y:g.vx},L=Math.hypot(cv.width,cv.height)*2;
+  ctx.save();ctx.strokeStyle='#fbbf24';ctx.fillStyle='#fbbf24';ctx.lineWidth=2/zoom;ctx.setLineDash([9/zoom,6/zoom]);
+  ctx.beginPath();ctx.moveTo(p.x-n.x*L,p.y-n.y*L);ctx.lineTo(p.x+n.x*L,p.y+n.y*L);ctx.stroke();ctx.setLineDash([]);
+  ctx.beginPath();ctx.arc(p.x,p.y,5/zoom,0,Math.PI*2);ctx.stroke();
+  ctx.font=(16/zoom)+'px sans-serif';
+  const tx=Math.max(8/zoom,Math.min(cv.width/zoom-340/zoom,(p.x*zoom+panX+12)/zoom))-panX/zoom;
+  ctx.fillText('暫定 '+g.levelMm+' mm — 撮影範囲確認用',tx,p.y-12/zoom);
+  ctx.restore();
+}
+$('showCoverageGuide').onclick=()=>{
+  const g=refreshFemoralAxis()?.coverageGuide;if(!g)return;
+  panX=cv.width/2-g.center.x*zoom;panY=cv.height/2-g.center.y*zoom;draw();
+};
 function axisMetadata(){
   const a=refreshFemoralAxis();
   return {schema:AXIS_SCHEMA,contour_geometry_version:CONTOUR_GEOMETRY_VERSION,
@@ -2048,7 +2069,7 @@ function calc(){
   $('confirmLT').textContent=g?'LT確認済み（入力変更で再確認が必要）':'自動FEMORAL軸に垂直な内側突出点としてLTを確認';
   $('coverageReview').hidden=!a.reviewLevelMm;
   $('clearCoverageReview').hidden=Object.keys(acquisitionReview).length===0;
-  $('coverageMessage').textContent=a.reviewLevelMm? a.reviewLevelMm+' mmの髄腔輪郭が不足しています。有効撮影範囲を確認してください。範囲内なら輪郭の補完が必要です。自動切替は保留しています。':'';
+  $('coverageMessage').textContent=a.reviewLevelMm? a.reviewLevelMm+' mmの髄腔輪郭が不足しています。黄色の破線が暫定の確認位置です（正式計測線ではありません）。見えない場合は下のボタンで中央に表示してください。破線の位置で髄腔が見えれば輪郭を補完し、撮影範囲外と確認できた場合だけ範囲外を選んでください。':'';
   if(g){const rows=calculateProfiles();for(const l of levels)fixed[l]=rows.find(r=>r.distance_from_LT_mm===l)||null}
   const r100=fixed[100];
   $('cti').textContent=r100&&r100.CTI!=null?r100.CTI.toFixed(3):'--';
@@ -2302,7 +2323,7 @@ body{padding:8px}.app{max-width:none}#localBuild{margin:0 0 6px!important;paddin
  const axis=document.getElementById('axisStatus').parentElement;panels.axis.append(axis);
  const outline=document.getElementById('traceImplantLabel').parentElement;
  const exclusion=document.getElementById('markArtificialEdge').parentElement;panels.exclude.append(exclusion);panels.outline.append(outline);
- const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261021-v9';stage.append(status);
+ const status=document.createElement('div');status.className='compactStatus';status.textContent='検証候補 · 正式教師データ採用は保留 · UI compact-20261021-v10';stage.append(status);
  move('guide',stage);stage.append(main.querySelector('.canvasWrap'));
  const footer=document.createElement('div');footer.className='compactFooter';stage.append(footer);
  for(const id of ['saveLabelDraft','saveCase'])move(id,footer);
