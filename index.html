@@ -568,6 +568,20 @@ function nearestContourInsertIndex(arr,p){
     const dist=(p.x-ex)**2+(p.y-ey)**2;
     if(dist<bestDist){bestDist=dist;bestIndex=i+1}
   }
+  // Open contours: an outward click whose nearest location is an endpoint
+  // extends that endpoint, rather than splitting its terminal segment.
+  // Find the first distinct neighbour so legacy coincident points are safe.
+  // Do not extend when an interior segment is closer (e.g. a curved contour).
+  for(const end of [0,arr.length-1]){
+    const a=arr[end],step=end===0?1:-1;
+    let j=end+step;
+    while(j>=0&&j<arr.length&&arr[j].x===a.x&&arr[j].y===a.y)j+=step;
+    if(j<0||j>=arr.length)continue;
+    const dx=a.x-arr[j].x,dy=a.y-arr[j].y;
+    const outward=(p.x-a.x)*dx+(p.y-a.y)*dy;
+    const dist=(p.x-a.x)**2+(p.y-a.y)**2;
+    if(outward>0&&dist<=bestDist)return end===0?0:arr.length;
+  }
   return bestIndex;
 }
 
