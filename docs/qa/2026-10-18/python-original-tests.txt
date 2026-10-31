@@ -1,0 +1,10 @@
+test_all_invalid_and_zero_denominator (test_validity_support.ValidityTests.test_all_invalid_and_zero_denominator) ... ok
+test_legacy_requires_verified_transform_and_new_missing_validity_fails (test_validity_support.ValidityTests.test_legacy_requires_verified_transform_and_new_missing_validity_fails) ... ok
+test_letterbox_resize_pair_and_png_source (test_validity_support.ValidityTests.test_letterbox_resize_pair_and_png_source) ... ok
+test_loss_and_evaluation_ignore_same_pixels (test_validity_support.ValidityTests.test_loss_and_evaluation_ignore_same_pixels) ... ok
+test_paired_augmentation_nearest_mask_validity_alignment (test_validity_support.ValidityTests.test_paired_augmentation_nearest_mask_validity_alignment) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 1.314s
+
+OK

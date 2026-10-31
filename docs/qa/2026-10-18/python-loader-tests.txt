@@ -1,0 +1,28 @@
+test_all_invalid_pair_loads_unchanged (test_loader_subset.ExtendedLoaderTests.test_all_invalid_pair_loads_unchanged) ... ok
+test_bad_canvas_geometry (test_loader_subset.ExtendedLoaderTests.test_bad_canvas_geometry) ... ok
+test_candidate_exclusion (test_loader_subset.ExtendedLoaderTests.test_candidate_exclusion) ... ok
+test_draft_annotation (test_loader_subset.ExtendedLoaderTests.test_draft_annotation) ... ok
+test_legacy_stretch_and_letterbox (test_loader_subset.ExtendedLoaderTests.test_legacy_stretch_and_letterbox) ... ok
+test_legacy_with_validity_rejected (test_loader_subset.ExtendedLoaderTests.test_legacy_with_validity_rejected) ... ok
+test_missing_review_status (test_loader_subset.ExtendedLoaderTests.test_missing_review_status) ... ok
+test_missing_source (test_loader_subset.ExtendedLoaderTests.test_missing_source) ... ok
+test_multiple_sources (test_loader_subset.ExtendedLoaderTests.test_multiple_sources) ... ok
+test_nonbinary_validity (test_loader_subset.ExtendedLoaderTests.test_nonbinary_validity) ... ok
+test_noncategorical_labels (test_loader_subset.ExtendedLoaderTests.test_noncategorical_labels) ... ok
+test_padding_and_ignore_survive_all_target_sizes (test_loader_subset.ExtendedLoaderTests.test_padding_and_ignore_survive_all_target_sizes) ... ok
+test_raw_annotation_wrapper (test_loader_subset.ExtendedLoaderTests.test_raw_annotation_wrapper) ... ok
+test_supported_sources (test_loader_subset.ExtendedLoaderTests.test_supported_sources) ... ok
+test_unconfirmed_exclusion (test_loader_subset.ExtendedLoaderTests.test_unconfirmed_exclusion) ... ok
+test_unknown_schema (test_loader_subset.ExtendedLoaderTests.test_unknown_schema) ... ok
+test_unknown_transform (test_loader_subset.ExtendedLoaderTests.test_unknown_transform) ... ok
+test_unknown_validity_schema (test_loader_subset.ExtendedLoaderTests.test_unknown_validity_schema) ... ok
+test_wrong_label_shape (test_loader_subset.ExtendedLoaderTests.test_wrong_label_shape) ... ok
+test_wrong_transform_size (test_loader_subset.ExtendedLoaderTests.test_wrong_transform_size) ... ok
+test_wrong_validity_shape (test_loader_subset.ExtendedLoaderTests.test_wrong_validity_shape) ... ok
+test_legacy_requires_verified_transform_and_new_missing_validity_fails (test_loader_subset.ValidityTests.test_legacy_requires_verified_transform_and_new_missing_validity_fails) ... ok
+test_letterbox_resize_pair_and_png_source (test_loader_subset.ValidityTests.test_letterbox_resize_pair_and_png_source) ... ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 0.414s
+
+OK

@@ -1,0 +1,14 @@
+test_hard_dice_aggregates_counts_before_ratios (__main__.ExtraRuntimeTests.test_hard_dice_aggregates_counts_before_ratios) ... ok
+test_ignored_out_of_range_targets_not_one_hot_or_ce_inputs (__main__.ExtraRuntimeTests.test_ignored_out_of_range_targets_not_one_hot_or_ce_inputs) ... ok
+test_mixed_batch_all_invalid_sample_does_not_dilute_loss (__main__.ExtraRuntimeTests.test_mixed_batch_all_invalid_sample_does_not_dilute_loss) ... ok
+test_paired_augmentation_twenty_seeded_runs_keep_binary_alignment (__main__.ExtraRuntimeTests.test_paired_augmentation_twenty_seeded_runs_keep_binary_alignment) ... ok
+test_soft_dice_ignored_pixels_have_zero_gradient (__main__.ExtraRuntimeTests.test_soft_dice_ignored_pixels_have_zero_gradient) ... ok
+test_v2_dataset_flip_is_paired (__main__.ExtraRuntimeTests.test_v2_dataset_flip_is_paired) ... ok
+test_validation_all_invalid_fails (__main__.ExtraRuntimeTests.test_validation_all_invalid_fails) ... ok
+test_validation_identity_perfect_valid_classes (__main__.ExtraRuntimeTests.test_validation_identity_perfect_valid_classes) ... ok
+test_weighted_ce_matches_selected_pixels (__main__.ExtraRuntimeTests.test_weighted_ce_matches_selected_pixels) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.303s
+
+OK
