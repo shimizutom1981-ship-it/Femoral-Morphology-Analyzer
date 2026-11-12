@@ -19,7 +19,7 @@ const POINTS=[[10,20,1],[10,60,2],[10,100,3],[10,130,4],[-10,130,4],[0,135,4],[-
 test('levels, thirds and default zone 4 length',()=>{
   const p=G.partition(base());assert.equal(p.status,'ok');
   near(p.stemLengthMm,120);near(p.levelsMm.third1,40);near(p.levelsMm.third2,80);near(p.levelsMm.zone4End,140);
-  near(p.medialTopMm,10);assert.equal(p.params.zone4LengthMm,20);assert.equal(p.source.zone7Top,'collar_underside');
+  near(p.medialTopMm,10);assert.equal(p.params.zone4LengthMm,20);assert.equal(p.source.zone7Top,'medial_end_of_osteotomy_line');near(p.boneMedialEndMm,10);assert.equal(p.calcarShiftMm,null);
   assert.deepEqual(JSON.parse(JSON.stringify(p)),p);
 });
 test('zone numbering: lateral 1-2-3, distal 4, medial 5-6-7',()=>{
@@ -41,9 +41,23 @@ test('zone 4 length is a stored, changeable parameter',()=>{
   const p=G.partition(base(),{zone4LengthMm:30});near(p.levelsMm.zone4End,150);assert.equal(G.classify(p,{x:10,y:145}),4);
   assert.equal(G.partition(base(),{zone4LengthMm:0}).reason,'invalid_options');
 });
-test('collarless uses the medial resection end as the zone 7 top',()=>{
+test('one zone 7 rule for collared and collarless stems',()=>{
   const i=base();i.collarStatus='collarless';i.medialTop={x:-9,y:-4};
-  const p=G.partition(i);assert.equal(p.source.zone7Top,'medial_resection_end');assert.equal(G.classify(p,{x:-10,y:-2}),7);assert.equal(G.classify(p,{x:10,y:-2}),null);
+  const p=G.partition(i);assert.equal(p.source.zone7Top,'medial_end_of_osteotomy_line');assert.equal(p.params.collarStatus,'collarless');
+  assert.equal(G.classify(p,{x:-10,y:-2}),7);assert.equal(G.classify(p,{x:10,y:-2}),null);
+});
+test('follow-up carries the baseline zone 7 top and reports calcar shift',()=>{
+  const i=base();i.medialTop={x:-9,y:16}; // bone end now 6 mm more distal than the baseline level of 10 mm
+  const p=G.partition(i,{zone7TopMm:10});assert.equal(p.status,'ok');
+  near(p.medialTopMm,10);near(p.boneMedialEndMm,16);near(p.calcarShiftMm,6);assert.equal(p.source.zone7Top,'baseline_level_carried_over');assert.equal(p.params.zone7TopMm,10);
+  assert.equal(G.classify(p,{x:-10,y:12}),7);              // still zone 7 although the bone end has moved distally
+  assert.equal(G.measure(p,contours()).zones[7].sections,30); // same 10-40 mm range as at baseline
+  const q=G.partition(Object.assign(base(),{medialTop:undefined}),{zone7TopMm:10});
+  assert.equal(q.status,'ok');assert.equal(q.boneMedialEndMm,null);assert.equal(q.calcarShiftMm,null);near(q.medialTopMm,10);
+  for(const angle of [0.7,2.3]) for(const mirror of [-1,1]) {const f=tf(angle,mirror,4,10,20),r=G.partition(transformInput(i,f,4),{zone7TopMm:10});near(r.calcarShiftMm,6);near(r.medialTopMm,10);}
+  assert.equal(G.partition(base(),{zone7TopMm:45}).reason,'baseline_zone7_top_distal_to_zone7');
+  assert.equal(G.partition(base(),{zone7TopMm:'10'}).reason,'invalid_options');
+  assert.equal(G.partition(Object.assign(base(),{medialTop:undefined})).reason,'invalid_input');
 });
 test('invalid inputs fail with a reason',()=>{
   const bad=(m,r)=>{const i=base();m(i);const p=G.partition(i);assert.equal(p.status,'error');assert.equal(p.reason,r);};
