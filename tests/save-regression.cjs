@@ -2,7 +2,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert'),crypto=require(
 const path=require('path');process.chdir(path.join(__dirname,'..'));
 const html=fs.readFileSync('dev/index.html','utf8');
 const elements={};const ctx=new Proxy({}, {get:(t,k)=>t[k]||(()=>{})});
-const document={getElementById(id){return elements[id]??={value:'',textContent:'',style:{},width:1200,height:1500,addEventListener(){},getContext(){return ctx}}}};
+const document={getElementById(id){return elements[id]??={value:'',textContent:'',style:{},width:1200,height:1500,addEventListener(){},getContext(){return ctx}}},addEventListener(){},activeElement:null};
 const front=vm.createContext({document,window:{addEventListener(){}},console,crypto,alert(){},setTimeout,localStorage:{setItem(){}}});
 vm.runInContext(html.split('<script>')[1].split('</script>')[0],front);
 const run=s=>vm.runInContext(s,front),set=(id,v)=>document.getElementById(id).value=String(v);

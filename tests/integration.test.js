@@ -19,7 +19,7 @@ function harness(end=120){
   }
   const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
   Object.entries({scale:'1',calMode:'manual',headSize:'32',ltVisibility:'visible',side:'R',imageType:'postop_THA',studyId:'SYNTHETIC',workMode:'annotation',annotationTarget:'head'}).forEach(([k,v])=>get(k).value=v);
-  const context=vm.createContext({document:{getElementById:get,createElement:element,body:{appendChild(){}}},window:{addEventListener(){}},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},console,crypto,Blob,Buffer,setTimeout(){},alert(){},confirm:()=>true,URL:{createObjectURL:()=>'',revokeObjectURL(){}},Image:function(){}});
+  const context=vm.createContext({document:{getElementById:get,createElement:element,body:{appendChild(){}},addEventListener(){},activeElement:null},window:{addEventListener(){}},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},console,crypto,Blob,Buffer,setTimeout(){},alert(){},confirm:()=>true,URL:{createObjectURL:()=>'',revokeObjectURL(){}},Image:function(){}});
   const run=src=>vm.runInContext(src,context);
   const html=fs.readFileSync(path.join(__dirname,'../dev/index.html'),'utf8');
   for(const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g))if(match[1].trim())run(match[1]);
