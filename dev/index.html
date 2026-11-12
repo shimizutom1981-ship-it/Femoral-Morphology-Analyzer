@@ -144,6 +144,12 @@ Key Rules for AI Assistants modifying this file:
 <label><input type="checkbox" id="lmPairConfirmed">同一症例・同側・AP像で、通常の左右表示（左右反転なし）と比較可能な撮影肢位を確認</label><br>
 <button id="lmCompare">比較する</button><button id="lmCompareSave" disabled>比較結果JSONを保存</button><p id="lmCompareResult"></p>
 <p class="small">沈下は遠位を＋。角度は内反を＋。2D投影計測・精度検証前。側面の前屈／後屈は未対応。</p></details></div>
+<div id="gzPanel" class="card"><b>Gruen zone（AP・7 zone）</b>
+<div class="small">ステム肩から先端までを3等分。zone 4は先端から遠位 <input id="gzZone4" type="number" step="1" min="1" value="20" style="width:4.5em"> mm。必要な入力：較正、ステム軸2点、沈下用の3点（大転子頂部・肩・先端）、骨切り線、外皮質・髄腔・ステムの輪郭。</div>
+<div class="row"><button id="gzCompute">Gruen zoneを計算</button><label><input type="checkbox" id="gzOverlay" checked>画像に境界を表示</label><button id="gzSave" disabled>結果JSONを保存</button></div>
+<div class="small" id="gzStatus"></div>
+<table><thead><tr><th>Zone</th><th>間隙 平均 mm</th><th>皮質厚 平均 mm</th><th>有効 / 全断面</th></tr></thead><tbody id="gzTable"></tbody></table>
+<p class="small">精度検証前（合成データでのみ確認）。zone 7の上端は骨切り線の内側端。輪郭が欠ける断面・二重に交わる断面は除外します。保存レコードには含めません。</p></div>
 <!-- Fixed Level Table -->
 <div class="card"><table><thead><tr><th>Level (from LT)</th><th>Canal px</th><th>Canal mm</th><th>Outer px</th><th>Outer mm</th><th>Stem manual mm</th><th>Stem AUTO mm</th><th>ΔStem mm</th><th>CTI</th><th>CFR manual</th><th>CFR AUTO</th></tr></thead><tbody id="tbl"></tbody></table></div>
 </div>
@@ -2092,4 +2098,218 @@ $('lmCancel').onclick=lmStop;
 $('lmDate').onchange=()=>{lmData().acquisition_date=$('lmDate').value;saveWork();};
 lmStatus();
 // END LONGITUDINAL AP
+// BEGIN GENERATED GRUEN ZONES (lib/gruen-zones.js)
+/* Gruen zone partition for AP radiographs (7 zones), implant-referenced.
+ * Spec adopted 2026-11-12 (FMA progress log, vol. 2, section 8):
+ *  - proximal origin = stem shoulder; shoulder-to-tip length is split into thirds
+ *  - boundaries are perpendicular to the stem axis
+ *  - zone 4 = from the tip to zone4LengthMm distal (default 20 mm; a proposed value, not a standard)
+ *  - zone 7 upper end = medialTop (collar underside if collared, medial resection end if collarless)
+ * Pure geometry: no image access, no DOM. Brightness per zone is computed by the caller.
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.GruenZones = factory();
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+  const VERSION = '0.1.0';
+  const EPS = 1e-7; // millimeters
+  const DEFAULT_ZONE4_MM = 20;
+  const sub = (a,b) => ({x:a.x-b.x,y:a.y-b.y});
+  const dot = (a,b) => a.x*b.x+a.y*b.y;
+  const norm = a => Math.hypot(a.x,a.y);
+  const finitePoint = p => !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
+
+  function partition(input, options) {
+    const result={schema:'gruen-zones/v1',version:VERSION,status:'error',reason:null,
+      params:null,frame:null,stemLengthMm:null,levelsMm:null,medialTopMm:null,
+      source:{origin:'stem_shoulder_projected_on_stem_axis',thirds:'shoulder_to_tip',zone7Top:null}};
+    const fail=reason=>{result.reason=reason;return result;};
+    if(!input || !Number.isFinite(input.mmPerPx) || input.mmPerPx<=0) return fail('invalid_scale');
+    const ax=input.stemAxis;
+    if(!ax || ![ax.proximal,ax.distal,input.shoulder,input.tip,input.lateralRef,input.medialTop].every(finitePoint)) return fail('invalid_input');
+    const zone4=options && options.zone4LengthMm!==undefined ? options.zone4LengthMm : DEFAULT_ZONE4_MM;
+    if(!Number.isFinite(zone4) || zone4<=0) return fail('invalid_options');
+    const collar=input.collarStatus===undefined ? 'unknown' : input.collarStatus;
+    if(!['collared','collarless','unknown'].includes(collar)) return fail('invalid_collar_status');
+    const s=input.mmPerPx;
+    const d=sub(ax.distal,ax.proximal);
+    if(norm(d)*s<=EPS) return fail('degenerate_stem_axis');
+    let v={x:d.x/norm(d),y:d.y/norm(d)};
+    if(dot(sub(input.tip,input.shoulder),v)<0) v={x:-v.x,y:-v.y}; // v always points distally
+    const k=dot(sub(input.shoulder,ax.proximal),v);
+    const origin={x:ax.proximal.x+v.x*k,y:ax.proximal.y+v.y*k};
+    let n={x:-v.y,y:v.x};
+    const lat=dot(sub(input.lateralRef,origin),n)*s;
+    if(Math.abs(lat)<=EPS) return fail('lateral_reference_on_axis');
+    if(lat<0) n={x:-n.x,y:-n.y}; // n always points laterally
+    const L=dot(sub(input.tip,origin),v)*s;
+    if(!(L>EPS)) return fail('degenerate_stem_length');
+    const medTop=dot(sub(input.medialTop,origin),v)*s;
+    if(dot(sub(input.medialTop,origin),n)*s>EPS) return fail('medial_top_on_lateral_side');
+    if(!(medTop<L/3-EPS)) return fail('medial_top_distal_to_zone7');
+    result.status='ok';
+    result.params={zone4LengthMm:zone4,collarStatus:collar};
+    result.frame={origin,vx:v.x+0,vy:v.y+0,nx:n.x+0,ny:n.y+0,mmPerPx:s,pxPerMm:1/s}; // +0 normalises -0 so the record survives JSON round-trips
+    result.stemLengthMm=L;
+    result.levelsMm={shoulder:0,third1:L/3,third2:2*L/3,tip:L,zone4End:L+zone4};
+    result.medialTopMm=medTop;
+    result.source.zone7Top=collar==='collared'?'collar_underside':(collar==='collarless'?'medial_resection_end':'caller_supplied_medial_top');
+    return result;
+  }
+
+  /* Image point -> stem frame in mm: t = distance distal to the shoulder, s = distance lateral to the axis. */
+  function toFrame(p, point) {
+    const f=p.frame,q={x:point.x-f.origin.x,y:point.y-f.origin.y};
+    return {t:(q.x*f.vx+q.y*f.vy)*f.mmPerPx,s:(q.x*f.nx+q.y*f.ny)*f.mmPerPx};
+  }
+
+  function zoneOf(p, t, s) {
+    const lv=p.levelsMm;
+    if(t>lv.tip+EPS) return t<=lv.zone4End+EPS ? 4 : null;
+    if(Math.abs(s)<=EPS) return null; // exactly on the axis: neither medial nor lateral
+    const third=t<lv.third1 ? 0 : (t<lv.third2 ? 1 : 2);
+    if(s>0) return t< -EPS ? null : [1,2,3][third];
+    return t<p.medialTopMm-EPS ? null : [7,6,5][third];
+  }
+
+  function classify(p, point) {
+    if(!p || p.status!=='ok' || !finitePoint(point)) return null;
+    const c=toFrame(p,point);
+    return zoneOf(p,c.t,c.s);
+  }
+
+  function sideCrossings(paths, t) {
+    const out={lateral:[],medial:[]};
+    for(const path of paths) for(let i=1;i<path.length;i++) {
+      const a=path[i-1],b=path[i],u=a.t-t,w=b.t-t;
+      if((u>0&&w>0)||(u<0&&w<0)) continue;
+      if(u===0&&w===0) continue; // segment lying on the section line carries no single crossing
+      const sv=a.s+(b.s-a.s)*(u/(u-w));
+      const list=sv>0?out.lateral:out.medial;
+      if(Math.abs(sv)>EPS && !list.some(x=>Math.abs(x-sv)<=1e-6)) list.push(sv);
+    }
+    return out;
+  }
+  const single=list=>list.length===1?{value:Math.abs(list[0])}:{reason:list.length?'ambiguous':'missing'};
+
+  /* Per-zone stem-to-endosteum gap and cortical thickness (mm), sampled on sections perpendicular to the stem axis.
+   * contours = {stem:[polyline...], endosteal:[polyline...], outer:[polyline...]} in image pixels.
+   * A section is skipped (and counted) when a needed contour is missing or crosses more than once on that side. */
+  function measure(p, contours, options) {
+    const out={schema:'gruen-zones-measure/v1',version:VERSION,status:'error',reason:null,stepMm:null,zones:null};
+    if(!p || p.status!=='ok') {out.reason='invalid_partition';return out;}
+    const step=options && options.stepMm!==undefined ? options.stepMm : 1;
+    if(!Number.isFinite(step) || step<=0) {out.reason='invalid_options';return out;}
+    const names=['stem','endosteal','outer'];
+    if(!contours || !names.every(k=>Array.isArray(contours[k]) && contours[k].every(path=>Array.isArray(path)&&path.every(finitePoint)))) {out.reason='invalid_contours';return out;}
+    const F={};for(const k of names) F[k]=contours[k].map(path=>path.map(q=>toFrame(p,q)));
+    const lv=p.levelsMm;
+    const ranges={1:['lateral',0,lv.third1],2:['lateral',lv.third1,lv.third2],3:['lateral',lv.third2,lv.tip],
+      4:['both',lv.tip,lv.zone4End],5:['medial',lv.third2,lv.tip],6:['medial',lv.third1,lv.third2],7:['medial',p.medialTopMm,lv.third1]};
+    const stat=()=>({n:0,sum:0,min:null,max:null});
+    const push=(st,x)=>{st.n++;st.sum+=x;st.min=st.min===null?x:Math.min(st.min,x);st.max=st.max===null?x:Math.max(st.max,x);};
+    const fin=st=>st.n?{n:st.n,meanMm:st.sum/st.n,minMm:st.min,maxMm:st.max}:{n:0,meanMm:null,minMm:null,maxMm:null};
+    const zones={};
+    for(const z of [1,2,3,4,5,6,7]) {
+      const [side,a,b]=ranges[z],count=Math.max(1,Math.floor((b-a)/step+1e-9));
+      const sides=side==='both'?['lateral','medial']:[side];
+      const acc={};for(const sd of sides) acc[sd]={gap:stat(),cortex:stat(),skipped:{missing:0,ambiguous:0}};
+      for(let i=0;i<count;i++) {
+        const t=a+(i+0.5)*(b-a)/count;
+        const c={};for(const k of names) c[k]=sideCrossings(F[k],t);
+        for(const sd of sides) {
+          const e=single(c.endosteal[sd]),o=single(c.outer[sd]);
+          if(e.reason||o.reason) {acc[sd].skipped[e.reason||o.reason]++;continue;}
+          if(z!==4) {
+            const st=single(c.stem[sd]);
+            if(st.reason) {acc[sd].skipped[st.reason]++;continue;}
+            push(acc[sd].gap,e.value-st.value); // negative = stem edge drawn beyond the endosteal line
+          }
+          push(acc[sd].cortex,o.value-e.value);
+        }
+      }
+      const pack=sd=>({sections:count,gap:z===4?null:fin(acc[sd].gap),cortex:fin(acc[sd].cortex),skipped:acc[sd].skipped});
+      zones[z]=side==='both'?{side,fromMm:a,toMm:b,lateral:pack('lateral'),medial:pack('medial')}:Object.assign({side,fromMm:a,toMm:b},pack(side));
+    }
+    out.status='ok';out.stepMm=step;out.zones=zones;
+    return out;
+  }
+
+  return {partition,classify,toFrame,measure,version:VERSION,DEFAULT_ZONE4_MM};
+}));
+// END GENERATED GRUEN ZONES
+// BEGIN GRUEN ZONES APP
+// Glue between the app state and lib/gruen-zones.js. Additive: nothing here changes saved records or existing measurements.
+let gruenResult=null,gruenInputKey=null;
+const gruenReasons={calibration_missing:'較正（mm/px）がありません',stem_axis_missing:'ステム軸の2点がありません',landmark_missing_gt_apex:'沈下用の3点のうち大転子頂部がありません',landmark_missing_stem_shoulder:'沈下用の3点のうちステム肩がありません',landmark_missing_stem_tip:'沈下用の3点のうちステム最遠位がありません',osteotomy_line_missing:'骨切り線（Osteotomy line）がありません',lateral_reference_on_axis:'大転子頂部がステム軸上にあり、内外側を決められません',medial_top_on_lateral_side:'骨切り線の内側端がステム軸の外側にあります',medial_top_distal_to_zone7:'骨切り線の内側端がzone 7より遠位にあります',degenerate_stem_axis:'ステム軸の2点が同じ位置です',degenerate_stem_length:'肩と先端の位置関係が不正です',invalid_options:'zone 4の長さが不正です',invalid_contours:'輪郭データが不正です'};
+function gruenZoneInputs(){
+  const fail=reason=>({reason});
+  const ok=p=>!!p&&Number.isFinite(p.x)&&Number.isFinite(p.y);
+  const lm=(annotation.longitudinal_landmarks&&annotation.longitudinal_landmarks.points)||{};
+  const mmPerPx=calibrationScale();
+  if(!Number.isFinite(mmPerPx)||mmPerPx<=0)return fail('calibration_missing');
+  if(!ok(pts.stem_prox)||!ok(pts.stem_dist))return fail('stem_axis_missing');
+  for(const k of ['gt_apex','stem_shoulder','stem_tip'])if(!ok(lm[k]))return fail('landmark_missing_'+k);
+  const ost=(annotation.osteotomy_line||[]).filter(ok);
+  if(ost.length<2)return fail('osteotomy_line_missing');
+  const ax={x:pts.stem_dist.x-pts.stem_prox.x,y:pts.stem_dist.y-pts.stem_prox.y};
+  const side=p=>ax.x*(p.y-pts.stem_prox.y)-ax.y*(p.x-pts.stem_prox.x);
+  const lat=Math.sign(side(lm.gt_apex));
+  if(!lat)return fail('lateral_reference_on_axis');
+  // Zone 7 top = the end of the osteotomy line that lies furthest to the medial side of the stem axis.
+  const a=ost[0],b=ost[ost.length-1],medialTop=side(a)*lat<=side(b)*lat?a:b;
+  const collar=$('implantCollar').value;
+  const names={stem:['stem_medial','stem_lateral'],endosteal:['canal_medial','canal_lateral'],outer:['femur_medial','femur_lateral']};
+  const contours={};
+  for(const k of Object.keys(names))contours[k]=names[k].map(n=>getRenderedContour(n)).filter(c=>Array.isArray(c)&&c.length>=2).map(c=>c.map(p=>({x:p.x,y:p.y})));
+  return {input:{mmPerPx,stemAxis:{proximal:{x:pts.stem_prox.x,y:pts.stem_prox.y},distal:{x:pts.stem_dist.x,y:pts.stem_dist.y}},
+    shoulder:{x:lm.stem_shoulder.x,y:lm.stem_shoulder.y},tip:{x:lm.stem_tip.x,y:lm.stem_tip.y},lateralRef:{x:lm.gt_apex.x,y:lm.gt_apex.y},
+    medialTop:{x:medialTop.x,y:medialTop.y},collarStatus:collar==='yes'?'collared':collar==='no'?'collarless':'unknown'},
+    options:{zone4LengthMm:parseFloat($('gzZone4').value)},contours};
+}
+function computeGruenZones(){
+  const out={schema:'fma_gruen_zones_v1',accuracy_validated:false,status:'error',reason:null,partition:null,measure:null,
+    sources:{stem_axis:'manual_stem_axis_two_points',shoulder_tip_lateral_reference:'longitudinal_landmarks',zone7_top:'medial_end_of_osteotomy_line',contours:'rendered_open_polylines'},
+    limitations:'2D AP projection; verified on synthetic data only; mean brightness not included'};
+  const g=gruenZoneInputs();
+  if(g.reason){out.reason=g.reason;return out;}
+  out.partition=GruenZones.partition(g.input,g.options);
+  if(out.partition.status!=='ok'){out.reason=out.partition.reason;return out;}
+  out.measure=GruenZones.measure(out.partition,g.contours);
+  if(out.measure.status!=='ok'){out.reason=out.measure.reason;return out;}
+  out.status='ok';return out;
+}
+function gruenRender(){
+  const r=gruenResult,body=$('gzTable');
+  $('gzSave').disabled=!(r&&r.status==='ok');
+  if(!r){body.innerHTML='';return;}
+  if(r.status!=='ok'){body.innerHTML='';$('gzStatus').textContent='計算できません：'+(gruenReasons[r.reason]||r.reason);return;}
+  const f=v=>v==null?'--':v.toFixed(2),cell=q=>'<td>'+(q.gap?f(q.gap.meanMm):'--')+'</td><td>'+f(q.cortex.meanMm)+'</td><td>'+q.cortex.n+' / '+q.sections+'</td>';
+  let rows='';
+  for(const z of [1,2,3,4,5,6,7]){const q=r.measure.zones[z];
+    rows+=z===4?'<tr><td>4 外側</td>'+cell(q.lateral)+'</tr><tr><td>4 内側</td>'+cell(q.medial)+'</tr>':'<tr><td>'+z+'</td>'+cell(q)+'</tr>';}
+  body.innerHTML=rows;
+  $('gzStatus').textContent='ステム長 '+r.partition.stemLengthMm.toFixed(1)+' mm ／ zone 4 '+r.partition.params.zone4LengthMm+' mm ／ 精度検証前';
+}
+function gruenRun(){gruenResult=computeGruenZones();gruenInputKey=gruenResult.status==='ok'?JSON.stringify(gruenZoneInputs()):null;gruenRender();draw();}
+$('gzCompute').onclick=gruenRun;
+$('gzOverlay').onchange=()=>draw();
+$('gzSave').onclick=()=>{if(gruenResult&&gruenResult.status==='ok')downloadBlob(JSON.stringify(gruenResult,null,2),'application/json','FMA_gruen_zones.json');};
+const drawBeforeGruen=draw;
+draw=function(){drawBeforeGruen();
+  if(!gruenResult||gruenResult.status!=='ok')return;
+  // A result is only shown while every input it was computed from is unchanged.
+  if(JSON.stringify(gruenZoneInputs())!==gruenInputKey){gruenResult=null;gruenInputKey=null;gruenRender();$('gzStatus').textContent='入力が変わりました。もう一度計算してください。';return;}
+  if(!img||!$('gzOverlay').checked)return;
+  const p=gruenResult.partition,fr=p.frame,lv=p.levelsMm,k=fr.pxPerMm,W=45;
+  const at=(t,s)=>({x:fr.origin.x+(fr.vx*t+fr.nx*s)*k,y:fr.origin.y+(fr.vy*t+fr.ny*s)*k});
+  const line=(a,b)=>{ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();};
+  ctx.save();ctx.setTransform(zoom,0,0,zoom,panX,panY);ctx.strokeStyle='#38bdf8';ctx.fillStyle='#38bdf8';ctx.lineWidth=1.5/zoom;ctx.font=(15/zoom)+'px sans-serif';
+  line(at(lv.shoulder,0),at(lv.shoulder,W));line(at(p.medialTopMm,-W),at(p.medialTopMm,0));
+  for(const t of [lv.third1,lv.third2,lv.tip,lv.zone4End])line(at(t,-W),at(t,W));
+  const mid=(a,b)=>(a+b)/2;
+  for(const [z,t,s] of [[1,mid(lv.shoulder,lv.third1),W],[2,mid(lv.third1,lv.third2),W],[3,mid(lv.third2,lv.tip),W],[4,mid(lv.tip,lv.zone4End),0],[5,mid(lv.third2,lv.tip),-W],[6,mid(lv.third1,lv.third2),-W],[7,mid(p.medialTopMm,lv.third1),-W]]){const q=at(t,s);ctx.fillText(String(z),q.x,q.y);}
+  ctx.restore();};
+// END GRUEN ZONES APP
 </script></body></html>
