@@ -20,7 +20,7 @@ function app(mirror){
     annotation:{longitudinal_landmarks:{schema:'fma_longitudinal_landmarks_v1',points:{gt_apex:{x:X(30),y:-20},stem_shoulder:{x:X(5),y:0},stem_tip:{x:X(0),y:120}}},
       osteotomy_line:[{x:X(-9),y:10},{x:X(2),y:4},{x:X(12),y:-6}],
       stem_medial:line(-6,0,120),stem_lateral:line(6,0,120),canal_medial:line(-8,-10,160),canal_lateral:line(8,-10,160),femur_medial:line(-12,-10,160),femur_lateral:line(13,-10,160)},
-    calibrationScale:()=>1,downloadBlob:(text,type,name)=>{saved={text,name};},draw:()=>{draws++;}};
+    axisMetadata:()=>({femoral:{status:'ok',quality_status:'confirmed',lt_confirmed:true,geometry:{vx:0,vy:1,mmPerPx:1}}}),calibrationScale:()=>1,downloadBlob:(text,type,name)=>{saved={text,name};},draw:()=>{draws++;}};
   context.getRenderedContour=n=>context.annotation[n]||[];
   vm.createContext(context);
   context.$('gzZone4').value='20';context.$('gzOverlay').checked=true;context.$('implantCollar').value='yes';context.$('studyId').value='SYNTHETIC';context.$('side').value=mirror===1?'L':'R';
@@ -33,8 +33,8 @@ for(const mirror of [1,-1]){
   assert.equal(r.status,'ok',JSON.stringify(r).slice(0,300));assert.equal(r.accuracy_validated,false);
   near(r.partition.stemLengthMm,120);near(r.partition.medialTopMm,10);assert.equal(r.partition.source.zone7Top,'medial_end_of_osteotomy_line');assert.equal(r.baseline,null);assert.equal(r.partition.calcarShiftMm,null);
   assert.deepEqual(r.identity,{research_id:'SYNTHETIC',side:mirror===1?'L':'R',acquisition_date:null});
-  for(const z of [1,2,3]){near(r.measure.zones[z].gap.meanMm,2);near(r.measure.zones[z].cortex.meanMm,5);}
-  for(const z of [5,6,7]){near(r.measure.zones[z].gap.meanMm,2);near(r.measure.zones[z].cortex.meanMm,4);}
+  for(const z of [1,2,3]){assert.equal(r.measure.zones[z].gap,undefined);near(r.measure.zones[z].cortex.meanMm,5);}
+  for(const z of [5,6,7]){assert.equal(r.measure.zones[z].gap,undefined);near(r.measure.zones[z].cortex.meanMm,4);}
   near(r.measure.zones[4].lateral.cortex.meanMm,5);near(r.measure.zones[4].medial.cortex.meanMm,4);
   // osteotomy line drawn in the opposite order gives the same zone 7 top
   a.run('annotation.osteotomy_line.reverse()');near(a.json('computeGruenZones()').partition.medialTopMm,10);
@@ -42,8 +42,8 @@ for(const mirror of [1,-1]){
 { // button: table, save, overlay redraw
   const a=app(1);a.els.gzCompute.onclick();
   assert.equal(a.els.gzSave.disabled,false);assert.equal((a.els.gzTable.innerHTML.match(/<tr>/g)||[]).length,8);
-  assert(a.els.gzTable.innerHTML.includes('<td>2.00</td><td>5.00</td><td>40 / 40</td>'));
-  a.els.gzSave.onclick();assert.equal(a.saved().name,'FMA_gruen_zones.json');assert.equal(JSON.parse(a.saved().text).schema,'fma_gruen_zones_v1');
+  assert(a.els.gzTable.innerHTML.includes('<td>5.00</td><td>40 / 40</td>'));
+  a.els.gzSave.onclick();assert.equal(a.saved().name,'FMA_gruen_zones.json');assert.equal(JSON.parse(a.saved().text).schema,'fma_gruen_zones_v2');
   // changing any input invalidates the shown result instead of leaving a stale overlay
   a.run('annotation.longitudinal_landmarks.points.stem_tip.y=110;draw()');
   assert.equal(a.json('gruenResult'),null);assert.equal(a.els.gzSave.disabled,true);assert.equal(a.els.gzTable.innerHTML,'');assert(a.els.gzStatus.textContent.includes('もう一度'));
@@ -51,7 +51,7 @@ for(const mirror of [1,-1]){
   a.els.gzZone4.value='30';a.els.gzCompute.onclick();near(a.json('gruenResult').partition.levelsMm.zone4End,140);
 }
 { // missing inputs are reported, never guessed
-  const cases=[['annotation.longitudinal_landmarks=null','landmark_missing_gt_apex'],['delete annotation.longitudinal_landmarks.points.stem_tip','landmark_missing_stem_tip'],
+  const cases=[['axisMetadata=()=>({femoral:null})','femoral_axis_unconfirmed'],['annotation.longitudinal_landmarks=null','landmark_missing_gt_apex'],['delete annotation.longitudinal_landmarks.points.stem_tip','landmark_missing_stem_tip'],
     ['annotation.osteotomy_line=[]','osteotomy_line_missing'],['delete pts.stem_dist','stem_axis_missing'],['calibrationScale=()=>null','calibration_missing'],
     ['annotation.osteotomy_line=[{x:505,y:10},{x:512,y:-6}]','medial_top_on_lateral_side']];
   for(const [mutation,reason] of cases){const a=app(1);a.run(mutation);const r=a.json('computeGruenZones()');assert.equal(r.status,'error');assert.equal(r.reason,reason,mutation);
@@ -83,3 +83,10 @@ for(const mirror of [1,-1]){
   console.log('PASS: baseline carry-over, calcar shift, chained baseline, optional osteotomy line on follow-up, identity mismatch, bad baseline files, clear.');
 })().catch(e=>{console.error(e);process.exit(1);});
 console.log('PASS: embedded library matches, R/L mirrored zones and values, osteotomy order, table/save, stale-result invalidation, zone 4 input, missing inputs reported, collarless, missing contour counted.');
+
+{ // old baseline accepted only as zone geometry; no old measured values reused
+ const a=app(1),old=a.json('computeGruenZones()');old.schema='fma_gruen_zones_v1';old.measure={schema:'gruen-zones-measure/v1',zones:{}};
+ a.context.old=old;assert.equal(a.json('gruenBaselineFrom(old)').zone7TopMm,10);
+ a.run('annotation.stem_medial=[];annotation.stem_lateral=[]');near(a.json('computeGruenZones()').measure.zones[2].cortex.meanMm,5);
+ a.els.gzCompute.onclick();a.run('axisMetadata=()=>({femoral:null});draw()');assert.equal(a.json('gruenResult'),null);assert.equal(a.els.gzSave.disabled,true);
+}

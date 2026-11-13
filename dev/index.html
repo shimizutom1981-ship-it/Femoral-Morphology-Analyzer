@@ -145,12 +145,12 @@ Key Rules for AI Assistants modifying this file:
 <button id="lmCompare">比較する</button><button id="lmCompareSave" disabled>比較結果JSONを保存</button><p id="lmCompareResult"></p>
 <p class="small">沈下は遠位を＋。角度は内反を＋。2D投影計測・精度検証前。側面の前屈／後屈は未対応。</p></details></div>
 <div id="gzPanel" class="card"><b>Gruen zone（AP・7 zone）</b>
-<div class="small">ステム肩から先端までを3等分。zone 4は先端から遠位 <input id="gzZone4" type="number" step="1" min="1" value="20" style="width:4.5em"> mm。必要な入力：較正、ステム軸2点、沈下用の3点（大転子頂部・肩・先端）、骨切り線、外皮質・髄腔・ステムの輪郭。</div>
+<div class="small">ステム肩から先端までを3等分。zone 4は先端から遠位 <input id="gzZone4" type="number" step="1" min="1" value="20" style="width:4.5em"> mm。必要な入力：較正、ステム軸2点、沈下用の3点（大転子頂部・肩・先端）、骨切り線、確認済み大腿骨軸・LT、外皮質・髄腔内縁の輪郭（皮質幅にはステム輪郭不要）。</div>
 <div class="row"><button id="gzCompute">Gruen zoneを計算</button><label><input type="checkbox" id="gzOverlay" checked>画像に境界を表示</label><button id="gzSave" disabled>結果JSONを保存</button></div>
 <div class="small">経過像の場合：<label>術直後のGruen結果JSON <input type="file" accept=".json" id="gzBaseline"></label><button id="gzBaselineClear">解除</button> <span id="gzBaselineStatus"></span></div>
 <div class="small" id="gzStatus"></div>
-<table><thead><tr><th>Zone</th><th>間隙 平均 mm</th><th>皮質厚 平均 mm</th><th>有効 / 全断面</th></tr></thead><tbody id="gzTable"></tbody></table>
-<p class="small">精度検証前（合成データでのみ確認）。zone 7の上端は術直後像の骨切り線の内側端で決め、経過像ではその高さ（ステム肩からの距離）を引き継ぎます。輪郭が欠ける断面・二重に交わる断面は除外します。保存レコードには含めません。</p></div>
+<table><thead><tr><th>Zone</th><th>大腿骨軸直角の皮質幅 平均 mm</th><th>有効 / 全断面</th></tr></thead><tbody id="gzTable"></tbody></table>
+<p class="small">精度検証前（合成データでのみ確認）。zone 7の上端は術直後像の骨切り線の内側端で決め、経過像ではその高さ（ステム肩からの距離）を引き継ぎます。皮質幅は大腿骨軸に直角。ステム基準zoneの標本位置を使い、局所皮質の法線厚とは異なります。透亮線幅は測定しません。輪郭欠損・複数交差・内外縁逆転は欠測です。旧v1のステム軸基準値とは直接比較しません。保存レコードには含めません。</p></div>
 <!-- Fixed Level Table -->
 <div class="card"><table><thead><tr><th>Level (from LT)</th><th>Canal px</th><th>Canal mm</th><th>Outer px</th><th>Outer mm</th><th>Stem manual mm</th><th>Stem AUTO mm</th><th>ΔStem mm</th><th>CTI</th><th>CFR manual</th><th>CFR AUTO</th></tr></thead><tbody id="tbl"></tbody></table></div>
 </div>
@@ -2251,13 +2251,61 @@ lmStatus();
     return out;
   }
 
-  return {partition,classify,toFrame,measure,version:VERSION,DEFAULT_ZONE4_MM};
+  // v2 cortical WIDTH: stem-referenced zone anchors, sections NORMAL TO FEMORAL AXIS.
+  // Legacy measure() remains unchanged for reproducibility; never relabel its results.
+  function measureCorticalWidth(p, contours, bone, options) {
+    const out={schema:'fma-cortical-width/v2',method:'femoral_axis_perpendicular_width',
+      version:'1.0.0',status:'error',reason:null,zones:null,samples:[],
+      sampling:'stem_zone_anchor_grid_midpoints',zone_assignment:'stem_anchor_level_and_side',
+      clinical_accuracy_validated:false,axis:null,mmPerPx:null};
+    const fail=r=>{out.reason=r;return out;};
+    if(!p||p.status!=='ok')return fail('invalid_partition');
+    if(!bone||bone.status!=='ok'||bone.quality_status!=='confirmed'||!bone.lt_confirmed)return fail('femoral_axis_unconfirmed');
+    const g=bone.geometry;
+    if(!g||!Number.isFinite(g.vx)||!Number.isFinite(g.vy)||!Number.isFinite(g.mmPerPx)||g.mmPerPx<=0)return fail('invalid_femoral_axis');
+    const len=Math.hypot(g.vx,g.vy);
+    if(len<EPS)return fail('invalid_femoral_axis');
+    if(Math.abs(g.mmPerPx-p.frame.mmPerPx)>1e-9*Math.max(g.mmPerPx,p.frame.mmPerPx))return fail('scale_mismatch');
+    const step=options?.stepMm??1;
+    if(!Number.isFinite(step)||step<=0)return fail('invalid_options');
+    if(!contours||!['outer','endosteal'].every(k=>Array.isArray(contours[k])&&contours[k].every(a=>Array.isArray(a)&&a.every(finitePoint))))return fail('invalid_contours');
+    const v={x:g.vx/len,y:g.vy/len},f=p.frame;
+    let n={x:-v.y,y:v.x};if(n.x*f.nx+n.y*f.ny<0)n={x:-n.x,y:-n.y};
+    out.axis={vx:v.x,vy:v.y,nx:n.x,ny:n.y};out.mmPerPx=g.mmPerPx;out.stepMm=step;
+    const stat=()=>({sections:0,cortex:{n:0,meanMm:null,minMm:null,maxMm:null},skipped:{missing:0,ambiguous:0,boundary_order:0},_sum:0});
+    const zones={};for(let z=1;z<=7;z++)zones[z]=z===4?{side:'both',lateral:stat(),medial:stat()}:stat();
+    const lv=p.levelsMm,ranges=[...(p.medialTopMm<0?[[p.medialTopMm,0]]:[]),[0,lv.third1],[lv.third1,lv.third2],[lv.third2,lv.tip],[lv.tip,lv.zone4End]];
+    // Fixed anchor-zone allocation: missingness must not change a zone denominator.
+    const points=[];for(const [a,b] of ranges){const count=Math.max(1,Math.floor((b-a)/step+1e-9));for(let i=0;i<count;i++)points.push(a+(i+.5)*(b-a)/count);}
+    for(const t of points){
+      const anchor={x:f.origin.x+f.vx*t/g.mmPerPx,y:f.origin.y+f.vy*t/g.mmPerPx};
+      const crossings={};for(const k of ['outer','endosteal'])crossings[k]=sideCrossings(contours[k].map(path=>path.map(q=>({t:dot(sub(q,anchor),v)*g.mmPerPx,s:dot(sub(q,anchor),n)*g.mmPerPx}))),0);
+      for(const side of ['lateral','medial']){
+        const e=single(crossings.endosteal[side]),o=single(crossings.outer[side]),sign=side==='lateral'?1:-1;
+        const reason=e.reason||o.reason||(o.value<e.value?'boundary_order':null);
+        const midpoint=!reason?(e.value+o.value)/2:null;
+        // Missing-boundary counts assigned by anchor side only; no width is fabricated.
+        const z=zoneOf(p,t,sign);
+        if(!z)continue;
+        const bucket=z===4?zones[z][side]:zones[z];bucket.sections++;
+        const sample={anchorStemMm:t,side,zone:z,anchorPx:anchor,midpointPx:midpoint===null?null:{x:anchor.x+n.x*midpoint*sign/g.mmPerPx,y:anchor.y+n.y*midpoint*sign/g.mmPerPx},widthMm:reason?null:o.value-e.value,missingReason:reason||null};
+        out.samples.push(sample);
+        if(reason){bucket.skipped[reason]++;continue;}
+        const c=bucket.cortex,w=sample.widthMm;c.n++;bucket._sum+=w;c.minMm=c.minMm===null?w:Math.min(c.minMm,w);c.maxMm=c.maxMm===null?w:Math.max(c.maxMm,w);
+      }
+    }
+    for(let z=1;z<=7;z++)for(const q of z===4?[zones[z].lateral,zones[z].medial]:[zones[z]]){q.cortex.meanMm=q.cortex.n?q._sum/q.cortex.n:null;delete q._sum;}
+    out.zones=zones;out.status='ok';return out;
+  }
+
+  return {partition,classify,toFrame,measure,measureCorticalWidth,version:VERSION,DEFAULT_ZONE4_MM};
 }));
+
 // END GENERATED GRUEN ZONES
 // BEGIN GRUEN ZONES APP
 // Glue between the app state and lib/gruen-zones.js. Additive: nothing here changes saved records or existing measurements.
 let gruenResult=null,gruenInputKey=null,gruenBaseline=null,gruenBaselineSeq=0;
-const gruenReasons={calibration_missing:'較正（mm/px）がありません',stem_axis_missing:'ステム軸の2点がありません',landmark_missing_gt_apex:'沈下用の3点のうち大転子頂部がありません',landmark_missing_stem_shoulder:'沈下用の3点のうちステム肩がありません',landmark_missing_stem_tip:'沈下用の3点のうちステム最遠位がありません',osteotomy_line_missing:'骨切り線（Osteotomy line）がありません',lateral_reference_on_axis:'大転子頂部がステム軸上にあり、内外側を決められません',medial_top_on_lateral_side:'骨切り線の内側端がステム軸の外側にあります',medial_top_distal_to_zone7:'骨切り線の内側端がzone 7より遠位にあります',baseline_zone7_top_distal_to_zone7:'術直後のzone 7上端が今回のステム長に合いません',baseline_identity_mismatch:'術直後の結果と研究ID・左右が一致しません',degenerate_stem_axis:'ステム軸の2点が同じ位置です',degenerate_stem_length:'肩と先端の位置関係が不正です',invalid_options:'zone 4の長さが不正です',invalid_contours:'輪郭データが不正です'};
+const gruenReasons={femoral_axis_unconfirmed:'大腿骨軸・LTが未確認です',invalid_femoral_axis:'大腿骨軸が不正です',scale_mismatch:'大腿骨軸と画像の校正が一致しません',calibration_missing:'較正（mm/px）がありません',stem_axis_missing:'ステム軸の2点がありません',landmark_missing_gt_apex:'沈下用の3点のうち大転子頂部がありません',landmark_missing_stem_shoulder:'沈下用の3点のうちステム肩がありません',landmark_missing_stem_tip:'沈下用の3点のうちステム最遠位がありません',osteotomy_line_missing:'骨切り線（Osteotomy line）がありません',lateral_reference_on_axis:'大転子頂部がステム軸上にあり、内外側を決められません',medial_top_on_lateral_side:'骨切り線の内側端がステム軸の外側にあります',medial_top_distal_to_zone7:'骨切り線の内側端がzone 7より遠位にあります',baseline_zone7_top_distal_to_zone7:'術直後のzone 7上端が今回のステム長に合いません',baseline_identity_mismatch:'術直後の結果と研究ID・左右が一致しません',degenerate_stem_axis:'ステム軸の2点が同じ位置です',degenerate_stem_length:'肩と先端の位置関係が不正です',invalid_options:'zone 4の長さが不正です',invalid_contours:'輪郭データが不正です'};
 function gruenZoneInputs(){
   const fail=reason=>({reason});
   const ok=p=>!!p&&Number.isFinite(p.x)&&Number.isFinite(p.y);
@@ -2284,18 +2332,18 @@ function gruenZoneInputs(){
   return {input:{mmPerPx,stemAxis:{proximal:{x:pts.stem_prox.x,y:pts.stem_prox.y},distal:{x:pts.stem_dist.x,y:pts.stem_dist.y}},
     shoulder:{x:lm.stem_shoulder.x,y:lm.stem_shoulder.y},tip:{x:lm.stem_tip.x,y:lm.stem_tip.y},lateralRef:{x:lm.gt_apex.x,y:lm.gt_apex.y},
     medialTop:medialTop?{x:medialTop.x,y:medialTop.y}:null,collarStatus:collar==='yes'?'collared':collar==='no'?'collarless':'unknown'},
-    options:{zone4LengthMm:parseFloat($('gzZone4').value),zone7TopMm:gruenBaseline?gruenBaseline.zone7TopMm:null},identity,contours};
+    bone:axisMetadata().femoral,options:{zone4LengthMm:parseFloat($('gzZone4').value),zone7TopMm:gruenBaseline?gruenBaseline.zone7TopMm:null},identity,contours};
 }
 function computeGruenZones(){
-  const out={schema:'fma_gruen_zones_v1',accuracy_validated:false,status:'error',reason:null,identity:null,baseline:gruenBaseline,partition:null,measure:null,
-    sources:{stem_axis:'manual_stem_axis_two_points',shoulder_tip_lateral_reference:'longitudinal_landmarks',zone7_top:gruenBaseline?'baseline_level_carried_over':'medial_end_of_osteotomy_line',bone_medial_end:'medial_end_of_osteotomy_line',contours:'rendered_open_polylines'},
+  const out={schema:'fma_gruen_zones_v2',accuracy_validated:false,status:'error',reason:null,identity:null,baseline:gruenBaseline,partition:null,measure:null,
+    sources:{cortical_width_axis:'confirmed_femoral_axis',stem_axis:'manual_stem_axis_two_points',shoulder_tip_lateral_reference:'longitudinal_landmarks',zone7_top:gruenBaseline?'baseline_level_carried_over':'medial_end_of_osteotomy_line',bone_medial_end:'medial_end_of_osteotomy_line',contours:'rendered_open_polylines'},
     limitations:'2D AP projection; verified on synthetic data only; mean brightness not included'};
   const g=gruenZoneInputs();
   if(g.reason){out.reason=g.reason;return out;}
   out.identity=g.identity;
   out.partition=GruenZones.partition(g.input,g.options);
   if(out.partition.status!=='ok'){out.reason=out.partition.reason;return out;}
-  out.measure=GruenZones.measure(out.partition,g.contours);
+  out.measure=GruenZones.measureCorticalWidth(out.partition,g.contours,g.bone);
   if(out.measure.status!=='ok'){out.reason=out.measure.reason;return out;}
   out.status='ok';return out;
 }
@@ -2304,7 +2352,7 @@ function gruenRender(){
   $('gzSave').disabled=!(r&&r.status==='ok');
   if(!r){body.innerHTML='';return;}
   if(r.status!=='ok'){body.innerHTML='';$('gzStatus').textContent='計算できません：'+(gruenReasons[r.reason]||r.reason);return;}
-  const f=v=>v==null?'--':v.toFixed(2),cell=q=>'<td>'+(q.gap?f(q.gap.meanMm):'--')+'</td><td>'+f(q.cortex.meanMm)+'</td><td>'+q.cortex.n+' / '+q.sections+'</td>';
+  const f=v=>v==null?'--':v.toFixed(2),cell=q=>'<td>'+f(q.cortex.meanMm)+'</td><td>'+q.cortex.n+' / '+q.sections+'</td>';
   let rows='';
   for(const z of [1,2,3,4,5,6,7]){const q=r.measure.zones[z];
     rows+=z===4?'<tr><td>4 外側</td>'+cell(q.lateral)+'</tr><tr><td>4 内側</td>'+cell(q.medial)+'</tr>':'<tr><td>'+z+'</td>'+cell(q)+'</tr>';}
@@ -2318,7 +2366,7 @@ $('gzOverlay').onchange=()=>draw();
 // Follow-up images: load the Gruen result JSON saved from the baseline (immediate postoperative) image.
 function gruenBaselineFrom(r){
   const fail=m=>{throw Error(m);};
-  if(!r||r.schema!=='fma_gruen_zones_v1'||r.status!=='ok'||!r.partition||!r.identity)fail('Gruen zoneの結果JSONではありません');
+  if(!r||!['fma_gruen_zones_v1','fma_gruen_zones_v2'].includes(r.schema)||r.status!=='ok'||!r.partition||!r.identity)fail('Gruen zoneの結果JSONではありません');
   if(!Number.isFinite(r.partition.medialTopMm))fail('zone 7上端の値がありません');
   if(!r.identity.research_id||!['R','L'].includes(r.identity.side))fail('術直後の結果に研究ID・左右がありません');
   return {zone7TopMm:r.partition.medialTopMm,identity:{research_id:r.identity.research_id,side:r.identity.side,acquisition_date:r.identity.acquisition_date||null},stemLengthMm:r.partition.stemLengthMm};
