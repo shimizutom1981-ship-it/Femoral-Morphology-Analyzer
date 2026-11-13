@@ -95,7 +95,7 @@ Key Rules for AI Assistants modifying this file:
     <button id="saveCloud" class="cloudBtn">☁ Cloud Save (Drive+Sheet)</button>
   </div>
 
-  <div class="guide"><div id="axisStatus">FEMORAL axis: awaiting contours / LT / calibration</div><button id="confirmLT">自動FEMORAL軸に垂直な内側突出点としてLTを確認</button><label>既存Annotation / FMA record（原本は変更しません）<input id="recordFile" type="file" accept=".json,application/json"></label><button id="confirmLegacyStem" hidden>旧2点を手動STEM軸候補として確認</button></div>
+  <div class="guide"><div id="axisStatus">FEMORAL axis: awaiting contours / LT / calibration</div><button id="confirmLT">自動FEMORAL軸に垂直な内側突出点としてLTを確認</button><label>既存Annotation / FMA record（原本は変更しません）<input id="recordFile" type="file" accept=".fma,.json,application/json"></label><button id="confirmLegacyStem" hidden>旧2点を手動STEM軸候補として確認</button></div>
   <button id="clearCoverageReview" hidden>撮影範囲の確認を取り消す（未確認に戻す）</button>
   <div id="coverageReview" class="guide" hidden><span id="coverageMessage"></span>
 <button id="coverageInside">必要な断面は有効撮影範囲内（輪郭を補完）</button>
@@ -139,8 +139,8 @@ Key Rules for AI Assistants modifying this file:
 <div class="small" id="lmStatus"></div><div class="small">骨軸方向の大転子最上端・近位外側の肩・金属ステム最遠位端を指定。見えない点は推測せず入力終了。3点後は通常操作へ戻ります。</div>
 <label>画像の撮影日 <input type="date" id="lmDate"></label>
 <details><summary>2時点の沈下・内反外反を比較</summary><p class="small">確認して保存したrecordまたはannotation JSONを2つ選択。同じ骨軸の高さが必要です。未指定項目は未計測と表示します。</p>
-<label>術直後（基準）<input type="file" accept=".json" id="lmFile0"></label><span id="lmFileStatus0"></span><br>
-<label>経過画像<input type="file" accept=".json" id="lmFile1"></label><span id="lmFileStatus1"></span><br>
+<label>術直後（基準）<input type="file" accept=".fma,.json,application/json" id="lmFile0"></label><span id="lmFileStatus0"></span><br>
+<label>経過画像<input type="file" accept=".fma,.json,application/json" id="lmFile1"></label><span id="lmFileStatus1"></span><br>
 <label><input type="checkbox" id="lmPairConfirmed">同一症例・同側・AP像で、通常の左右表示（左右反転なし）と比較可能な撮影肢位を確認</label><br>
 <button id="lmCompare">比較する</button><button id="lmCompareSave" disabled>比較結果JSONを保存</button><p id="lmCompareResult"></p>
 <p class="small">沈下は遠位を＋。角度は内反を＋。2D投影計測・精度検証前。側面の前屈／後屈は未対応。</p></details></div>
@@ -1937,6 +1937,19 @@ function restoreSavedWork(){
     restoreWorkData(JSON.parse(current||old));return true;
   }catch(e){alert('作業データの読込に失敗しました: '+e.message);return false;}
 }
+function parseRecordText(text){
+  // Legacy .fma records are JSON preceded by this exact versioned magic line.
+  // Do not guess at other headers or scan forward to an arbitrary JSON object.
+  if(typeof text!=='string')throw Error('Record text must be a string');
+  const source=text.replace(/^\uFEFF/,'').trimStart();
+  const header='FMA-CONTOUR-EVIDENCE-V1';
+  let json=source;
+  if(source.startsWith('FMA-')){
+    if(!source.startsWith(header+'\n')&&!source.startsWith(header+'\r\n'))throw Error('Unsupported FMA record header');
+    json=source.slice(header.length).trimStart();
+  }
+  return JSON.parse(json);
+}
 function validateRecordImport(record){
   const raw=record?.raw_annotations||record;
   if(!raw||!Array.isArray(raw.canal_medial)||!Array.isArray(raw.canal_lateral))throw Error('対応するannotationではありません');
@@ -2001,7 +2014,7 @@ $('recordFile').onchange=async e=>{
   const file=e.target.files?.[0];e.target.value='';if(!file)return;
   const sequence=++recordImportSequence;pendingRecordImport=null;
   try{
-    const record=JSON.parse(await file.text());if(sequence!==recordImportSequence)return;
+    const record=parseRecordText(await file.text());if(sequence!==recordImportSequence)return;
     validateRecordImport(record);
     if(!img||imageLoading){
       pendingRecordImport={record,filename:file.name||''};
@@ -2089,7 +2102,7 @@ function compareLongitudinal(a,b,confirmed){
 }
 let comparisonInputs=[null,null],comparisonOutput=null,comparisonSeq=[0,0];
 function clearComparison(){comparisonOutput=null;$('lmCompareSave').disabled=true;$('lmCompareResult').textContent='';}
-for(let i=0;i<2;i++)$('lmFile'+i).onchange=async e=>{const file=e.target.files?.[0],seq=++comparisonSeq[i];comparisonInputs[i]=null;clearComparison();$('lmPairConfirmed').checked=false;if(!file)return;try{const r=JSON.parse(await file.text());if(seq!==comparisonSeq[i])return;validateRecordImport(r);comparisonInputs[i]=longitudinalSnapshot(r);$('lmFileStatus'+i).textContent='読込済：'+(comparisonInputs[i].date||'撮影日なし');}catch(err){$('lmFileStatus'+i).textContent=err.message;}};
+for(let i=0;i<2;i++)$('lmFile'+i).onchange=async e=>{const file=e.target.files?.[0],seq=++comparisonSeq[i];comparisonInputs[i]=null;clearComparison();$('lmPairConfirmed').checked=false;if(!file)return;try{const r=parseRecordText(await file.text());if(seq!==comparisonSeq[i])return;validateRecordImport(r);comparisonInputs[i]=longitudinalSnapshot(r);$('lmFileStatus'+i).textContent='読込済：'+(comparisonInputs[i].date||'撮影日なし');}catch(err){$('lmFileStatus'+i).textContent=err.message;}};
 $('lmPairConfirmed').onchange=clearComparison;
 $('lmCompare').onclick=()=>{clearComparison();try{if(comparisonInputs.some(x=>!x))throw Error('2つの保存JSONを選択してください');comparisonOutput=compareLongitudinal(...comparisonInputs,$('lmPairConfirmed').checked);const r=comparisonOutput,fmt=(v,u)=>v==null?'未計測':v.toFixed(2)+u;$('lmCompareResult').textContent='肩法：'+fmt(r.shoulder_subsidence_mm,' mm')+' ／ 先端法：'+fmt(r.tip_subsidence_mm,' mm')+' ／ 角度変化：'+(r.varus_change_deg==null?'未計測':Math.abs(r.varus_change_deg).toFixed(2)+'° '+(r.varus_change_deg>0?'内反方向':r.varus_change_deg<0?'外反方向':'変化なし'));$('lmCompareSave').disabled=false;}catch(err){$('lmCompareResult').textContent=err.message;}};
 $('lmCompareSave').onclick=()=>{if(comparisonOutput)downloadBlob(JSON.stringify(comparisonOutput,null,2),'application/json','FMA_longitudinal_comparison.json');};
