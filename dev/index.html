@@ -95,7 +95,7 @@ Key Rules for AI Assistants modifying this file:
     <button id="saveCloud" class="cloudBtn">☁ Cloud Save (Drive+Sheet)</button>
   </div>
 
-  <div class="guide"><div id="axisStatus">FEMORAL axis: awaiting contours / LT / calibration</div><button id="confirmLT">自動FEMORAL軸に垂直な内側突出点としてLTを確認</button><label>既存Annotation / FMA record（原本は変更しません）<input id="recordFile" type="file" accept=".json,application/json"></label><button id="confirmLegacyStem" hidden>旧2点を手動STEM軸候補として確認</button></div>
+  <div class="guide"><div id="axisStatus">FEMORAL axis: awaiting contours / LT / calibration</div><button id="confirmLT">自動FEMORAL軸に垂直な内側突出点としてLTを確認</button><label>既存Annotation / FMA record（原本は変更しません）<input id="recordFile" type="file" accept=".fma,.json,application/json"></label><button id="confirmLegacyStem" hidden>旧2点を手動STEM軸候補として確認</button></div>
   <button id="clearCoverageReview" hidden>撮影範囲の確認を取り消す（未確認に戻す）</button>
   <div id="coverageReview" class="guide" hidden><span id="coverageMessage"></span>
 <button id="coverageInside">必要な断面は有効撮影範囲内（輪郭を補完）</button>
@@ -125,7 +125,7 @@ Key Rules for AI Assistants modifying this file:
     <div class="result"><div class="small">CCR (Jang)</div><div class="val" id="ccrVal">--</div></div>
     <div class="result"><div class="small">CBR (+100)</div><div class="val" id="cbrVal">--</div></div>
     <div class="result"><div class="small">Stem Align (°)</div><div class="val" id="alignVal">--</div></div>
-    <div class="result"><div class="small">Mean Fill (0-100%)</div><div class="val" id="meanFillVal">--</div></div>
+    <div class="result"><div class="small">旧探索用 Mean Fill (51点・比)</div><div class="val" id="meanFillVal">--</div></div>
     <div class="result"><div class="small">Prox / Mid / Dist Fill</div><div class="val" id="zoneFillVal" style="font-size:.95rem">--</div></div>
     <div class="result"><div class="small">LDR-α / LDR-β</div><div class="val" id="ldra" style="font-size:.95rem">--</div><div id="ldrb" style="display:none">--</div></div>
     <div class="result"><div class="small" title="Mod MCI = canal(0)/canal(+70); P10D20 = canal(-10)/canal(+20)。距離はLTから遠位が正。JSON mci = outer(+20)/canal(+70)とは別項目。">Mod MCI / P10D20</div><div class="val" id="mci" style="font-size:.95rem">--</div><div id="p20d20" style="display:none">--</div><div id="p20d30" style="display:none">--</div></div>
@@ -139,8 +139,8 @@ Key Rules for AI Assistants modifying this file:
 <div class="small" id="lmStatus"></div><div class="small">骨軸方向の大転子最上端・近位外側の肩・金属ステム最遠位端を指定。見えない点は推測せず入力終了。3点後は通常操作へ戻ります。</div>
 <label>画像の撮影日 <input type="date" id="lmDate"></label>
 <details><summary>2時点の沈下・内反外反を比較</summary><p class="small">確認して保存したrecordまたはannotation JSONを2つ選択。同じ骨軸の高さが必要です。未指定項目は未計測と表示します。</p>
-<label>術直後（基準）<input type="file" accept=".json" id="lmFile0"></label><span id="lmFileStatus0"></span><br>
-<label>経過画像<input type="file" accept=".json" id="lmFile1"></label><span id="lmFileStatus1"></span><br>
+<label>術直後（基準）<input type="file" accept=".fma,.json,application/json" id="lmFile0"></label><span id="lmFileStatus0"></span><br>
+<label>経過画像<input type="file" accept=".fma,.json,application/json" id="lmFile1"></label><span id="lmFileStatus1"></span><br>
 <label><input type="checkbox" id="lmPairConfirmed">同一症例・同側・AP像で、通常の左右表示（左右反転なし）と比較可能な撮影肢位を確認</label><br>
 <button id="lmCompare">比較する</button><button id="lmCompareSave" disabled>比較結果JSONを保存</button><p id="lmCompareResult"></p>
 <p class="small">沈下は遠位を＋。角度は内反を＋。2D投影計測・精度検証前。側面の前屈／後屈は未対応。</p></details></div>
@@ -151,6 +151,30 @@ Key Rules for AI Assistants modifying this file:
 <div class="small" id="gzStatus"></div>
 <table><thead><tr><th>Zone</th><th>間隙 平均 mm</th><th>皮質厚 平均 mm</th><th>有効 / 全断面</th></tr></thead><tbody id="gzTable"></tbody></table>
 <p class="small">精度検証前（合成データでのみ確認）。zone 7の上端は術直後像の骨切り線の内側端で決め、経過像ではその高さ（ステム肩からの距離）を引き継ぎます。輪郭が欠ける断面・二重に交わる断面は除外します。保存レコードには含めません。</p></div>
+<!-- Research output: separate versioned 101-point schema; legacy output retained. -->
+<div class="card" id="rpPanel"><h3>研究用出力：AP・101点</h3>
+<p class="small">近位0%は閉じた髄腔幅を定義できる最も近位の高さ、100%は上の「ステム最遠位」点です。両端を固定し、読めない範囲は欠測区間として残します。軸位は規約確定後に対応します。</p>
+<div class="grid">
+<label>方向<select id="rpDirection"><option value="AP">正面 AP</option><option value="AXIAL">軸位（規約未確定・計算不可）</option></select></label>
+<label>時点<select id="rpTimepoint"><option value="">選択</option><option value="EARLY">術後早期</option><option value="M3">3か月</option><option value="M12">12か月</option></select></label>
+<label>手術キー（既存台帳と一致）<input id="rpSurgery"></label>
+<label>境界規約版<input id="rpRule" placeholder="確認した規約版"></label>
+<label>原画像の保存先参照<input id="rpSource" placeholder="元画像のパスまたはリンク"></label>
+<label>研究出力の保存先参照<input id="rpStorage" placeholder="保存フォルダのパスまたは参照先"></label>
+</div><p class="small">研究ID・画像ID・測定者・反復番号は上部の入力、撮影日は「沈下・角度」欄の日付を共用します。研究出力は計測記録ごとに新しいIDを付けます。</p>
+<div class="grid"><button id="rpProximal">近位0%点を指定</button><button id="rpCancel">点の指定を終了</button></div>
+<div class="grid"><label>欠測の側<select id="rpGapSide"><option value="ALL">両側</option><option value="MED">内側</option><option value="LAT">外側</option></select></label><label>読めない境界<select id="rpGapBoundary"><option value="ALL">すべて</option><option value="outer">外皮質</option><option value="inner">皮質内縁</option><option value="stem">ステム</option></select></label><label>欠測理由<input id="rpGapReason" placeholder="例：皮質境界を判読できない"></label><button id="rpGap">欠測区間の両端を指定</button><button id="rpUndoGap">最後の欠測区間を戻す</button></div>
+<p class="small" id="rpMarkStatus"></p><div class="grid"><button id="rpConfirm" class="primary">区間・全輪郭・欠測範囲を確認</button><button id="rpSave" disabled>研究JSON・CSVを保存</button></div>
+<p id="rpStatus"></p><pre id="rpSummary" style="white-space:pre-wrap;font-size:.8rem"></pre>
+<p class="small">CFRは%、内外側の皮質厚はmm。区間平均は近位31/34点・中央30/33点・遠位31/34点以上が有効な場合に出力します。台帳CSVの採用状態はPENDINGです。技術確認用の候補版で、臨床精度の検証は別途必要です。</p>
+</div>
+<div class="card" id="rpPairPanel"><h3>皮質厚：早期 → 12か月</h3><p class="small">早期の101位置を小転子からの骨軸mmで保持し、12か月の同じ骨側位置を計測します。内側・外側を別々に保存します。</p>
+<div class="grid"><label>早期の研究JSON<input id="rpPairFile0" type="file" accept=".json,application/json"><span id="rpPairStatus0"></span></label><label>12か月の研究JSON<input id="rpPairFile1" type="file" accept=".json,application/json"><span id="rpPairStatus1"></span></label></div>
+<label><input type="checkbox" id="rpPairConfirm" style="width:auto">同じ骨位置・左右・撮影肢位・比較可能範囲を確認した</label>
+<label><input type="checkbox" id="rpPairRelative" style="width:auto">増減率も出す：基準皮質厚が信頼できることを確認した</label>
+<label>経時比較の保存先参照<input id="rpPairStorage" placeholder="保存フォルダのパスまたは参照先"></label>
+<div class="grid"><button id="rpPairCompute">皮質厚の変化を計算</button><button id="rpPairSave" disabled>比較JSON・台帳CSVを保存</button></div><pre id="rpPairSummary" style="white-space:pre-wrap;font-size:.8rem"></pre></div>
+
 <!-- Fixed Level Table -->
 <div class="card"><table><thead><tr><th>Level (from LT)</th><th>Canal px</th><th>Canal mm</th><th>Outer px</th><th>Outer mm</th><th>Stem manual mm</th><th>Stem AUTO mm</th><th>ΔStem mm</th><th>CTI</th><th>CFR manual</th><th>CFR AUTO</th></tr></thead><tbody id="tbl"></tbody></table></div>
 </div>
@@ -276,7 +300,7 @@ Key Rules for AI Assistants modifying this file:
 
 const BUILD_COMMIT='__FMA_BUILD_COMMIT__';
 const APP_VERSION='v2.2-axis-split';
-const BUILD_ID='axis-split-import-save-v1';
+const BUILD_ID='axis-split-research-profile-101-v1';
 let pendingRecordImport=null,recordImportSequence=0,imageLoadSequence=0,imageLoading=false,imageLoadFailed=false;
 const levels=[-20,-10,0,20,30,70,100];
 const steps=[['Head rim point 1','head1'],['Head rim point 2','head2'],['Head rim point 3','head3'],['LT medial-most point','ltm'],['Manual STEM axis proximal','stem_prox'],['Manual STEM axis distal','stem_dist']];
@@ -284,7 +308,7 @@ const guidedStages=['head','femur_lateral','canal_lateral','stem_lateral','stem_
 let guidedStage=0;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 let img=null,grayCache=null,pts={},step=0,start=null,elapsedSec=null,drag=null,zoom=1,panX=0,panY=0,isPanning=false,panStart=null,accepted=false,correctionCount=0,aiInitial={},aiLoaded=false,aiProvenanceKnown=true,profileRows=[],continuousSlices=[],continuousSummary={};
-function emptyAnnotation(){return {longitudinal_landmarks:null,version:'2.1-training',head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};}
+function emptyAnnotation(){return {research_settings:null,longitudinal_landmarks:null,version:'2.1-training',head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};}
 let annotation=emptyAnnotation();
 let annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,osteotomy_line:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};
 let annotationDrag=null,annotationCorrectionCount=0;
@@ -1512,7 +1536,7 @@ function annotationPayload(){
     stem_family:$('stemFamily').value,side:$('side').value,implant_collar:$('implantCollar').value,
     lt_visibility:$('ltVisibility').value,double_cortex:$('doubleCortex').value,
     calibration:{mode:$('calMode').value,mm_per_px:Number($('scale').value)||null,known_mm:Number($('headSize').value)||null},
-    longitudinal_landmarks:annotation.longitudinal_landmarks,head:annotation.head,measurement_points:pts,lt_midpoint:annotation.lt_midpoint,osteotomy_line:annotation.osteotomy_line,
+    research_settings:annotation.research_settings,longitudinal_landmarks:annotation.longitudinal_landmarks,head:annotation.head,measurement_points:pts,lt_midpoint:annotation.lt_midpoint,osteotomy_line:annotation.osteotomy_line,
     stem_interface_anchors:annotation.stem_interface_anchors,lt_region:annotation.lt_region,
     femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,
     canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,
@@ -1937,6 +1961,17 @@ function restoreSavedWork(){
     restoreWorkData(JSON.parse(current||old));return true;
   }catch(e){alert('作業データの読込に失敗しました: '+e.message);return false;}
 }
+function parseRecordText(text){
+  // Compatibility from PR #4: only the exact documented legacy header is accepted.
+  if(typeof text!=='string')throw Error('Record text must be a string');
+  const source=text.replace(/^\uFEFF/,'').trimStart(),header='FMA-CONTOUR-EVIDENCE-V1';
+  let json=source;
+  if(source.startsWith('FMA-')){
+    if(!source.startsWith(header+'\n')&&!source.startsWith(header+'\r\n'))throw Error('Unsupported FMA record header');
+    json=source.slice(header.length).trimStart();
+  }
+  return JSON.parse(json);
+}
 function validateRecordImport(record){
   const raw=record?.raw_annotations||record;
   if(!raw||!Array.isArray(raw.canal_medial)||!Array.isArray(raw.canal_lateral))throw Error('対応するannotationではありません');
@@ -1952,6 +1987,7 @@ function validateRecordImport(record){
     if(a._manualAnchors!=null){if(!object(a._manualAnchors))fail(name+'._manualAnchors');for(const [k,v]of Object.entries(a._manualAnchors))points(v,name+'._manualAnchors.'+k);}
   };
   geometry(raw,'annotation');
+  if(raw.research_settings!=null)FmaResearch.validateSettings(raw.research_settings);
   if(raw.longitudinal_landmarks!=null){const d=raw.longitudinal_landmarks;if(!object(d)||d.schema!=='fma_longitudinal_landmarks_v1'||!object(d.points))fail('longitudinal_landmarks');for(const k of ['gt_apex','stem_shoulder','stem_tip'])if(d.points[k]!=null)point(d.points[k],k);if(d.acquisition_date!=null&&typeof d.acquisition_date!=='string')fail('acquisition_date');}
   for(const k of ['ai_loaded','ai_provenance_known'])if(raw[k]!=null&&typeof raw[k]!=='boolean')fail(k);
   if(raw.annotation_correction_count!=null&&(!Number.isSafeInteger(raw.annotation_correction_count)||raw.annotation_correction_count<0))fail('annotation_correction_count');
@@ -2001,7 +2037,7 @@ $('recordFile').onchange=async e=>{
   const file=e.target.files?.[0];e.target.value='';if(!file)return;
   const sequence=++recordImportSequence;pendingRecordImport=null;
   try{
-    const record=JSON.parse(await file.text());if(sequence!==recordImportSequence)return;
+    const record=parseRecordText(await file.text());if(sequence!==recordImportSequence)return;
     validateRecordImport(record);
     if(!img||imageLoading){
       pendingRecordImport={record,filename:file.name||''};
@@ -2089,7 +2125,7 @@ function compareLongitudinal(a,b,confirmed){
 }
 let comparisonInputs=[null,null],comparisonOutput=null,comparisonSeq=[0,0];
 function clearComparison(){comparisonOutput=null;$('lmCompareSave').disabled=true;$('lmCompareResult').textContent='';}
-for(let i=0;i<2;i++)$('lmFile'+i).onchange=async e=>{const file=e.target.files?.[0],seq=++comparisonSeq[i];comparisonInputs[i]=null;clearComparison();$('lmPairConfirmed').checked=false;if(!file)return;try{const r=JSON.parse(await file.text());if(seq!==comparisonSeq[i])return;validateRecordImport(r);comparisonInputs[i]=longitudinalSnapshot(r);$('lmFileStatus'+i).textContent='読込済：'+(comparisonInputs[i].date||'撮影日なし');}catch(err){$('lmFileStatus'+i).textContent=err.message;}};
+for(let i=0;i<2;i++)$('lmFile'+i).onchange=async e=>{const file=e.target.files?.[0],seq=++comparisonSeq[i];comparisonInputs[i]=null;clearComparison();$('lmPairConfirmed').checked=false;if(!file)return;try{const r=parseRecordText(await file.text());if(seq!==comparisonSeq[i])return;validateRecordImport(r);comparisonInputs[i]=longitudinalSnapshot(r);$('lmFileStatus'+i).textContent='読込済：'+(comparisonInputs[i].date||'撮影日なし');}catch(err){$('lmFileStatus'+i).textContent=err.message;}};
 $('lmPairConfirmed').onchange=clearComparison;
 $('lmCompare').onclick=()=>{clearComparison();try{if(comparisonInputs.some(x=>!x))throw Error('2つの保存JSONを選択してください');comparisonOutput=compareLongitudinal(...comparisonInputs,$('lmPairConfirmed').checked);const r=comparisonOutput,fmt=(v,u)=>v==null?'未計測':v.toFixed(2)+u;$('lmCompareResult').textContent='肩法：'+fmt(r.shoulder_subsidence_mm,' mm')+' ／ 先端法：'+fmt(r.tip_subsidence_mm,' mm')+' ／ 角度変化：'+(r.varus_change_deg==null?'未計測':Math.abs(r.varus_change_deg).toFixed(2)+'° '+(r.varus_change_deg>0?'内反方向':r.varus_change_deg<0?'外反方向':'変化なし'));$('lmCompareSave').disabled=false;}catch(err){$('lmCompareResult').textContent=err.message;}};
 $('lmCompareSave').onclick=()=>{if(comparisonOutput)downloadBlob(JSON.stringify(comparisonOutput,null,2),'application/json','FMA_longitudinal_comparison.json');};
@@ -2347,4 +2383,312 @@ draw=function(){drawBeforeGruen();
   for(const [z,t,s] of [[1,mid(lv.shoulder,lv.third1),W],[2,mid(lv.third1,lv.third2),W],[3,mid(lv.third2,lv.tip),W],[4,mid(lv.tip,lv.zone4End),0],[5,mid(lv.third2,lv.tip),-W],[6,mid(lv.third1,lv.third2),-W],[7,mid(p.medialTopMm,lv.third1),-W]]){const q=at(t,s);ctx.fillText(String(z),q.x,q.y);}
   ctx.restore();};
 // END GRUEN ZONES APP
+// BEGIN GENERATED RESEARCH PROFILE (lib/research-profile.js)
+/* Research output candidate. Pure geometry and local export; no patient data/network. */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.FmaResearch = factory();
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+  const VERSION = '1.0.0-candidate', SCHEMA = 'fma_research_profile_v1';
+  const REGIONS = {PROX:[0,33],MID:[34,66],DIST:[67,100]};
+  const EPS = 1e-7, sides = ['MED','LAT'];
+  const copy = x => JSON.parse(JSON.stringify(x));
+  const finite = Number.isFinite;
+  const point = p => p && finite(p.x) && finite(p.y);
+  const text = x => typeof x === 'string' && x.trim().length > 0;
+  const mean = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
+  function dateOK(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s||'') && !isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0,10)===s; }
+  function validateSettings(s) {
+    if (!s || s.schema!=='fma_research_settings_v1') throw Error('研究設定の形式が不正です');
+    if (s.proximal!=null && !point(s.proximal)) throw Error('近位0%点が不正です');
+    if (!Array.isArray(s.exclusions) || s.exclusions.length>1000) throw Error('欠測区間が不正です');
+    for (const r of s.exclusions) if (!point(r.from) || !point(r.to) || !['ALL',...sides].includes(r.side) || !['ALL','outer','inner','stem'].includes(r.boundary||'ALL') || !text(r.reason)) throw Error('欠測区間の点・側・理由が不正です');
+    if (!s.fields || typeof s.fields!=='object' || Array.isArray(s.fields) || Object.values(s.fields).some(v=>typeof v!=='string')) throw Error('研究設定の文字列項目が不正です');
+    if (s.confirmation!=null && (!text(s.confirmation.key) || !dateOK(s.confirmation.date))) throw Error('研究設定の確認記録が不正です');
+    return true;
+  }
+  function validate(input, requireReview=true) {
+    if (!input || input.direction!=='AP') throw Error('軸位の計測規約は未確定です。研究出力はAPのみ対応します');
+    if (!['R','L'].includes(input.side)) throw Error('左右が未設定です');
+    const a=input.axis,g=a?.geometry;
+    if (a?.status!=='ok' || a.quality_status!=='confirmed' || a.lt_confirmed!==true || !text(a.method) || !text(a.version)) throw Error('骨軸・LTを確認してください');
+    if (!point(g?.lt) || ![g.vx,g.vy,g.mmPerPx].every(finite) || g.mmPerPx<=0 || Math.abs(Math.hypot(g.vx,g.vy)-1)>1e-6) throw Error('骨軸または校正が不正です');
+    if (a.levels?.proximalMm!==10 || ![80,90,100].includes(a.levels?.distalMm)) throw Error('AP骨軸の高さが不正です');
+    if (!point(input.range?.proximal) || !point(input.range?.tip)) throw Error('近位0%点とステム先端を指定してください');
+    if (requireReview && input.reviewed!==true) throw Error('区間・輪郭・欠測範囲を確認してください');
+    if (!input.contours || typeof input.contours!=='object') throw Error('輪郭がありません');
+    for (const s of sides) for (const key of ['outer','inner','stem']) {
+      const p=input.contours[s]?.[key];
+      if (!Array.isArray(p) || !p.every(point)) throw Error('輪郭座標が不正です: '+s+'/'+key);
+    }
+    if (!Array.isArray(input.exclusions)) throw Error('欠測区間が不正です');
+    for (const r of input.exclusions) if (![r.from_mm,r.to_mm].every(finite) || r.from_mm>r.to_mm || !['ALL',...sides].includes(r.side) || !['ALL','outer','inner','stem'].includes(r.boundary||'ALL') || !text(r.reason)) throw Error('欠測区間が不正です');
+    const start=boneMm(input,input.range.proximal),end=boneMm(input,input.range.tip);
+    if (!finite(start)||!finite(end)||!finite(end-start)||end-start<=EPS) throw Error('近位点から先端への区間が不正です');
+    if(input.calibration && (!finite(input.calibration.known_mm)||input.calibration.known_mm<=0||!finite(input.calibration.mm_per_px)||Math.abs(input.calibration.mm_per_px-g.mmPerPx)>1e-10)) throw Error('骨軸と校正の尺度が一致しません');
+    return {start,end};
+  }
+  function boneMm(input,p) { const g=input.axis.geometry; return ((p.x-g.lt.x)*g.vx+(p.y-g.lt.y)*g.vy)*g.mmPerPx; }
+  function frame(input,p) {
+    const g=input.axis.geometry, sign=input.side==='R'?1:-1;
+    return {t:boneMm(input,p),s:((p.x-g.lt.x)*(-g.vy)+(p.y-g.lt.y)*g.vx)*g.mmPerPx*sign};
+  }
+  function crossing(input,path,level) {
+    const hits=[];
+    for (let i=1;i<path.length;i++) {
+      const a=frame(input,path[i-1]),b=frame(input,path[i]),da=a.t-level,db=b.t-level;
+      if(![a.t,a.s,b.t,b.s,da,db].every(finite))return {value:null,point:null,reason:'numerical_input_failure'};
+      if (Math.abs(da)<EPS && Math.abs(db)<EPS) {
+        if (Math.abs(a.s-b.s)>EPS) return {value:null,point:null,reason:'collinear_boundary'};
+        if (!hits.some(x=>Math.abs(x.value-a.s)<EPS)) hits.push({value:a.s,point:copy(path[i-1])});
+        continue;
+      }
+      if ((da>EPS&&db>EPS)||(da< -EPS&&db< -EPS)) continue;
+      const den=da-db;if (Math.abs(den)<Number.EPSILON) continue;
+      const u=da/den;if(u< -EPS||u>1+EPS)continue;
+      const f=Math.max(0,Math.min(1,u)),v=a.s+(b.s-a.s)*f;
+      const p={x:path[i-1].x+(path[i].x-path[i-1].x)*f,y:path[i-1].y+(path[i].y-path[i-1].y)*f};
+      if(!hits.some(x=>Math.abs(x.value-v)<EPS))hits.push({value:v,point:p});
+    }
+    return hits.length===1 ? {...hits[0],reason:null} : {value:null,point:null,reason:hits.length?'multiple_crossings':'no_crossing'};
+  }
+  function sampleAt(input,level,pct) {
+    const hit={},reasons={},values={},warnings=[];
+    for (const side of sides) {
+      hit[side]={};
+      const ex=input.exclusions.filter(r=>(r.side===side||r.side==='ALL')&&level>=r.from_mm-EPS&&level<=r.to_mm+EPS);
+      for (const key of ['outer','inner','stem']) {
+        const missing=ex.filter(x=>!x.boundary||x.boundary==='ALL'||x.boundary===key);
+        hit[side][key]=missing.length ? {value:null,point:null,reason:'excluded:'+missing.map(x=>x.reason).join('|')} : crossing(input,input.contours[side][key],level);
+      }
+      const o=hit[side].outer,i=hit[side].inner,s=hit[side].stem,sgn=side==='MED'?-1:1;
+      const ct=(o.value-i.value)*sgn,gap=(i.value-s.value)*sgn;
+      const r=o.reason||i.reason||(ct< -EPS?'outer_inner_order':null);
+      values[side+'_cortex_mm']=r?null:Math.max(0,ct); reasons[side+'_cortex_mm']=r;
+      reasons[side+'_gap_mm']=i.reason||s.reason;
+      values[side+'_gap_mm']=reasons[side+'_gap_mm']?null:gap;
+      if(!reasons[side+'_gap_mm']&&gap< -EPS)warnings.push(side+'_stem_outside_endosteal_boundary');
+    }
+    for (const [name,key]of [['canal_width_mm','inner'],['outer_width_mm','outer'],['stem_width_mm','stem']]) {
+      const a=hit.MED[key],b=hit.LAT[key],w=b.value-a.value;
+      const bad=key==='stem'?w< -EPS:w<=EPS;
+      reasons[name]=a.reason||b.reason||(bad?'medial_lateral_order_or_zero_width':null);
+      values[name]=reasons[name]?null:Math.max(0,w);
+    }
+    reasons.cfr_pct=reasons.canal_width_mm||reasons.stem_width_mm;
+    values.cfr_pct=reasons.cfr_pct?null:100*values.stem_width_mm/values.canal_width_mm;
+    if(!reasons.cfr_pct&&!finite(values.cfr_pct)){values.cfr_pct=null;reasons.cfr_pct='numerical_ratio_failure';}
+    reasons.cti=reasons.outer_width_mm||reasons.canal_width_mm||reasons.MED_cortex_mm||reasons.LAT_cortex_mm;
+    values.cti=reasons.cti?null:(values.outer_width_mm-values.canal_width_mm)/values.outer_width_mm;
+    const g=input.axis.geometry;
+    return {s_pct:pct,bone_mm:level,axis_point_px:{x:g.lt.x+g.vx*level/g.mmPerPx,y:g.lt.y+g.vy*level/g.mmPerPx},...values,missing_reasons:reasons,warnings,intersections:hit};
+  }
+  function summarize(samples,key,side,region,code,unit) {
+    const [a,b]=REGIONS[region],rows=samples.filter(x=>x.s_pct>=a&&x.s_pct<=b),n=b-a+1;
+    const valid=rows.filter(x=>finite(x[key])),needed=Math.ceil(n*.9),ok=valid.length>=needed;
+    return {code,side,region,unit,value:ok?mean(valid.map(x=>x[key])):null,valid_n:valid.length,expected_n:n,coverage:valid.length/n,complete:valid.length===n,status:ok?'SINGLE_OK':'UNMEASURABLE',reason:ok?null:'coverage_below_90_percent'};
+  }
+  function profile(input) {
+    const {start,end}=validate(input),samples=Array.from({length:101},(_,i)=>sampleAt(input,start+(end-start)*i/100,i)),summaries=[];
+    for(const region of Object.keys(REGIONS))summaries.push(summarize(samples,'cfr_pct','ALL',region,'cfr_mean','%'));
+    const p=summaries[0],d=summaries[2],ok=p.value!==null&&d.value!==null;
+    summaries.push({code:'cfr_dist_minus_prox',side:'ALL',region:'ALL',unit:'pp',value:ok?d.value-p.value:null,valid_n:p.valid_n+d.valid_n,expected_n:68,coverage:(p.valid_n+d.valid_n)/68,complete:p.complete&&d.complete,status:ok?'SINGLE_OK':'UNMEASURABLE',reason:ok?null:'proximal_or_distal_coverage_below_90_percent'});
+    for(const side of sides)for(const region of Object.keys(REGIONS))summaries.push(summarize(samples,side+'_cortex_mm',side,region,'cortex_mean_mm','mm'));
+    return {schema:SCHEMA,version:VERSION,accuracy_validated:false,direction:'AP',sampling_step_pct:1,point_count:101,range_mm:{start,end},units:{cfr:'%',cortex:'mm',gap:'mm',cti:'ratio',bone_position:'mm'},input:copy(input),samples,summaries};
+  }
+  function identityErrors(m) {
+    const errors=[];
+    for(const k of ['record_id','research_id','surgery_key','image_id','observer_id','boundary_rule_version','source_image_ref','annotation_ref','output_ref'])if(!text(m?.[k]))errors.push(k);
+    if(!Number.isInteger(m?.repeat_index)||m.repeat_index<1)errors.push('repeat_index');
+    if(!['EARLY','M3','M12'].includes(m?.timepoint))errors.push('timepoint');
+    if(!dateOK(m?.acquisition_date))errors.push('acquisition_date');
+    if(!dateOK(m?.confirmed_date))errors.push('confirmed_date');
+    if(dateOK(m?.acquisition_date)&&dateOK(m?.confirmed_date)&&m.confirmed_date<m.acquisition_date)errors.push('confirmed_date_before_image');
+    return errors;
+  }
+  function current(p) {
+    if(p?.schema!==SCHEMA||p.version!==VERSION)throw Error('同じ研究計算版のJSONを選択してください');
+    // Recompute from stored geometry; never trust editable stored summaries.
+    const r=profile(p.input),errors=identityErrors(r.input.metadata);
+    if(errors.length)throw Error('記録情報が不足または不正です: '+errors.join(', '));
+    return r;
+  }
+  function compare(baseline,followup,options) {
+    const a=current(baseline),b=current(followup),x=a.input.metadata,y=b.input.metadata;
+    if(options?.pairConfirmed!==true)throw Error('同じ骨位置・左右・撮影肢位・比較可能範囲を確認してください');
+    if(x.record_id===y.record_id || x.research_id!==y.research_id||x.surgery_key!==y.surgery_key||a.input.side!==b.input.side)throw Error('研究ID・手術キー・左右・記録IDを確認してください');
+    if(x.timepoint!=='EARLY'||y.timepoint!=='M12'||y.acquisition_date<=x.acquisition_date)throw Error('早期APと後日の12か月APを指定してください');
+    const aa=a.input.axis,bb=b.input.axis;
+    if(aa.method!==bb.method||aa.version!==bb.version||aa.levels.proximalMm!==bb.levels.proximalMm||aa.levels.distalMm!==bb.levels.distalMm||x.boundary_rule_version!==y.boundary_rule_version)throw Error('骨軸の方式・版・高さまたは境界規約版が一致しません');
+    const samples=a.samples.map(s=>{
+      const t=sampleAt(b.input,s.bone_mm,s.s_pct),out={s_pct:s.s_pct,bone_mm:s.bone_mm,baseline:s,followup:t,missing_reasons:{}};
+      for(const side of sides){const key=side+'_cortex_mm',r=s.missing_reasons[key]||t.missing_reasons[key];out[side+'_delta_mm']=r?null:t[key]-s[key];out.missing_reasons[side+'_delta_mm']=r;}
+      return out;
+    }),summaries=[];
+    for(const side of sides)for(const region of Object.keys(REGIONS)){
+      const s=summarize(samples,side+'_delta_mm',side,region,'cortex_delta_mm','mm');if(s.status==='SINGLE_OK')s.status='LONG_OK';summaries.push(s);
+      const [lo,hi]=REGIONS[region],paired=samples.filter(r=>r.s_pct>=lo&&r.s_pct<=hi&&finite(r[side+'_delta_mm']));
+      const base=mean(paired.map(r=>r.baseline[side+'_cortex_mm'])),follow=mean(paired.map(r=>r.followup[side+'_cortex_mm']));
+      const ok=s.value!==null&&options.relativeBaselineConfirmed===true&&base>0;
+      summaries.push({...s,code:'cortex_delta_pct',unit:'%',value:ok?100*(follow-base)/base:null,status:ok?'LONG_OK':'UNMEASURABLE',reason:ok?null:s.reason||(options.relativeBaselineConfirmed!==true?'baseline_relative_change_not_confirmed':'baseline_not_positive'),paired_baseline_mean_mm:base,paired_followup_mean_mm:follow});
+    }
+    return {schema:'fma_research_cortex_pair_v1',version:VERSION,accuracy_validated:false,reference:'baseline_LT_bone_mm',pair_confirmed:true,relative_baseline_confirmed:options.relativeBaselineConfirmed===true,baseline:a,followup:b,samples,summaries};
+  }
+  const IMAGE_HEADERS=['計測記録ID','研究ID','手術キー','画像ID','方向','時点','撮影日','画像状態','原画像参照','注釈・確定輪郭参照','FMA出力参照','計算版','境界規約版','AI初期候補版','測定者','確定日','反復番号','採用状態','確認事項'];
+  const METRIC_HEADERS=['指標記録ID','研究ID','手術キー','基準計測記録ID','追跡計測記録ID','方向','指標コード','側','区間','数値','判定','単位','評価状態','有効点数','規定点数','被覆率','理由','出力参照','計算版','反復番号','採用状態','確認日','骨軸区分'];
+  function imageRow(p) {
+    const m=p.input.metadata;
+    return [m.record_id,m.research_id,m.surgery_key,m.image_id,'AP',m.timepoint,m.acquisition_date,'PRESENT',m.source_image_ref,m.annotation_ref,m.output_ref,VERSION,m.boundary_rule_version,m.ai_model_version||'UNKNOWN',m.observer_id,m.confirmed_date,m.repeat_index,'PENDING','研究出力候補・画像採用と臨床精度は別途確認'];
+  }
+  function metricRows(summaries,a,b,ref) {
+    const m=a.input.metadata,n=b?.input.metadata;
+    if(n&&m.repeat_index!==n.repeat_index)throw Error('ペアの反復番号が一致しません');
+    return summaries.map(s=>[[m.record_id,n?.record_id||'single',s.code,s.side,s.region].map(encodeURIComponent).join('__'),m.research_id,m.surgery_key,m.record_id,n?.record_id||'','AP',s.code,s.side,s.region,s.value??'', '',s.unit,s.status,s.valid_n,s.expected_n,s.coverage,s.reason||'',ref,VERSION,m.repeat_index,'PENDING',n?.confirmed_date||m.confirmed_date,'AP_10_'+a.input.axis.levels.distalMm]);
+  }
+  function registry(p,options={}) {
+    if(p?.schema==='fma_research_cortex_pair_v1'){
+      const r=compare(p.baseline,p.followup,{pairConfirmed:p.pair_confirmed,relativeBaselineConfirmed:p.relative_baseline_confirmed});
+      if(!text(options.outputRef))throw Error('経時比較出力の保存先参照が必要です');
+      return {images:[IMAGE_HEADERS,imageRow(r.baseline),imageRow(r.followup)],metrics:[METRIC_HEADERS,...metricRows(r.summaries,r.baseline,r.followup,options.outputRef)]};
+    }
+    const r=current(p);
+    return {images:[IMAGE_HEADERS,imageRow(r)],metrics:[METRIC_HEADERS,...metricRows(r.summaries,r,null,r.input.metadata.output_ref)]};
+  }
+  function csv(rows) {
+    // All strings are literal; prevent spreadsheet formula interpretation. Numeric values stay numeric.
+    const cell=v=>{let s=v==null?'':String(v);if(typeof v==='string'&&/^[\s]*[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
+    return '\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n');
+  }
+  function profileCsv(p) {
+    const r=current(p),m=r.input.metadata;
+    const heads=['record_id','research_id','surgery_key','image_id','direction','timepoint','acquisition_date','side','calculation_version','s_pct','bone_mm','cfr_pct','MED_cortex_mm','LAT_cortex_mm','MED_gap_mm','LAT_gap_mm','outer_width_mm','canal_width_mm','stem_width_mm','cti_ratio','missing_reasons_json','warnings_json'];
+    return csv([heads,...r.samples.map(s=>[m.record_id,m.research_id,m.surgery_key,m.image_id,'AP',m.timepoint,m.acquisition_date,r.input.side,VERSION,s.s_pct,s.bone_mm,s.cfr_pct,s.MED_cortex_mm,s.LAT_cortex_mm,s.MED_gap_mm,s.LAT_gap_mm,s.outer_width_mm,s.canal_width_mm,s.stem_width_mm,s.cti,JSON.stringify(s.missing_reasons),JSON.stringify(s.warnings)])]);
+  }
+  return {version:VERSION,schema:SCHEMA,regions:REGIONS,validate,validateSettings,boneMm,sampleAt,profile,compare,registry,csv,profileCsv,identityErrors,dateOK};
+}));
+// END GENERATED RESEARCH PROFILE
+// BEGIN RESEARCH UI (lib/research-ui.js)
+// Browser adapter for the existing FMA app. Inlined after lib/research-profile.js.
+const rpFieldIds=['rpDirection','rpTimepoint','rpSurgery','rpRule','rpSource','rpStorage'];
+let rpMode=null,rpGapStart=null,rpResult=null,rpResultKey=null,rpPairInputs=[null,null],rpPairSequence=[0,0],rpPairResult=null;
+function rpSettings(create=true){
+  if(!annotation.research_settings&&create)annotation.research_settings={schema:'fma_research_settings_v1',proximal:null,exclusions:[],fields:{rpDirection:'AP',rpTimepoint:'',rpSurgery:'',rpRule:'',rpSource:'',rpStorage:''},confirmation:null};
+  return annotation.research_settings;
+}
+function rpDate(){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Tokyo'}).format(new Date());}
+function rpInput(){
+  const s=rpSettings(false);if(!s)throw Error('研究用の近位0%点を指定してください');
+  if($('imageType').value!=='postop_THA')throw Error('術後AP画像を指定してください');
+  if(!img||imageLoading||imageLoadFailed)throw Error('元画像の読込完了を待ってください');
+  const a=axisMetadata().femoral;if(!measurementGeometry())throw Error('骨軸・LTを確認してください');
+  const dir=s.fields.rpDirection||'AP',tip=annotation.longitudinal_landmarks?.points?.stem_tip;
+  const identity=measurementIdentity(),fields=s.fields;
+  const contours={};
+  for(const [side,suffix]of [['MED','medial'],['LAT','lateral']])contours[side]={outer:getRenderedContour('femur_'+suffix),inner:getRenderedContour('canal_'+suffix),stem:getRenderedContour('stem_'+suffix)};
+  const input={direction:dir,side:$('side').value,reviewed:false,axis:a,calibration:{known_mm:positiveValue('headSize'),mm_per_px:calibrationScale(),method:$('calMode').value},image_size_px:{width:cv.width,height:cv.height},range:{proximal:s.proximal,tip},contours,exclusions:[],
+    metadata:{record_id:null,research_id:identity.research_id,surgery_key:fields.rpSurgery||'',image_id:identity.image_id,observer_id:identity.observer_id,repeat_index:identity.repeat_index,boundary_rule_version:fields.rpRule||'',timepoint:fields.rpTimepoint||'',acquisition_date:annotation.longitudinal_landmarks?.acquisition_date||'',confirmed_date:s.confirmation?.date||'',source_image_ref:fields.rpSource||'',annotation_ref:null,output_ref:null,ai_model_version:aiLoaded?(aiProvenanceKnown?$('modelVersion').value||'UNKNOWN':'UNKNOWN'):'NOT_APPLICABLE'}};
+  input.exclusions=s.exclusions.map(r=>{const x=FmaResearch.boneMm(input,r.from),y=FmaResearch.boneMm(input,r.to);return {from_mm:Math.min(x,y),to_mm:Math.max(x,y),side:r.side,boundary:r.boundary||'ALL',reason:r.reason};});
+  input.reviewed=s.confirmation?.key===rpSignature(input);
+  return input;
+}
+function rpSignature(input){
+  const m={...input.metadata};delete m.record_id;delete m.output_ref;delete m.annotation_ref;delete m.confirmed_date;
+  return JSON.stringify([FmaResearch.version,input.direction,input.side,input.axis.method,input.axis.version,input.axis.levels,input.axis.geometry,input.calibration,input.range,input.contours,input.exclusions,m,positiveValue('headSize'),cv.width,cv.height,window._fmaFile?.name||'',window._fmaFile?.size??null]);
+}
+function rpRender(){
+  const s=rpSettings(false);for(const id of rpFieldIds)if(document.activeElement!==$(id))$(id).value=s?.fields?.[id]||(id==='rpDirection'?'AP':'');
+  $('rpMarkStatus').textContent=rpMode==='proximal'?'次：髄腔幅を定義できる最も近位の高さをクリック':rpMode==='gap'?(rpGapStart?'次：欠測区間のもう一方の端をクリック':'次：欠測区間の一方の端をクリック'):(s?.proximal?'近位点 指定済':'近位点 未指定')+' ／ 欠測区間 '+(s?.exclusions?.length||0);
+  if(!s){rpResult=null;rpResultKey=null;$('rpStatus').textContent='研究出力は未設定です。';$('rpSave').disabled=true;$('rpSummary').textContent='';return;}
+  try{
+    const input=rpInput(),key=rpSignature(input);
+    if(!input.reviewed){rpResult=null;rpResultKey=null;$('rpStatus').textContent='区間・全輪郭・欠測範囲を確認してください。';$('rpSave').disabled=true;$('rpSummary').textContent='';return;}
+    if(key!==rpResultKey){rpResult=FmaResearch.profile(input);rpResultKey=key;}
+    $('rpStatus').textContent='101点・1%刻み／CFRは%／被覆率90%以上の区間を要約。';
+    const required=FmaResearch.identityErrors({...input.metadata,record_id:'preview',annotation_ref:'preview',output_ref:'preview'});
+    if(!s.fields.rpStorage)required.push('保存先の参照');
+    $('rpSave').disabled=required.length>0;
+    $('rpSummary').textContent=rpResult.summaries.map(x=>`${x.code} ${x.side} ${x.region}: ${x.value===null?'欠測':x.value.toFixed(3)+' '+x.unit} (${x.valid_n}/${x.expected_n})`).join('\n')+(required.length?'\n保存に必要な項目：'+required.join('、'):'');
+  }catch(err){rpResult=null;rpResultKey=null;$('rpStatus').textContent=err.message;$('rpSummary').textContent='';$('rpSave').disabled=true;}
+}
+function rpCancel(){rpMode=null;rpGapStart=null;rpRender();}
+function rpStart(mode){if(!img||imageLoading||imageLoadFailed){alert('元画像を読み込んでください');return;}lmStop();rpSettings();rpMode=mode;rpGapStart=null;drag=null;annotationDrag=null;rpRender();}
+$('rpProximal').onclick=()=>rpStart('proximal');
+$('rpGap').onclick=()=>rpStart('gap');
+$('rpCancel').onclick=rpCancel;
+$('rpUndoGap').onclick=()=>{const s=rpSettings();s.exclusions.pop();s.confirmation=null;draw();saveWork();};
+$('rpConfirm').onclick=()=>{
+  try{const input=rpInput();FmaResearch.validate(input,false);const s=rpSettings();s.confirmation={key:rpSignature(input),date:rpDate()};rpResultKey=null;draw();saveWork();}
+  catch(err){$('rpStatus').textContent=err.message;}
+};
+for(const id of rpFieldIds)$(id).onchange=()=>{const s=rpSettings();s.fields[id]=$(id).value;s.confirmation=null;rpResultKey=null;rpRender();saveWork();};
+for(const id of ['studyId','imageId','observerId','repeatIndex','side','imageType','modelVersion','headSize','calMode','scale','lmDate'])$(id).addEventListener('change',rpRender);
+cv.addEventListener('pointerdown',e=>{
+  if(!rpMode||e.button===1||e.altKey)return;e.stopImmediatePropagation();e.preventDefault();
+  if(e.button!==0||!img||imageLoading||imageLoadFailed)return;
+  const p=pos(e);if(p.x<0||p.y<0||p.x>cv.width||p.y>cv.height)return;
+  const s=rpSettings();
+  if(rpMode==='proximal'){s.proximal={x:p.x,y:p.y};rpMode=null;}
+  else if(!rpGapStart)rpGapStart={x:p.x,y:p.y};
+  else{const reason=$('rpGapReason').value.trim();if(!reason){$('rpStatus').textContent='欠測理由を記入してください';return;}s.exclusions.push({from:rpGapStart,to:{x:p.x,y:p.y},side:$('rpGapSide').value,boundary:$('rpGapBoundary').value||'ALL',reason});rpMode=null;rpGapStart=null;}
+  s.confirmation=null;rpResultKey=null;draw();saveWork();
+},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')rpCancel();});
+document.addEventListener('click',e=>{if(rpMode&&e.target!==cv&&!e.target.closest('#rpPanel'))rpCancel();},true);
+const rpDrawBefore=draw;
+draw=function(){rpDrawBefore();rpRender();const s=rpSettings(false);if(!img||!s?.proximal)return;
+  const g=femoralPreviewGeometry();if(!g)return;ctx.save();ctx.setTransform(zoom,0,0,zoom,panX,panY);ctx.strokeStyle='#fb7185';ctx.fillStyle='#fb7185';ctx.lineWidth=2/zoom;
+  for(const [label,p]of [['0%',s.proximal],['100%',annotation.longitudinal_landmarks?.points?.stem_tip]])if(p){ctx.beginPath();ctx.moveTo(p.x-g.vy*50,p.y+g.vx*50);ctx.lineTo(p.x+g.vy*50,p.y-g.vx*50);ctx.stroke();ctx.font=(14/zoom)+'px sans-serif';ctx.fillText(label,p.x+8/zoom,p.y-8/zoom);}
+  for(const r of s.exclusions){ctx.beginPath();ctx.moveTo(r.from.x,r.from.y);ctx.lineTo(r.to.x,r.to.y);ctx.stroke();ctx.fillText('欠測 '+r.side,r.from.x+8/zoom,r.from.y);}
+  ctx.restore();
+};
+const rpRestoreBefore=restoreWorkData;
+restoreWorkData=function(data){rpMode=null;rpGapStart=null;rpResult=null;rpResultKey=null;rpRestoreBefore(data);rpRender();};
+const rpImageChangeBefore=$('file').onchange;
+$('file').onchange=function(e){rpMode=null;rpGapStart=null;rpResult=null;rpResultKey=null;return rpImageChangeBefore(e);};
+const rpRecordBefore=buildDataDictionaryV11Record;
+buildDataDictionaryV11Record=function(){
+  const r=rpRecordBefore();if(!rpSettings(false))return r;
+  try{r.research_profile=FmaResearch.profile(rpInput());r.research_profile_status='candidate_without_registry_export_identity';}
+  catch(err){r.research_profile=null;r.research_profile_status='review_required';r.research_profile_reason=err.message;}
+  return r;
+};
+function rpRef(storage,file){return storage+' :: '+file;}
+function rpExportFiles(){
+  const input=rpInput(),s=rpSettings(false);if(!input.reviewed)throw Error('区間・輪郭の確認が必要です');
+  if(!textStorage(s.fields.rpStorage))throw Error('保存先の参照を入力してください');
+  const id='rp_'+crypto.randomUUID(),name='FMA_'+id+'_research.json',storage=s.fields.rpStorage;
+  input.metadata={...input.metadata,record_id:id,output_ref:rpRef(storage,name),annotation_ref:rpRef(storage,name)+'#raw_annotations'};
+  const p=FmaResearch.profile(input),registry=FmaResearch.registry(p),record=rpRecordBefore();
+  record.research_profile=p;record.research_profile_status='candidate_registry_export';record.provenance_and_split.record_key=id;record.raw_annotations.record_key=id;
+  // Preserve the exact calibrated scale in this new export, not the legacy six-decimal display rounding.
+  record.calibration_metrics.calibrated_mm_per_px=input.axis.geometry.mmPerPx;
+  record.raw_annotations.calibration.mm_per_px=input.axis.geometry.mmPerPx;
+  record.registry_export={schema:'fma_registry_rows_v1',value_input_option:'RAW',...registry};
+  return [[name,JSON.stringify(record,null,2),'application/json'],['FMA_'+id+'_profile101.csv',FmaResearch.profileCsv(p),'text/csv;charset=utf-8'],['FMA_'+id+'_FMA_images.csv',FmaResearch.csv(registry.images),'text/csv;charset=utf-8'],['FMA_'+id+'_FMA_metrics.csv',FmaResearch.csv(registry.metrics),'text/csv;charset=utf-8']];
+}
+function textStorage(v){return typeof v==='string'&&v.trim().length>0;}
+$('rpSave').onclick=()=>{try{const files=rpExportFiles();for(const [name,data,type]of files)downloadBlob(data,type,name);$('rpStatus').textContent='研究JSON・101点CSV・画像台帳CSV・指標台帳CSVを出力しました。採用状態はPENDINGです。';}catch(err){$('rpStatus').textContent=err.message;}};
+function rpClearPair(){rpPairResult=null;$('rpPairSave').disabled=true;$('rpPairSummary').textContent='';}
+for(let n=0;n<2;n++)$('rpPairFile'+n).onchange=async e=>{
+  const file=e.target.files?.[0],seq=++rpPairSequence[n];e.target.value='';rpPairInputs[n]=null;rpClearPair();$('rpPairConfirm').checked=false;$('rpPairRelative').checked=false;
+  if(!file){$('rpPairStatus'+n).textContent='未選択';return;}
+  try{const r=JSON.parse(await file.text());if(seq!==rpPairSequence[n])return;const p=r.research_profile||r;FmaResearch.registry(p);rpPairInputs[n]=p;$('rpPairStatus'+n).textContent='読込済：'+p.input.metadata.acquisition_date;}
+  catch(err){if(seq!==rpPairSequence[n])return;$('rpPairStatus'+n).textContent='読込不可：'+err.message;}
+};
+$('rpPairConfirm').onchange=rpClearPair;$('rpPairRelative').onchange=rpClearPair;
+$('rpPairCompute').onclick=()=>{
+  rpClearPair();try{if(rpPairInputs.some(x=>!x))throw Error('早期・12か月の研究JSONを選んでください');rpPairResult=FmaResearch.compare(...rpPairInputs,{pairConfirmed:$('rpPairConfirm').checked,relativeBaselineConfirmed:$('rpPairRelative').checked});
+    $('rpPairSummary').textContent=rpPairResult.summaries.map(s=>s.code+' '+s.side+' '+s.region+': '+(s.value===null?'欠測':s.value.toFixed(3)+' '+s.unit)+' ('+s.valid_n+'/'+s.expected_n+')').join('\n');$('rpPairSave').disabled=false;}
+  catch(err){$('rpPairSummary').textContent=err.message;}
+};
+function rpPairExportFiles(){
+  if(!rpPairResult||!$('rpPairConfirm').checked)throw Error('比較可能性を確認して再計算してください');
+  const storage=$('rpPairStorage').value;if(!textStorage(storage))throw Error('経時比較の保存先参照を入力してください');
+  const name='FMA_cortex_pair_'+crypto.randomUUID()+'.json',ref=rpRef(storage,name),r=FmaResearch.registry(rpPairResult,{outputRef:ref});
+  return [[name,JSON.stringify({...rpPairResult,output_ref:ref,registry_export:{schema:'fma_registry_rows_v1',value_input_option:'RAW',...r}},null,2),'application/json'],[name.replace('.json','_FMA_images.csv'),FmaResearch.csv(r.images),'text/csv;charset=utf-8'],[name.replace('.json','_FMA_metrics.csv'),FmaResearch.csv(r.metrics),'text/csv;charset=utf-8']];
+}
+$('rpPairSave').onclick=()=>{try{for(const [name,data,type]of rpPairExportFiles())downloadBlob(data,type,name);}catch(err){$('rpPairSummary').textContent=err.message;}};
+rpRender();
+// END RESEARCH UI
 </script></body></html>
