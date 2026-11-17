@@ -484,7 +484,7 @@ test('added displayed ratios remain missing until LT confirmation and on missing
 
 test('build display and saved provenance distinguish exact commit, local build and reference documents',()=>{
   const h=harness(),r=h.json('buildDataDictionaryV11Record()'),a=h.json('annotationPayload()');
-  assert.equal(r.provenance_and_split.algorithm_git_hash,null);assert.equal(r.provenance_and_split.build_id,'axis-split-import-save-v1');
+  assert.equal(r.provenance_and_split.algorithm_git_hash,null);assert.equal(r.provenance_and_split.build_id,'axis-split-research-profile-101-v1');
   assert.equal(a.build_id,r.provenance_and_split.build_id);assert.deepEqual(a.version_context,r.provenance_and_split.version_context);
   assert.equal(a.version_context.whole_rule_conformance,'not_verified');assert.equal(a.version_context.reference_documents.annotation_rule,'v1.1');
   assert.equal(r.provenance_and_split.annotation_rule_ver,'v1.0'); // Historical field retained; no silent compliance promotion.
