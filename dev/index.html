@@ -164,7 +164,8 @@ Key Rules for AI Assistants modifying this file:
 </div><p class="small">研究ID・画像ID・測定者・反復番号は上部の入力、撮影日は「沈下・角度」欄の日付を共用します。研究出力は計測記録ごとに新しいIDを付けます。</p>
 <div class="grid"><button id="rpProximal">近位0%点を指定</button><button id="rpCancel">点の指定を終了</button></div>
 <div class="grid"><label>欠測の側<select id="rpGapSide"><option value="ALL">両側</option><option value="MED">内側</option><option value="LAT">外側</option></select></label><label>読めない境界<select id="rpGapBoundary"><option value="ALL">すべて</option><option value="outer">外皮質</option><option value="inner">皮質内縁</option><option value="stem">ステム</option></select></label><label>欠測理由<input id="rpGapReason" placeholder="例：皮質境界を判読できない"></label><button id="rpGap">欠測区間の両端を指定</button><button id="rpUndoGap">最後の欠測区間を戻す</button></div>
-<p class="small" id="rpMarkStatus"></p><div class="grid"><button id="rpConfirm" class="primary">区間・全輪郭・欠測範囲を確認</button><button id="rpSave" disabled>研究JSON・CSVを保存</button></div>
+<p class="small" id="rpMarkStatus"></p><div class="grid"><button id="rpConfirm" class="primary">区間・全輪郭・欠測範囲を確認</button><button id="rpSave" disabled>研究JSON・CSV・注釈PNGを作成</button></div>
+<div id="rpDownloads" class="small" style="overflow-wrap:anywhere"></div>
 <p id="rpStatus"></p><pre id="rpSummary" style="white-space:pre-wrap;font-size:.8rem"></pre>
 <p class="small">CFRは%、内外側の皮質厚はmm。区間平均は近位31/34点・中央30/33点・遠位31/34点以上が有効な場合に出力します。台帳CSVの採用状態はPENDINGです。技術確認用の候補版で、臨床精度の検証は別途必要です。</p>
 </div>
@@ -173,7 +174,7 @@ Key Rules for AI Assistants modifying this file:
 <label><input type="checkbox" id="rpPairConfirm" style="width:auto">同じ骨位置・左右・撮影肢位・比較可能範囲を確認した</label>
 <label><input type="checkbox" id="rpPairRelative" style="width:auto">増減率も出す：基準皮質厚が信頼できることを確認した</label>
 <label>経時比較の保存先参照<input id="rpPairStorage" placeholder="保存フォルダのパスまたは参照先"></label>
-<div class="grid"><button id="rpPairCompute">皮質厚の変化を計算</button><button id="rpPairSave" disabled>比較JSON・台帳CSVを保存</button></div><pre id="rpPairSummary" style="white-space:pre-wrap;font-size:.8rem"></pre></div>
+<div class="grid"><button id="rpPairCompute">皮質厚の変化を計算</button><button id="rpPairSave" disabled>比較JSON・台帳CSVを作成</button></div><p class="small">作成後、下の3リンクをそれぞれクリックして保存してください。</p><div id="rpPairDownloads" class="small" style="overflow-wrap:anywhere"></div><pre id="rpPairSummary" style="white-space:pre-wrap;font-size:.8rem"></pre></div>
 
 <!-- Fixed Level Table -->
 <div class="card"><table><thead><tr><th>Level (from LT)</th><th>Canal px</th><th>Canal mm</th><th>Outer px</th><th>Outer mm</th><th>Stem manual mm</th><th>Stem AUTO mm</th><th>ΔStem mm</th><th>CTI</th><th>CFR manual</th><th>CFR AUTO</th></tr></thead><tbody id="tbl"></tbody></table></div>
@@ -2572,6 +2573,24 @@ draw=function(){drawBeforeGruen();
 // Browser adapter for the existing FMA app. Inlined after lib/research-profile.js.
 const rpFieldIds=['rpDirection','rpTimepoint','rpSurgery','rpRule','rpSource','rpStorage'];
 let rpMode=null,rpGapStart=null,rpResult=null,rpResultKey=null,rpPairInputs=[null,null],rpPairSequence=[0,0],rpPairResult=null;
+const rpDownloadUrls={};let rpDownloadKey=null;
+function rpClearDownloads(id){
+  for(const url of rpDownloadUrls[id]||[])URL.revokeObjectURL(url);
+  rpDownloadUrls[id]=[];$(id).textContent='';
+}
+function rpShowDownloads(id,files,overlay){
+  rpClearDownloads(id);
+  for(const [name,data,type]of files){
+    const url=URL.createObjectURL(new Blob([data],{type}));rpDownloadUrls[id].push(url);
+    const a=document.createElement('a');a.href=url;a.download=name;a.textContent=name;a.style.display='block';$(id).appendChild(a);
+  }
+  if(overlay){const a=document.createElement('a');a.href=overlay.url;a.download=overlay.name;a.textContent=overlay.name;a.style.display='block';$(id).appendChild(a);}
+}
+function rpOverlayPng(){
+  const view={zoom,panX,panY,target:$('annotationTarget').value};
+  try{zoom=1;panX=0;panY=0;$('annotationTarget').value='head';draw();return cv.toDataURL('image/png');}
+  finally{zoom=view.zoom;panX=view.panX;panY=view.panY;$('annotationTarget').value=view.target;draw();}
+}
 function rpSettings(create=true){
   if(!annotation.research_settings&&create)annotation.research_settings={schema:'fma_research_settings_v1',proximal:null,exclusions:[],fields:{rpDirection:'AP',rpTimepoint:'',rpSurgery:'',rpRule:'',rpSource:'',rpStorage:''},confirmation:null};
   return annotation.research_settings;
@@ -2599,9 +2618,10 @@ function rpSignature(input){
 function rpRender(){
   const s=rpSettings(false);for(const id of rpFieldIds)if(document.activeElement!==$(id))$(id).value=s?.fields?.[id]||(id==='rpDirection'?'AP':'');
   $('rpMarkStatus').textContent=rpMode==='proximal'?'次：髄腔幅を定義できる最も近位の高さをクリック':rpMode==='gap'?(rpGapStart?'次：欠測区間のもう一方の端をクリック':'次：欠測区間の一方の端をクリック'):(s?.proximal?'近位点 指定済':'近位点 未指定')+' ／ 欠測区間 '+(s?.exclusions?.length||0);
-  if(!s){rpResult=null;rpResultKey=null;$('rpStatus').textContent='研究出力は未設定です。';$('rpSave').disabled=true;$('rpSummary').textContent='';return;}
+  if(!s){rpClearDownloads('rpDownloads');rpDownloadKey=null;rpResult=null;rpResultKey=null;$('rpStatus').textContent='研究出力は未設定です。';$('rpSave').disabled=true;$('rpSummary').textContent='';return;}
   try{
     const input=rpInput(),key=rpSignature(input);
+    if(rpDownloadKey&&(!input.reviewed||key!==rpDownloadKey)){rpClearDownloads('rpDownloads');rpDownloadKey=null;}
     if(!input.reviewed){rpResult=null;rpResultKey=null;$('rpStatus').textContent='区間・全輪郭・欠測範囲を確認してください。';$('rpSave').disabled=true;$('rpSummary').textContent='';return;}
     if(key!==rpResultKey){rpResult=FmaResearch.profile(input);rpResultKey=key;}
     $('rpStatus').textContent='101点・1%刻み／CFRは%／被覆率90%以上の区間を要約。';
@@ -2609,7 +2629,7 @@ function rpRender(){
     if(!s.fields.rpStorage)required.push('保存先の参照');
     $('rpSave').disabled=required.length>0;
     $('rpSummary').textContent=rpResult.summaries.map(x=>`${x.code} ${x.side} ${x.region}: ${x.value===null?'欠測':x.value.toFixed(3)+' '+x.unit} (${x.valid_n}/${x.expected_n})`).join('\n')+(required.length?'\n保存に必要な項目：'+required.join('、'):'');
-  }catch(err){rpResult=null;rpResultKey=null;$('rpStatus').textContent=err.message;$('rpSummary').textContent='';$('rpSave').disabled=true;}
+  }catch(err){rpClearDownloads('rpDownloads');rpDownloadKey=null;rpResult=null;rpResultKey=null;$('rpStatus').textContent=err.message;$('rpSummary').textContent='';$('rpSave').disabled=true;}
 }
 function rpCancel(){rpMode=null;rpGapStart=null;rpRender();}
 function rpStart(mode){if(!img||imageLoading||imageLoadFailed){alert('元画像を読み込んでください');return;}lmStop();rpSettings();rpMode=mode;rpGapStart=null;drag=null;annotationDrag=null;rpRender();}
@@ -2665,11 +2685,12 @@ function rpExportFiles(){
   record.calibration_metrics.calibrated_mm_per_px=input.axis.geometry.mmPerPx;
   record.raw_annotations.calibration.mm_per_px=input.axis.geometry.mmPerPx;
   record.registry_export={schema:'fma_registry_rows_v1',value_input_option:'RAW',...registry};
+  record.research_artifacts={annotation_png_ref:rpRef(storage,name.replace('_research.json','_overlay.png'))};
   return [[name,JSON.stringify(record,null,2),'application/json'],['FMA_'+id+'_profile101.csv',FmaResearch.profileCsv(p),'text/csv;charset=utf-8'],['FMA_'+id+'_FMA_images.csv',FmaResearch.csv(registry.images),'text/csv;charset=utf-8'],['FMA_'+id+'_FMA_metrics.csv',FmaResearch.csv(registry.metrics),'text/csv;charset=utf-8']];
 }
 function textStorage(v){return typeof v==='string'&&v.trim().length>0;}
-$('rpSave').onclick=()=>{try{const files=rpExportFiles();for(const [name,data,type]of files)downloadBlob(data,type,name);$('rpStatus').textContent='研究JSON・101点CSV・画像台帳CSV・指標台帳CSVを出力しました。採用状態はPENDINGです。';}catch(err){$('rpStatus').textContent=err.message;}};
-function rpClearPair(){rpPairResult=null;$('rpPairSave').disabled=true;$('rpPairSummary').textContent='';}
+$('rpSave').onclick=()=>{try{const files=rpExportFiles(),overlay={name:files[0][0].replace('_research.json','_overlay.png'),url:rpOverlayPng()};rpShowDownloads('rpDownloads',files,overlay);rpDownloadKey=rpSignature(rpInput());$('rpStatus').textContent='5ファイルを作成しました。下のリンクをそれぞれクリックして保存し、保存先で5ファイルを確認してください。採用状態はPENDINGです。';}catch(err){rpClearDownloads('rpDownloads');rpDownloadKey=null;$('rpStatus').textContent=err.message;}};
+function rpClearPair(){rpClearDownloads('rpPairDownloads');rpPairResult=null;$('rpPairSave').disabled=true;$('rpPairSummary').textContent='';}
 for(let n=0;n<2;n++)$('rpPairFile'+n).onchange=async e=>{
   const file=e.target.files?.[0],seq=++rpPairSequence[n];e.target.value='';rpPairInputs[n]=null;rpClearPair();$('rpPairConfirm').checked=false;$('rpPairRelative').checked=false;
   if(!file){$('rpPairStatus'+n).textContent='未選択';return;}
@@ -2688,7 +2709,8 @@ function rpPairExportFiles(){
   const name='FMA_cortex_pair_'+crypto.randomUUID()+'.json',ref=rpRef(storage,name),r=FmaResearch.registry(rpPairResult,{outputRef:ref});
   return [[name,JSON.stringify({...rpPairResult,output_ref:ref,registry_export:{schema:'fma_registry_rows_v1',value_input_option:'RAW',...r}},null,2),'application/json'],[name.replace('.json','_FMA_images.csv'),FmaResearch.csv(r.images),'text/csv;charset=utf-8'],[name.replace('.json','_FMA_metrics.csv'),FmaResearch.csv(r.metrics),'text/csv;charset=utf-8']];
 }
-$('rpPairSave').onclick=()=>{try{for(const [name,data,type]of rpPairExportFiles())downloadBlob(data,type,name);}catch(err){$('rpPairSummary').textContent=err.message;}};
+$('rpPairStorage').addEventListener('change',()=>rpClearDownloads('rpPairDownloads'));
+$('rpPairSave').onclick=()=>{try{rpShowDownloads('rpPairDownloads',rpPairExportFiles());}catch(err){rpClearDownloads('rpPairDownloads');$('rpPairSummary').textContent=err.message;}};
 rpRender();
 // END RESEARCH UI
 </script></body></html>

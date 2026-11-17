@@ -64,3 +64,18 @@ test('research file retains non-rounded calibration through actual JSON import p
   await h.get('recordFile').onchange({target:{value:'',files:[{name:f[0],text:async()=>f[1]}]}});h.confirm();h.get('rpConfirm').onclick();
   const b=JSON.parse(h.json('rpExportFiles()')[0][1]);assert.deepEqual(b.research_profile.samples,a.research_profile.samples);
 });
+test('overlay export uses full-image view, includes stem contours and restores view even on PNG failure',()=>{
+  const h=setup(),before=h.json('annotation');
+  h.run("zoom=2;panX=31;panY=-8;$('annotationTarget').value='stem_interface_anchors';cv.toDataURL=()=>JSON.stringify([zoom,panX,panY,$('annotationTarget').value])");
+  assert.deepEqual(JSON.parse(h.run('rpOverlayPng()')),[1,0,0,'head']);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.json("[zoom,panX,panY,$('annotationTarget').value]"))),[2,31,-8,'stem_interface_anchors']);assert.deepEqual(h.json('annotation'),before);
+  h.run("cv.toDataURL=()=>{throw Error('PNG_FAILED')}");assert.throws(()=>h.run('rpOverlayPng()'),/PNG_FAILED/);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.json("[zoom,panX,panY,$('annotationTarget').value]"))),[2,31,-8,'stem_interface_anchors']);
+});
+test('five individually saveable artifacts share one record ID; editing clears old download links',()=>{
+  const h=setup();h.run("$('rpDownloads').links=[];$('rpDownloads').appendChild=a=>$('rpDownloads').links.push(a);cv.toDataURL=()=> 'data:image/png;base64,TEST'");
+  h.get('rpSave').onclick();const links=h.json("$('rpDownloads').links.map(a=>({name:a.download,url:a.href}))");
+  assert.equal(links.length,5);const prefix=links[0].name.replace('_research.json','');assert.ok(links.every(a=>a.name.startsWith(prefix)));
+  assert.equal(links[4].url,'data:image/png;base64,TEST');assert.match(h.get('rpStatus').textContent,/保存先で5ファイル/);
+  h.run('annotation.stem_medial[1].x+=.1;draw()');assert.equal(h.get('rpSave').disabled,true);assert.equal(h.get('rpDownloads').textContent,'');assert.equal(h.run('rpDownloadKey'),null);
+});
