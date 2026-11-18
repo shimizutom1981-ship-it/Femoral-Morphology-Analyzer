@@ -124,6 +124,19 @@ Key Rules for AI Assistants modifying this file:
   <div id="pePointStatus" role="status"></div><div id="peStatus" class="small"></div><div id="peStorage" role="status" class="small"></div>
   <div class="small">開始後、点をドラッグ／移動先をクリック。矢印キーで元画像1px、Shift＋矢印で10px。Escで取消。Alt＋ドラッグで画像移動。保存は座標・注釈図・履歴をまとめた1ファイルです。</div>
 </div>
+<details id="stemCadPanel" class="card"><summary><strong>ステムCAD位置合わせ（術後AP）</strong></summary>
+<p>骨頭中心を合わせた状態で、緑のステム外形が画像に重なるように回転を調整してください。肩・先端・軸2点をまとめて既存の計測に反映します。</p>
+<label>ステムCADと基準点（JSON）<input type="file" id="stemCadFile" accept=".json,application/json"></label>
+<div class="grid"><label>軸回旋 °<input id="stemCadAxial" type="range" min="-180" max="180" step="0.25" value="0"></label><label>面外傾斜 °<input id="stemCadFlex" type="range" min="-90" max="90" step="0.25" value="0"></label><label>面内回転 °<input id="stemCadCoronal" type="range" min="-90" max="90" step="0.25" value="0"></label></div>
+<div id="stemCadStatus" role="status"></div><canvas id="stemCadCanvas" width="900" height="650" style="width:100%;height:auto"></canvas>
+<div class="grid"><button id="stemCadApply" disabled>重ね合わせを確認して4点に反映</button><button id="stemCadUndo" disabled>反映前に戻す</button></div></details>
+<details id="cupCadPanel" class="card"><summary><strong>カップ設置角（術後AP・CAD）</strong></summary>
+<p>倍率を設定し、左右の涙痕を指定してください。シェルCADの開口縁を正面像に投影して合わせます。</p>
+<label>シェルの開口縁CAD（JSON）<input type="file" id="cupModel" accept=".json,application/json"></label><div id="cupModelInfo" class="small"></div>
+<div class="grid"><button id="cupBaseline">涙痕を指定</button><button id="cupSeed">中心を指定</button><button id="cupRim">開口縁を指定</button><button id="cupUndo">選択中の点を戻す</button></div>
+<div id="cupHint" class="small" role="status"></div><canvas id="cupCanvas" width="900" height="650" style="width:100%;height:auto;cursor:crosshair"></canvas>
+<div class="grid"><button id="cupDetect">CADで開口縁を自動検出</button><button id="cupFit">指定点にCADを合わせる</button><button id="cupConfirm" disabled>重ね合わせを確認</button><button id="cupSave" disabled>カップ計測JSONを保存</button></div>
+<output id="cupOutput" aria-live="polite"></output></details>
 <div class="canvasWrap"><canvas id="cv" width="900" height="650"></canvas></div>
   <div class="small" style="margin-top:6px">操作ヒント：Alt+ドラッグ（または中ボタン）で画面移動、ホイールで拡大縮小、Shift+ドラッグで既存の点を微調整。LTが同定できない場合は「LT Visibility」を Occluded に設定してください。この試験版では自動FEMORAL軸とそれに依存する計測値は未計測になります。輪郭の途中保存は可能です。</div>
 </div>
@@ -320,7 +333,7 @@ const guidedStages=['head','femur_lateral','canal_lateral','stem_lateral','stem_
 let guidedStage=0;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 let img=null,grayCache=null,pts={},step=0,start=null,elapsedSec=null,drag=null,zoom=1,panX=0,panY=0,isPanning=false,panStart=null,accepted=false,correctionCount=0,aiInitial={},aiLoaded=false,aiProvenanceKnown=true,profileRows=[],continuousSlices=[],continuousSummary={};
-function emptyAnnotation(){return {research_settings:null,longitudinal_landmarks:null,version:'2.1-training',head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};}
+function emptyAnnotation(){return {stem_cad:null,cup_cad:null,research_settings:null,longitudinal_landmarks:null,version:'2.1-training',head:null,lt_midpoint:null,osteotomy_line:[],stem_interface_anchors:[],lt_region:[],femur_mask:[],canal_mask:[],stem_mask:[],femur_medial:[],femur_lateral:[],canal_medial:[],canal_lateral:[],stem_medial:[],stem_lateral:[]};}
 let annotation=emptyAnnotation();
 let annotationClosed={femur_mask:false,canal_mask:false,stem_mask:false,lt_region:false,osteotomy_line:false,femur_medial:false,femur_lateral:false,canal_medial:false,canal_lateral:false,stem_medial:false,stem_lateral:false};
 let annotationDrag=null,annotationCorrectionCount=0;
@@ -461,7 +474,7 @@ function draw(){
     ctx.save();ctx.strokeStyle='#ef4444';ctx.fillStyle='#ef4444';ctx.lineWidth=3/zoom;ctx.setLineDash([10/zoom,6/zoom]);
     ctx.beginPath();ctx.moveTo(pts.stem_prox.x,pts.stem_prox.y);ctx.lineTo(pts.stem_dist.x,pts.stem_dist.y);ctx.stroke();
     for(const p of [pts.stem_prox,pts.stem_dist]){ctx.beginPath();ctx.arc(p.x,p.y,6/zoom,0,Math.PI*2);ctx.fill()}
-    ctx.font=(13/zoom)+'px sans-serif';ctx.fillText('Manual STEM axis',pts.stem_prox.x+8/zoom,pts.stem_prox.y-8/zoom);ctx.restore();
+    ctx.font=(13/zoom)+'px sans-serif';ctx.fillText(hasCadStemAxis()?'CAD STEM axis':'Manual STEM axis',pts.stem_prox.x+8/zoom,pts.stem_prox.y-8/zoom);ctx.restore();
   }
   const sg=femoralPreviewGeometry();
   if(sg){
@@ -589,6 +602,10 @@ function measurementGeometry(){
   return a&&a.status==='ok'&&confirmedLTKey===axisInputKey?a.geometry:null;
 }
 function femoralPreviewGeometry(){const a=refreshFemoralAxis();return a&&a.status==='ok'?a.geometry:null;}
+function hasCadStemAxis(){
+  const p=annotation.stem_cad?.points;
+  return !!p&&!annotation.stem_cad.invalidated&&['stem_prox','stem_dist'].every(k=>p[k]&&pts[k]&&p[k].x===pts[k].x&&p[k].y===pts[k].y);
+}
 function axisMetadata(){
   const a=refreshFemoralAxis();
   return {schema:AXIS_SCHEMA,contour_geometry_version:CONTOUR_GEOMETRY_VERSION,
@@ -596,9 +613,9 @@ function axisMetadata(){
     femoral:{...a,inputs:axisInputs(),lt_confirmed:confirmedLTKey===axisInputKey,
       quality_status:a.status!=='ok'?'unavailable':confirmedLTKey===axisInputKey?'confirmed':'review_required',
       reason:a.status!=='ok'?a.reason:confirmedLTKey===axisInputKey?null:'lt_confirmation_required'},
-    stem:{method:'manual_template_aligned_two_points',version:'1',
+    stem:{method:hasCadStemAxis()?'cad_projected_axis':'manual_template_aligned_two_points',version:'1',
       proximal:pts.stem_prox||null,distal:pts.stem_dist||null,
-      status:computeAxesAndAlignment(null).stemAngle!=null?'manual':'unavailable',
+      status:computeAxesAndAlignment(null).stemAngle!=null?(hasCadStemAxis()?'cad_projected':'manual'):'unavailable',
       reason:!pts.stem_prox||!pts.stem_dist?'manual_stem_points_missing':computeAxesAndAlignment(null).stemAngle==null?'degenerate_manual_stem_axis':null,legacy_candidate:legacyStemCandidate}};
 }
 function computeAxesAndAlignment(g){
@@ -1548,7 +1565,7 @@ function annotationPayload(){
     stem_family:$('stemFamily').value,side:$('side').value,implant_collar:$('implantCollar').value,
     lt_visibility:$('ltVisibility').value,double_cortex:$('doubleCortex').value,
     calibration:{mode:$('calMode').value,mm_per_px:Number($('scale').value)||null,known_mm:Number($('headSize').value)||null},
-    research_settings:annotation.research_settings,longitudinal_landmarks:annotation.longitudinal_landmarks,head:annotation.head,measurement_points:pts,lt_midpoint:annotation.lt_midpoint,osteotomy_line:annotation.osteotomy_line,
+    stem_cad:annotation.stem_cad||null,cup_cad:annotation.cup_cad||null,research_settings:annotation.research_settings,longitudinal_landmarks:annotation.longitudinal_landmarks,head:annotation.head,measurement_points:pts,lt_midpoint:annotation.lt_midpoint,osteotomy_line:annotation.osteotomy_line,
     stem_interface_anchors:annotation.stem_interface_anchors,lt_region:annotation.lt_region,
     femur_medial:annotation.femur_medial,femur_lateral:annotation.femur_lateral,
     canal_medial:annotation.canal_medial,canal_lateral:annotation.canal_lateral,
@@ -2336,7 +2353,7 @@ function gruenZoneInputs(){
 }
 function computeGruenZones(){
   const out={schema:'fma_gruen_zones_v1',accuracy_validated:false,status:'error',reason:null,identity:null,baseline:gruenBaseline,partition:null,measure:null,
-    sources:{stem_axis:'manual_stem_axis_two_points',shoulder_tip_lateral_reference:'longitudinal_landmarks',zone7_top:gruenBaseline?'baseline_level_carried_over':'medial_end_of_osteotomy_line',bone_medial_end:'medial_end_of_osteotomy_line',contours:'rendered_open_polylines'},
+    sources:{stem_axis:typeof hasCadStemAxis==='function'&&hasCadStemAxis()?'cad_projected_axis':'manual_stem_axis_two_points',shoulder_tip_lateral_reference:'longitudinal_landmarks',zone7_top:gruenBaseline?'baseline_level_carried_over':'medial_end_of_osteotomy_line',bone_medial_end:'medial_end_of_osteotomy_line',contours:'rendered_open_polylines'},
     limitations:'2D AP projection; verified on synthetic data only; mean brightness not included'};
   const g=gruenZoneInputs();
   if(g.reason){out.reason=g.reason;return out;}
@@ -2916,4 +2933,389 @@ $('peSave').onclick=async()=>{
 };
 peRender();
 // END POINT EDITOR UI
+// BEGIN CUP CAD (lib/cup-cad.js)
+// Weak-perspective projection of a circular metal opening measured on a shell CAD.
+const FmaCupCad = (() => {
+  const rad = Math.PI / 180;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const angles = Array.from({length: 72}, (_, k) => [Math.cos(k * Math.PI / 36), Math.sin(k * Math.PI / 36)]);
+  const bounded = (x, y) => Number.isFinite(x) && Number.isFinite(y);
+
+  function model(data) {
+    if (!data || data.schema !== 'fma-cup-cad-rim-v1' ||
+        ![data.model, data.version, data.source].every(v => typeof v === 'string' && v.trim()) ||
+        !['prototype', 'dimension_verified'].includes(data.status) ||
+        !Number.isFinite(data.opening_diameter_mm) || data.opening_diameter_mm < 15 || data.opening_diameter_mm > 100 ||
+        !/^[0-9a-f]{64}$/i.test(data.cad_sha256 || '')) throw Error('開口縁を登録したCADモデルJSONを選んでください。');
+    const {schema, model, version, source, status, opening_diameter_mm, cad_sha256} = data;
+    return {schema, model, version, source, status, opening_diameter_mm, cad_sha256};
+  }
+  function project(pose, radius, samples = angles) {
+    const [cx, cy, phi, ra] = pose, cp = Math.cos(phi * rad), sp = Math.sin(phi * rad), k = Math.sin(ra * rad);
+    return samples.map(([u, v]) => [cx + radius*(cp*u - sp*k*v), cy + radius*(sp*u + cp*k*v)]);
+  }
+  function optimize(seed, steps, cost) {
+    let p = seed.slice(), score = cost(p);
+    for (let level = 0; level < 8; level++) {
+      let improved = true;
+      for (let sweep = 0; improved && sweep < 14; sweep++) {
+        improved = false;
+        for (let j = 0; j < 4; j++) {
+          let best = p;
+          for (const sign of [-1, 1]) {
+            const alt = p.slice();
+            alt[j] += sign * steps[j] / (2**level);
+            if (alt[3] < 0 || alt[3] > 90) continue;
+            const v = cost(alt);
+            if (v + 1e-8 < score) { score = v; best = alt; improved = true; }
+          }
+          p = best;
+        }
+      }
+    }
+    return {pose:p, score};
+  }
+  function distances(points, poly) {
+    return points.map(([x,y]) => {
+      let d2 = Infinity;
+      for (let i = 0; i < poly.length; i++) {
+        const a=poly[i], b=poly[(i+1)%poly.length], dx=b[0]-a[0], dy=b[1]-a[1];
+        const t=clamp(((x-a[0])*dx+(y-a[1])*dy)/(dx*dx+dy*dy || 1),0,1);
+        d2=Math.min(d2,(a[0]+t*dx-x)**2+(a[1]+t*dy-y)**2);
+      }
+      return Math.sqrt(d2);
+    });
+  }
+  function fitPoints(points, radius) {
+    if (!Number.isFinite(radius) || radius <= 0 || !Array.isArray(points) || points.length < 6 || points.length > 64 ||
+        points.some(p => !Array.isArray(p) || !bounded(...p))) throw Error('開口縁の見える範囲に分散させて6点以上指定してください。');
+    let length=0, endpoints;
+    for (const a of points) for (const b of points) {
+      const l=Math.hypot(a[0]-b[0],a[1]-b[1]);
+      if(l>length){length=l;endpoints=[a,b];}
+    }
+    if(length<radius*1.45 || length>radius*2.35) throw Error('点の広がりとCAD径が合いません。倍率・製品・両端の位置を確認してください。');
+    const [a,b]=endpoints, phi=Math.atan2(b[1]-a[1],b[0]-a[0])/rad;
+    const cx=(a[0]+b[0])/2, cy=(a[1]+b[1])/2;
+    const cost=p=>distances(points,project(p,radius)).reduce((sum,d)=>sum+d*d,0)/points.length;
+    const candidates=[12,42,73].map(ra=>optimize([cx,cy,phi,ra],[radius/10,radius/10,10,10],cost));
+    const best=candidates.sort((a,b)=>a.score-b.score)[0];
+    const [x,y,theta,ra]=best.pose, cp=Math.cos(theta*rad),sp=Math.sin(theta*rad);
+    const phases=points.map(([u,v])=>Math.atan2((-(u-x)*sp+(v-y)*cp)/Math.max(.02,Math.sin(ra*rad)),(u-x)*cp+(v-y)*sp)).sort((a,b)=>a-b);
+    const gaps=phases.map((t,i)=>(i+1===phases.length?phases[0]+2*Math.PI:phases[i+1])-t);
+    if (Math.max(...gaps)>Math.PI || Math.sqrt(best.score)>radius*.10) throw Error('開口縁全体の適合を確認できません。点の分布とCAD寸法を確認してください。');
+    return {pose:best.pose, rms_px:Math.sqrt(best.score), method:'cad_rim_points'};
+  }
+  function detect(gray, width, height, center, radius) {
+    if(!gray || gray.length!==width*height || !Number.isFinite(radius) || radius<5 ||
+       !center || !bounded(...center)) throw Error('倍率とカップ中心付近の位置を確認してください。');
+    function sample(x,y){
+      const i=Math.floor(x),j=Math.floor(y);
+      if(i<0||j<0||i>=width-1||j>=height-1)return NaN;
+      const a=x-i,b=y-j,k=j*width+i;
+      return (1-b)*((1-a)*gray[k]+a*gray[k+1])+b*((1-a)*gray[k+width]+a*gray[k+width+1]);
+    }
+    const delta=clamp(radius*.031,1,4);
+    function score(p){
+      if(Math.hypot(p[0]-center[0],p[1]-center[1])>radius*.34)return 1e4;
+      const poly=project(p,radius), sector=Array(8).fill(0);
+      for(let i=0;i<72;i++){
+        const a=poly[(i+71)%72],b=poly[(i+1)%72], [x,y]=poly[i];
+        let nx=b[1]-a[1],ny=a[0]-b[0];const l=Math.hypot(nx,ny)||1;nx*=delta/l;ny*=delta/l;
+        const g=Math.abs(sample(x+nx,y+ny)-sample(x-nx,y-ny));
+        if(!Number.isFinite(g))return 1e4;
+        sector[Math.floor(i/9)]+=Math.min(100,g)/9;
+      }
+      sector.sort((a,b)=>a-b);
+      return -sector.slice(1,7).reduce((s,v)=>s+v,0)/6;
+    }
+    const seeds=[];
+    for(const x of [-.14,0,.14])for(const y of [-.14,0,.14])for(let phi=-90;phi<90;phi+=15)for(const ra of [4,15,30,45,60,75,88]){
+      const p=[center[0]+x*radius,center[1]+y*radius,phi,ra];seeds.push({pose:p,score:score(p)});
+    }
+    seeds.sort((a,b)=>a.score-b.score);
+    const contenders=seeds.slice(0,4).map(s=>optimize(s.pose,[radius*.045,radius*.045,4,4],score)).sort((a,b)=>a.score-b.score);
+    if(contenders[0].score> -4) throw Error('開口縁を検出できません。見える縁を6点以上指定してください。');
+    return {pose:contenders[0].pose, edge_contrast:-contenders[0].score, method:'cad_rim_image_gradient'};
+  }
+  function measure(pose, baseline, radius) {
+    if(!Array.isArray(pose)||pose.length!==4||!pose.every(Number.isFinite)||pose[3]<0||pose[3]>90||!(radius>0))throw Error('CAD姿勢を確認してください。');
+    if(baseline.length!==2 || baseline.some(p=>!bounded(...p)) || Math.hypot(baseline[1][0]-baseline[0][0],baseline[1][1]-baseline[0][1])<5)throw Error('左右の涙痕を指定してください。');
+    const [a,b]=baseline, horizontal=Math.atan2(b[1]-a[1],b[0]-a[0])/rad;
+    const angle=((pose[2]-horizontal)%180+180)%180;
+    return {ri_deg:radius*(1-Math.sin(pose[3]*rad))<1?null:Math.min(angle,180-angle),
+      ra_abs_deg:pose[3],ra_signed_deg:null,reference:'AP_teardrop_line',projection:'weak_perspective_circular_CAD_rim'};
+  }
+  return {model, project, fitPoints, detect, measure};
+})();
+if(typeof module!=='undefined' && module.exports) module.exports=FmaCupCad;
+// END CUP CAD
+// BEGIN CUP UI (lib/cup-cad-ui.js)
+// Independent AP workspace; all points are in the current FMA image canvas.
+(() => {
+  const panel=$('cupCadPanel'), canvas=$('cupCanvas');
+  let mode='baseline', message='', modelRequest=0;
+  function validDraft(s){
+    const point=p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite);
+    if(!s||s.schema!=='fma-cup-ap-input-v1'||typeof s.key!=='string'||
+       !Array.isArray(s.baseline)||s.baseline.length>2||!s.baseline.every(point)||
+       !Array.isArray(s.points)||s.points.length>64||!s.points.every(point)||(s.seed&&!point(s.seed)))return false;
+    if(s.model){try{FmaCupCad.model(s.model);}catch{return false;}}
+    return !s.fit||(s.model&&Array.isArray(s.fit.pose)&&s.fit.pose.length===4&&s.fit.pose.every(Number.isFinite)&&
+      s.fit.pose[3]>=0&&s.fit.pose[3]<=90&&typeof s.fit.input==='string');
+  }
+  const copy=v=>JSON.parse(JSON.stringify(v));
+  function imageKey(){
+    if(!img || imageLoading || imageLoadFailed || !peHash || $('imageType').value!=='postop_THA' ||
+       $('peProjection').value!=='AP' || $('rpDirection').value!=='AP') return null;
+    return JSON.stringify([peHash,cv.width,cv.height,$('side').value,$('studyId').value.trim(),$('imageId').value.trim()]);
+  }
+  function state(create=false){
+    const key=imageKey(); if(!key)return null;
+    if(annotation.cup_cad?.key===key && validDraft(annotation.cup_cad))return annotation.cup_cad;
+    if(!create)return null;
+    return annotation.cup_cad={schema:'fma-cup-ap-input-v1',key,baseline:[],points:[],seed:null,model:null,fit:null,checked:false};
+  }
+  function seed(s){
+    if(s.seed)return s.seed;
+    const h=circle3(pts.head1,pts.head2,pts.head3);
+    const c=h || annotation.head?.center;
+    return c && Number.isFinite(c.x) && Number.isFinite(c.y)?[c.x,c.y]:null;
+  }
+  function scale(){const value=calibrationScale();return Number.isFinite(value)&&value>0?value:null;}
+  function signature(s){return JSON.stringify([s.key,s.model,s.baseline,s.points,seed(s),scale()]);}
+  function usable(s){return s?.fit && s.fit.input===signature(s);}
+  function radius(s){const mm=scale();if(!mm)throw Error('先にFMAで骨頭径による倍率またはmm/pxを設定してください。');return s.model.opening_diameter_mm/(2*mm);}
+  function mark(ctx,p,color){
+    ctx.strokeStyle=color;ctx.beginPath();ctx.moveTo(p[0]-5,p[1]);ctx.lineTo(p[0]+5,p[1]);ctx.moveTo(p[0],p[1]-5);ctx.lineTo(p[0],p[1]+5);ctx.stroke();
+  }
+  function render(){
+    if(!panel.open)return;
+    const key=imageKey(), s=state(), c=canvas.getContext('2d');
+    if(canvas.width!==cv.width || canvas.height!==cv.height){canvas.width=cv.width;canvas.height=cv.height;}
+    c.clearRect(0,0,canvas.width,canvas.height);
+    $('cupOutput').textContent='';$('cupConfirm').disabled=true;$('cupSave').disabled=true;
+    $('cupModelInfo').textContent=s?.model?[s.model.model,s.model.version,s.model.status==='prototype'?'CT試作':'寸法照合済み',s.model.opening_diameter_mm.toFixed(2)+' mm'].join(' ／ '):'CADモデル未選択';
+    if(!key){$('cupHint').textContent='術後の正面像を読み込み、撮影法をAPにしてください。';return;}
+    c.drawImage(img,0,0,canvas.width,canvas.height); c.lineWidth=2;
+    const guide={baseline:'左右の涙痕を1点ずつ指定',seed:'カップのおおよその中心を指定',rim:'金属シェルの開口縁を全周に分散して6点以上指定'};
+    $('cupHint').textContent=(message?message+'　':'')+guide[mode]+'　涙痕 '+(s?.baseline.length||0)+'/2・開口縁 '+(s?.points.length||0)+'点';
+    if(!s)return;
+    if(s.baseline.length===2){c.strokeStyle='#5ccafa';c.beginPath();c.moveTo(...s.baseline[0]);c.lineTo(...s.baseline[1]);c.stroke();}
+    s.baseline.forEach(p=>mark(c,p,'#5ccafa'));s.points.forEach(p=>mark(c,p,'#ffae42'));
+    if(seed(s))mark(c,seed(s),'#fff');
+    if(!usable(s))return;
+    const p=s.fit.pose,r=radius(s),poly=FmaCupCad.project(p,r);c.strokeStyle='#29e1a2';c.beginPath();poly.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.stroke();
+    const a=FmaCupCad.measure(p,s.baseline,r),ri=a.ri_deg===null?'判定困難（開口縁がほぼ円形）':a.ri_deg.toFixed(1)+'°';
+    const quality=s.fit.rms_px==null?'画像縁自動検出':'指定点へのRMS '+(s.fit.rms_px*scale()).toFixed(2)+' mm';
+    $('cupOutput').textContent='RI '+ri+'　|RA| '+a.ra_abs_deg.toFixed(1)+'°（前後の符号不定）　'+quality+'　'+(s.checked?'重ね合わせ確認済み':'要確認');
+    $('cupConfirm').disabled=false;$('cupSave').disabled=!s.checked;
+  }
+  function action(fn){return(...args)=>{try{
+    if(!imageKey())throw Error('術後正面像の読込完了を確認してください。');
+    fn(...args);
+  }catch(e){message=e.message;}render();};}
+  function invalidate(s){s.fit=null;s.checked=false;delete s.reviewed_at;message='';}
+  function changeMode(m){mode=m;message='';render();}
+  $('cupBaseline').onclick=()=>changeMode('baseline');$('cupSeed').onclick=()=>changeMode('seed');$('cupRim').onclick=()=>changeMode('rim');
+  canvas.onclick=action(e=>{
+    const rect=canvas.getBoundingClientRect();
+    const p=[(e.clientX-rect.left)*cv.width/rect.width,(e.clientY-rect.top)*cv.height/rect.height];
+    const s=state(true);
+    if(mode==='rim' && s.points.length>=64)throw Error('開口縁は64点までです。');
+    invalidate(s);
+    if(mode==='baseline'){if(s.baseline.length===2)s.baseline=[];s.baseline.push(p);if(s.baseline.length===2)mode='seed';}
+    else if(mode==='seed'){s.seed=p;mode='rim';}else s.points.push(p);
+    saveWork();
+  });
+  $('cupUndo').onclick=action(()=>{const s=state(true);invalidate(s);if(mode==='rim')s.points.pop();else if(mode==='seed')s.seed=null;else s.baseline.pop();saveWork();});
+  $('cupModel').onchange=async e=>{
+    const file=e.target.files?.[0];e.target.value='';if(!file)return;
+    const key=imageKey(), token=++modelRequest;
+    try{
+      if(!key)throw Error('先に術後AP画像を開いてください。');
+      if(file.size>65536)throw Error('CAD開口縁モデルJSONを選んでください。');
+      const model=FmaCupCad.model(JSON.parse(await file.text()));
+      if(token!==modelRequest || key!==imageKey())return;
+      const s=state(true);invalidate(s);s.model=model;saveWork();
+    }catch(err){if(token===modelRequest && key===imageKey())message=err.message;}render();
+  };
+  function fit(manual){
+    const s=state(true);invalidate(s);
+    if(!s.model)throw Error('シェルCADの開口縁モデルを選んでください。');
+    if(s.baseline.length!==2)throw Error('左右の涙痕を指定してください。');
+    const r=radius(s);FmaCupCad.measure([0,0,0,0],s.baseline,r);
+    let result;
+    if(manual)result=FmaCupCad.fitPoints(s.points,r);
+    else{
+      const temp=document.createElement('canvas');temp.width=cv.width;temp.height=cv.height;
+      const c=temp.getContext('2d',{willReadFrequently:true});c.drawImage(img,0,0,temp.width,temp.height);
+      const rgba=c.getImageData(0,0,temp.width,temp.height).data, gray=new Uint8Array(temp.width*temp.height);
+      for(let i=0;i<gray.length;i++)gray[i]=Math.round(.299*rgba[4*i]+.587*rgba[4*i+1]+.114*rgba[4*i+2]);
+      result=FmaCupCad.detect(gray,temp.width,temp.height,seed(s),r);
+    }
+    s.fit={...result,input:signature(s)};saveWork();
+  }
+  $('cupFit').onclick=action(()=>fit(true));$('cupDetect').onclick=action(()=>fit(false));
+  $('cupConfirm').onclick=action(()=>{const s=state();if(!usable(s))throw Error('再計測してください。');s.checked=true;s.reviewed_at=new Date().toISOString();saveWork();});
+  $('cupSave').onclick=action(()=>{
+    const s=state();if(!usable(s)||!s.checked)throw Error('最新の重ね合わせを確認してください。');
+    const out={schema:'fma-cup-ap-result-v1',source:peSource(),research_id:$('studyId').value.trim(),image_id:$('imageId').value.trim(),side:$('side').value,
+      model:s.model,mm_per_canvas_px:scale(),baseline_canvas_px:s.baseline,seed_canvas_px:seed(s),rim_canvas_px:s.points,fit:copy(s.fit),
+      angles:FmaCupCad.measure(s.fit.pose,s.baseline,radius(s)),reviewed:true,exploratory:s.model.status==='prototype',reviewed_at:s.reviewed_at||null};
+    delete out.fit.input;
+    downloadBlob(JSON.stringify(out,null,2),'application/json','FMA_cup_AP_'+(out.research_id||'case')+'_'+out.side+'.json');
+  });
+  panel.addEventListener('toggle',render);
+  const previousPayload=annotationPayload;
+  annotationPayload=function(){
+    const payload=previousPayload(),s=state();
+    payload.cup_cad=s?copy(s):null;
+    if(s && !usable(s)){payload.cup_cad.fit=null;payload.cup_cad.checked=false;delete payload.cup_cad.reviewed_at;}
+    if(s&&usable(s))payload.cup_cad.angles=FmaCupCad.measure(s.fit.pose,s.baseline,radius(s));
+    return payload;
+  };
+  const before=draw;
+  draw=function(){before();render();};
+  for(const id of ['studyId','imageId','side','imageType','headSize','calMode','scale','rpDirection','peProjection'])
+    $(id).addEventListener('change',()=>{message='';render();});
+})();
+// END CUP UI
+// BEGIN STEM CAD (lib/stem-cad.js)
+// Calibrated weak-perspective projection of a registered LPS stem mesh.
+const FmaStemCad=(()=>{
+  const keys=['stem_prox','stem_dist','stem_shoulder','stem_tip'];
+  const vec=p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite);
+  function parse(data,buffer){
+    if(!data||data.schema!=='fma-stem-cad-v1'||data.frame!=='LPS_mm'||!['R','L'].includes(data.side)||
+      ![data.model,data.version].every(v=>typeof v==='string'&&v.trim())||!['prototype','dimension_verified'].includes(data.status)||
+      !/^[a-f\d]{64}$/i.test(data.cad_sha256)||!vec(data.head_center_mm)||!keys.every(k=>vec(data.landmarks_mm?.[k])))throw Error('軸・肩・先端を定義したステムCADを選んでください。');
+    const v=new DataView(buffer), n=buffer.byteLength>=84?v.getUint32(80,true):0;
+    if(!n||n>500000||buffer.byteLength!==84+50*n)throw Error('三角形の数またはバイナリSTLの形式が不正です。');
+    const xyz=new Float32Array(n*9);
+    for(let i=0;i<n;i++)for(let j=0;j<9;j++){
+      const coord=v.getFloat32(96+50*i+4*j,true)-data.head_center_mm[j%3];
+      if(!Number.isFinite(coord)||Math.abs(coord)>500)throw Error('STLの単位・原点を確認してください。');
+      xyz[9*i+j]=coord;
+    }
+    if(Math.hypot(...data.landmarks_mm.stem_prox.map((v,i)=>v-data.landmarks_mm.stem_dist[i]))<1)throw Error('軸の2点が重なっています。');
+    return {xyz,meta:{model:data.model,version:data.version,status:data.status,side:data.side,cad_sha256:data.cad_sha256},
+      landmarks:Object.fromEntries(keys.map(k=>[k,data.landmarks_mm[k].map((v,i)=>v-data.head_center_mm[i])]))};
+  }
+  function project(mesh,angles,center,mm,width,height){
+    if(!(mm>0)||!Number.isFinite(mm)||!angles.every(Number.isFinite)||!Number.isFinite(center.x)||!Number.isFinite(center.y))throw Error('骨頭中心と倍率が必要です。');
+    const [a,b,c]=angles.map(x=>x*Math.PI/180);
+    const ca=Math.cos(a),sa=Math.sin(a),sb=Math.sin(b),cb=Math.cos(b),sc=Math.sin(c),cc=Math.cos(c);
+    const u=[cc*ca+sc*sb*sa,-cc*sa+sc*sb*ca,sc*cb];
+    const v=[sc*ca-cc*sb*sa,-sc*sa-cc*sb*ca,-cc*cb];
+    function point(x,y,z){return {x:center.x+(u[0]*x+u[1]*y+u[2]*z)/mm,y:center.y+(v[0]*x+v[1]*y+v[2]*z)/mm};}
+    const points=Object.fromEntries(keys.map(k=>[k,point(...mesh.landmarks[k])]));
+    const left=new Float64Array(height).fill(Infinity),right=new Float64Array(height).fill(-Infinity);
+    for(let i=0;i<mesh.xyz.length;i+=9){
+      const tri=[0,3,6].map(j=>point(mesh.xyz[i+j],mesh.xyz[i+j+1],mesh.xyz[i+j+2]));
+      for(let j=0;j<3;j++){
+        const a=tri[j],b=tri[(j+1)%3];
+        const start=Math.max(0,Math.ceil(Math.min(a.y,b.y))),stop=Math.min(height,Math.ceil(Math.max(a.y,b.y)));
+        for(let y=start;y<stop;y++){
+          const x=a.x+(b.x-a.x)*(y-a.y)/(b.y-a.y);
+          left[y]=Math.min(left[y],x);right[y]=Math.max(right[y],x);
+        }
+      }
+    }
+    const rows=[];
+    for(let y=0;y<height;y++)if(Number.isFinite(left[y]))rows.push([y,left[y],right[y]]);
+    const inside=Object.values(points).every(p=>p.x>=0&&p.x<width&&p.y>=0&&p.y<height);
+    return {points,rows,inside};
+  }
+  return {keys,parse,project};
+})();
+if(typeof module!=='undefined'&&module.exports)module.exports=FmaStemCad;
+// END STEM CAD
+// BEGIN STEM CAD UI (lib/stem-cad-ui.js)
+// Source-bound preview and atomic transfer of the four implant-side landmarks.
+(()=>{
+  const panel=$('stemCadPanel'),canvas=$('stemCadCanvas');
+  const controls=['stemCadAxial','stemCadFlex','stemCadCoronal'];
+  let mesh=null,sourceKey=null,renderKey=null,preview=null,revision=0,rollback=null,note='';
+  function binding(){
+    if(!img||!peHash||imageLoading||imageLoadFailed||$('imageType').value!=='postop_THA'||$('peProjection').value!=='AP'||$('rpDirection').value!=='AP')return null;
+    return JSON.stringify([peSource(),$('side').value,$('studyId').value.trim(),$('imageId').value.trim()]);
+  }
+  function geometry(){
+    const circle=circle3(pts.head1,pts.head2,pts.head3),center=circle||annotation.head?.center;
+    const mm=calibrationScale(),angles=controls.map(id=>Number($(id).value));
+    return center&&mm>0?{center:{x:center.x,y:center.y},mm,angles}:null;
+  }
+  function invalidateChangedRegistration(){
+    const old=annotation.stem_cad;
+    if(!old || old.invalidated || !img || imageLoading || !peHash)return;
+    const g=geometry();
+    const matches=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b)<1e-6;
+    if(old.key===binding()&&g&&matches(g.mm,old.geometry?.mm)&&matches(g.center.x,old.geometry?.center?.x)&&matches(g.center.y,old.geometry?.center?.y))return;
+    old.invalidated=true;
+    for(const key of FmaStemCad.keys){
+      const p=old.points?.[key],q=peGet(key);
+      if(p&&q&&matches(p.x,q.x)&&matches(p.y,q.y))peSet(key,null);
+    }
+    accepted=false;const rs=rpSettings(false);if(rs)rs.confirmation=null;
+  }
+  function render(){
+    if(!panel.open)return;
+    $('stemCadApply').disabled=true;$('stemCadUndo').disabled=!rollback||rollback.key!==binding();
+    const ctx=canvas.getContext('2d');
+    if(canvas.width!==cv.width||canvas.height!==cv.height){canvas.width=cv.width;canvas.height=cv.height;}
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    const key=binding();if(!key){$('stemCadStatus').textContent='術後APを読み込んでください。';return;}
+    ctx.drawImage(img,0,0,cv.width,cv.height);
+    if(mesh&&sourceKey!==key){mesh=null;preview=null;renderKey=null;note='';}
+    const g=geometry();if(!mesh||!g){$('stemCadStatus').textContent=note||'骨頭中心・倍率を確定し、対応するステムCADを選んでください。';return;}
+    const pose=JSON.stringify([key,mesh.meta,revision,g]);
+    if(pose!==renderKey){preview=FmaStemCad.project(mesh,g.angles,g.center,g.mm,cv.width,cv.height);renderKey=pose;}
+    const rows=preview.rows;ctx.lineWidth=2;ctx.strokeStyle='#2ce5af';ctx.beginPath();
+    rows.forEach(([y,l],i)=>i?ctx.lineTo(l,y):ctx.moveTo(l,y));
+    for(let i=rows.length-1;i>=0;i--)ctx.lineTo(rows[i][2],rows[i][0]);ctx.closePath();ctx.stroke();
+    const p=preview.points;ctx.strokeStyle='#ffb956';ctx.beginPath();ctx.moveTo(p.stem_prox.x,p.stem_prox.y);ctx.lineTo(p.stem_dist.x,p.stem_dist.y);ctx.stroke();
+    for(const k of ['stem_shoulder','stem_tip']){ctx.beginPath();ctx.arc(p[k].x,p[k].y,4,0,2*Math.PI);ctx.stroke();}
+    $('stemCadApply').disabled=!preview.inside||!rows.length;
+    $('stemCadStatus').textContent=[mesh.meta.model,mesh.meta.version,mesh.meta.status==='prototype'?'試作':'寸法照合済み',g.angles.join('° ／ ')+'°',!preview.inside?'点が撮影範囲外':note||'軸と金属輪郭を確認'].join('　');
+  }
+  $('stemCadFile').onchange=async e=>{
+    const file=e.target.files?.[0],key=binding(),token=++revision;e.target.value='';if(!file)return;
+    mesh=null;preview=null;renderKey=null;
+    try{
+      if(!key)throw Error('先に術後AP画像を選んでください。');
+      if(file.size>40e6)throw Error('40 MB以下のモデルを選んでください。');
+      const d=JSON.parse(await file.text()), bytes=Uint8Array.from(atob(d.stl_base64),c=>c.charCodeAt(0));
+      const sha=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');
+      if(d.cad_sha256!==sha||d.side!==$('side').value)throw Error('STLのハッシュまたは登録側が一致しません。');
+      const candidate=FmaStemCad.parse(d,bytes.buffer);
+      if(token!==revision||key!==binding())return;
+      mesh=candidate;sourceKey=key;note='';controls.forEach(id=>$(id).value='0');
+    }catch(err){if(token===revision)note=err.message;}render();
+  };
+  for(const id of controls)$(id).oninput=()=>{note='';render();};
+  $('stemCadApply').onclick=()=>{
+    try{
+      render();if(!mesh||sourceKey!==binding()||!preview?.inside||$('stemCadApply').disabled)throw Error('現在の画像に対応するCADを確認してください。');
+      peReady();peState(true);const prior=peSnapshot(),key=binding(),g=geometry();
+      try{
+        for(const [k,p] of Object.entries(preview.points)){
+          const before=peGet(k);peSet(k,p);peRecord('cad_projection',k,before,p,{input_method:'CAD_PROJECTION',cad_sha256:mesh.meta.cad_sha256});
+        }
+        annotation.stem_cad={schema:'fma-stem-cad-projection-v1',key,model:mesh.meta,geometry:g,points:preview.points};
+        accepted=false;const settings=rpSettings(false);if(settings)settings.confirmation=null;
+        draw();saveWork();rollback={key,prior,fingerprint:peFingerprint()};note='4点をFMAに反映しました。';
+      }catch(err){peRestore(prior);throw err;}
+    }catch(err){note=err.message;}render();
+  };
+  $('stemCadUndo').onclick=()=>{
+    if(!rollback||rollback.key!==binding()||rollback.fingerprint!==peFingerprint()){note='別の入力が編集されています。';render();return;}
+    peRestore(rollback.prior);peRecord('undo_cad_projection',null,null,null);rollback=null;saveWork();note='反映前の点に戻しました。';render();
+  };
+  panel.addEventListener('toggle',render);const before=draw;draw=function(){invalidateChangedRegistration();before();render();};
+  const payloadBefore=annotationPayload;
+  annotationPayload=function(){invalidateChangedRegistration();return payloadBefore();};
+  for(const id of ['studyId','imageId','side','headSize','imageType','calMode','scale','rpDirection','peProjection'])$(id).addEventListener('change',()=>{invalidateChangedRegistration();render();});
+})();
+// END STEM CAD UI
 </script></body></html>
