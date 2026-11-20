@@ -26,6 +26,8 @@ Key Rules for AI Assistants modifying this file:
 
 .cadStage{position:relative;width:fit-content;max-width:100%;margin:8px auto}
 #cadViewCanvas{display:block;width:auto;height:auto;max-width:100%;max-height:72vh;max-height:72dvh}
+.cadZoomBar{position:absolute;top:4px;left:4px;display:flex;align-items:center;gap:3px;background:#192432ed;color:white;border-radius:6px;padding:2px}
+.cadZoomBar button{width:auto;margin:0;padding:4px 8px;min-height:30px}
 .cadPad{position:absolute;right:4px;bottom:4px;display:grid;grid-template-areas:". up ." "left dock right" ". down .";gap:2px;pointer-events:none}
 .cadPad button,.cadPad label{box-sizing:border-box;width:clamp(30px,6vw,40px);height:clamp(30px,6vw,40px);padding:0;margin:0;display:grid;place-items:center;border:1px solid #8999a9;border-radius:6px;background:#192432ed;color:white;font-size:17px;line-height:1;cursor:pointer;pointer-events:auto}
 .cadPad button:disabled{opacity:.55}
@@ -159,6 +161,12 @@ Key Rules for AI Assistants modifying this file:
   </div>
   <div class="cadStage">
     <canvas id="cadViewCanvas" width="900" height="650" aria-label="X線とCAD重ね合わせ画像"></canvas>
+    <div class="cadZoomBar" role="group" aria-label="画像の表示倍率">
+      <button type="button" id="cadZoomOut" aria-label="画像を縮小">−</button>
+      <output id="cadZoomLevel">100%</output>
+      <button type="button" id="cadZoomIn" aria-label="画像を拡大">＋</button>
+      <button type="button" id="cadZoomReset">全体表示</button>
+    </div>
     <input id="cadDockLeft" class="cadDockToggle" type="checkbox" aria-label="操作ボタンを画像の左側に置く">
     <div class="cadPad" role="group" aria-label="選択中のCADを1ピクセル移動">
       <button type="button" id="cadLeft" aria-label="左へ1ピクセル" disabled>←</button>
@@ -182,7 +190,7 @@ Key Rules for AI Assistants modifying this file:
   <button id="cadViewHead">32 mmヘッドを表示</button>
   <output id="cadViewCalibration" aria-live="polite"></output>
   <div id="cadViewStatus" class="small" role="status"></div>
-  <p class="small">Shift＋ドラッグで選択中のCADを移動。矢印ボタンは元のX線画像の1ピクセル単位です。</p>
+  <p class="small">ホイールで拡大・縮小、拡大中はドラッグで画像を移動。Shift＋ドラッグで選択中のCADを移動。矢印ボタンは元のX線画像の1ピクセル単位です。</p>
 
   <div class="grid"><button id="cadViewReset">回転・位置・倍率をリセット</button><button id="cadViewRemove">選んだCADを外す</button>
     <button id="cadViewSave">設定だけ端末に保存</button><button id="cadViewForget">端末に保存した設定を削除</button></div>
@@ -3466,6 +3474,7 @@ if(typeof module!=='undefined'&&module.exports)module.exports=FmaCadOverlay;
   const kind=()=>$('cadViewKind').value;
   const selected=()=>items[kind()];
   function clear(){
+    drag=null;setViewport(1,0,0);
     shared=false;bound=null;epoch++;items={};tokens={};notice='';
     ctx.clearRect(0,0,view.width,view.height);
   }
@@ -3509,10 +3518,12 @@ if(typeof module!=='undefined'&&module.exports)module.exports=FmaCadOverlay;
     const w=cv.width,h=cv.height;if(view.width!==w||view.height!==h){view.width=w;view.height=h;}
     ctx.clearRect(0,0,w,h);
     if(!key){status.textContent='正面（AP）画像の読込完了を確認してください。画像照合ができない環境では利用できません。';return;}
+    ctx.save();ctx.setTransform(zoom,0,0,zoom,-left*w*zoom,-top*h*zoom);
     ctx.drawImage(img,0,0,w,h);
     if($('cadViewMaster').checked)for(const id of M.KINDS){const a=items[id];if(!a?.pose.visible||a.pose.opacity===0)continue;
       ctx.save();ctx.globalAlpha=a.pose.opacity;ctx.drawImage(paintLayer(a,kinds[id][1],w,h),0,0);ctx.restore();
     }
+    ctx.restore();
     const available=M.KINDS.filter(id=>items[id]).map(id=>kinds[id][0]);
     status.textContent=notice||(!available.length?'大腿骨・ステム・カップ・ヘッドから対象を選び、STL/OBJを開きます。':'読込済：'+available.join('／')+(item?.mesh.sphere?'（32 mm球）':item?'（選択 '+item.mesh.triangles.toLocaleString()+'三角形）':''));
   }
@@ -3559,19 +3570,43 @@ if(typeof module!=='undefined'&&module.exports)module.exports=FmaCadOverlay;
       if(movable())translate(selected(),x/img.naturalWidth,y/img.naturalHeight);
     };
   }
-  let drag=null;
+  let zoom=1, left=0, top=0, drag=null;
+  function setViewport(scale,x,y){
+    zoom=scale;
+    left=Math.max(0,Math.min(1-1/zoom,x));
+    top=Math.max(0,Math.min(1-1/zoom,y));
+    $('cadZoomLevel').textContent=Math.round(zoom*100)+'%';
+    later();
+  }
+  function zoomAt(scale,x=.5,y=.5){
+    const next=Math.min(8,Math.max(1,scale));
+    setViewport(next,left+x*(1/zoom-1/next),top+y*(1/zoom-1/next));
+  }
+  $('cadZoomIn').onclick=()=>zoomAt(zoom*1.25);
+  $('cadZoomOut').onclick=()=>zoomAt(zoom/1.25);
+  $('cadZoomReset').onclick=()=>setViewport(1,0,0);
+  view.addEventListener('wheel',event=>{
+    if(!binding() || !event.deltaY)return;
+    event.preventDefault();
+    const rect=view.getBoundingClientRect();
+    zoomAt(zoom*(event.deltaY<0?1.15:1/1.15),(event.clientX-rect.left)/rect.width,(event.clientY-rect.top)/rect.height);
+  },{passive:false});
   view.addEventListener('pointerdown',event=>{
-    if(drag || !event.shiftKey || event.button!==0 || !movable())return;
-    drag={pointer:event.pointerId,item:selected(),x:event.clientX,y:event.clientY};
+    if(drag || event.button!==0 || !binding())return;
+    if(event.shiftKey ? !movable() : zoom===1)return;
+    drag={pointer:event.pointerId,item:event.shiftKey?selected():null,x:event.clientX,y:event.clientY};
     view.setPointerCapture(event.pointerId);
     event.preventDefault();
   });
   function track(event){
     if(!drag || drag.pointer!==event.pointerId)return;
-    if(!movable() || selected()!==drag.item){drag=null;return;}
-    if(view.clientWidth && view.clientHeight){
-      translate(drag.item,(event.clientX-drag.x)/view.clientWidth,(event.clientY-drag.y)/view.clientHeight);
-    }
+    const dx=(event.clientX-drag.x)/(view.clientWidth*zoom);
+    const dy=(event.clientY-drag.y)/(view.clientHeight*zoom);
+    if(!Number.isFinite(dx)||!Number.isFinite(dy))return;
+    if(drag.item){
+      if(!movable() || selected()!==drag.item){drag=null;return;}
+      translate(drag.item,dx,dy);
+    }else setViewport(zoom,left-dx,top-dy);
     drag.x=event.clientX;drag.y=event.clientY;
   }
   view.addEventListener('pointermove',track);
