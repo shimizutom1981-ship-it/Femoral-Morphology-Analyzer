@@ -160,6 +160,11 @@ Key Rules for AI Assistants modifying this file:
   <button id="cadViewHead">32 mmヘッドを表示</button>
   <output id="cadViewCalibration" aria-live="polite"></output>
   <div id="cadViewStatus" class="small" role="status"></div>
+  <p class="small">Shift＋ドラッグで選択中のCADを移動。矢印ボタンは元のX線画像の1ピクセル単位です。</p>
+  <div class="row" role="group" aria-label="選択中のCADを1ピクセル移動">
+    <button type="button" id="cadLeft" disabled>← 左</button><button type="button" id="cadRight" disabled>右 →</button>
+    <button type="button" id="cadUp" disabled>↑ 上</button><button type="button" id="cadDown" disabled>↓ 下</button>
+  </div>
   <canvas id="cadViewCanvas" width="900" height="650" aria-label="X線とCAD重ね合わせ画像"></canvas>
   <div class="grid"><button id="cadViewReset">回転・位置・倍率をリセット</button><button id="cadViewRemove">選んだCADを外す</button>
     <button id="cadViewSave">設定だけ端末に保存</button><button id="cadViewForget">端末に保存した設定を削除</button></div>
@@ -3475,6 +3480,7 @@ if(typeof module!=='undefined'&&module.exports)module.exports=FmaCadOverlay;
       const e=$(id);e.disabled=!item||(shared&&name==='scale');e.value=String(p[name]);const o=$(id+'Val');
       o.textContent=['dx','dy','opacity'].includes(name)?(100*p[name]).toFixed(0)+'%':name==='scale'?(shared?'共通':p[name].toFixed(2)+'×'):p[name].toFixed(0)+'°';
     }
+    for(const id of Object.keys(moves))$(id).disabled=!movable();
     $('cadViewLock').disabled=!items.cup;
     $('cadViewLock').textContent=shared?'共通倍率を解除':'カップの倍率を全CADに固定';
     $('cadViewCalibration').textContent=shared?'共通倍率 '+(canvasPixelsPerMm()*(img.naturalWidth||img.width)/cv.width).toFixed(3)+' px/mm（元画像）':'';
@@ -3522,6 +3528,42 @@ if(typeof module!=='undefined'&&module.exports)module.exports=FmaCadOverlay;
     try{const saved=JSON.parse(localStorage.getItem(persist(head,'head',bound)));if(saved?.version===1)head.pose=M.normalise(saved.pose);}catch(e){}
     items.head=head;$('cadViewKind').value='head';notice='32 mmヘッドの中心をX線に合わせてください。';render();
   };
+  const moves={cadLeft:[-1,0],cadRight:[1,0],cadUp:[0,-1],cadDown:[0,1]};
+  function movable(){
+    return binding() && $('cadViewMaster').checked && selected()?.pose.visible && selected().pose.opacity>0;
+  }
+  function translate(item,dx,dy){
+    item.pose=M.normalise({...item.pose,dx:item.pose.dx+dx,dy:item.pose.dy+dy});
+    notice='';later();
+  }
+  for(const [id,[x,y]] of Object.entries(moves)){
+    $(id).onclick=()=>{
+      if(movable())translate(selected(),x/img.naturalWidth,y/img.naturalHeight);
+    };
+  }
+  let drag=null;
+  view.addEventListener('pointerdown',event=>{
+    if(drag || !event.shiftKey || event.button!==0 || !movable())return;
+    drag={pointer:event.pointerId,item:selected(),x:event.clientX,y:event.clientY};
+    view.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  function track(event){
+    if(!drag || drag.pointer!==event.pointerId)return;
+    if(!movable() || selected()!==drag.item){drag=null;return;}
+    if(view.clientWidth && view.clientHeight){
+      translate(drag.item,(event.clientX-drag.x)/view.clientWidth,(event.clientY-drag.y)/view.clientHeight);
+    }
+    drag.x=event.clientX;drag.y=event.clientY;
+  }
+  view.addEventListener('pointermove',track);
+  view.addEventListener('pointerup',event=>{
+    track(event);
+    if(drag?.pointer===event.pointerId)drag=null;
+  });
+  for(const name of ['pointercancel','lostpointercapture']){
+    view.addEventListener(name,event=>{if(drag?.pointer===event.pointerId)drag=null;});
+  }
   $('cadViewMaster').onchange=later;
   $('cadViewKind').onchange=()=>{notice='';render();};
   $('cadViewReset').onclick=()=>{if(!binding()||!selected())return;const p=selected().pose;selected().pose={...M.defaultPose(),scale:shared?p.scale:1,opacity:p.opacity,visible:p.visible};notice=shared?'位置と回転をリセットしました。':'回転・位置・倍率をリセットしました。';later();};
