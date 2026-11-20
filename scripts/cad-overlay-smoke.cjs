@@ -70,6 +70,21 @@ async function browserTest(){
   assert(raw()===rawBefore,'annotation payload unchanged');
   change('cadViewMaster',true);change('cadViewKind','bone');$('cadViewReset').click();await tick();
   assert($('cadViewRX').value==='0'&&$('cadViewScale').value==='1'&&$('cadViewOpacity').value==='0.79','pose reset does not reset opacity');
+  change('cadViewKind','cup');
+  const cup=new File(['v -25 0 0\nv 25 0 0\nv 0 0 25\nf 1 2 3\n'],'cup-50mm.obj');
+  file('cadViewFile',cup);await wait(()=>$('cadViewStatus').textContent.includes('カップを読み込み'),'cup ready');
+  $('cadViewLock').click();await tick();
+  const scale=Number($('cadViewCalibration').textContent.match(/[0-9.]+/)[0]);
+  assert(Math.abs(scale-.62*120/50)<.001,'scale uses native image pixels');
+  $('cadViewHead').click();await tick();
+  assert($('cadViewKind').value==='head'&&$('cadViewScale').disabled,'head uses cup scale');
+  assert(!$('cadViewDX').disabled,'head translation remains available');
+  for(const id of ['stem','bone','cup']){
+    change('cadViewKind',id);assert($('cadViewScale').disabled,'all layer scales locked');
+  }
+  $('cadViewReset').click();await tick();assert($('cadViewScale').disabled,'reset respects lock');
+  $('cadViewLock').click();await tick();assert(!$('cadViewScale').disabled,'independent scale restored');
+  change('cadViewKind','bone');
   file('file',b);await wait(()=>!$('cadViewFile').disabled&&wash(0,0)[0]===153,'B ready');
   assert($('cadViewReset').disabled,'B cannot see A model');
   file('cadViewFile',model);await wait(()=>$('cadViewStatus').textContent.includes('読み込みました'),'B CAD ready');assert($('cadViewRX').value==='0','B does not inherit A');

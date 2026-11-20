@@ -83,9 +83,32 @@ test('display lifecycle leaves the app records intact; same image+CAD can opt ba
   h.run("peHash='a'.repeat(64);draw();");assert.equal(get('cadViewReset').disabled,true);
   await get('cadViewFile').onchange(file());assert.equal(get('cadViewRX').value,'16');assert.equal(get('cadViewDX').value,'0.18');
   get('cadViewForget').onclick();assert.equal(h.storage.has(key),false);
+  get('cadViewKind').value='cup';get('cadViewKind').onchange();
+  await get('cadViewFile').onchange(file());
+  get('cadViewLock').onclick();
+  assert.ok(get('cadViewScale').disabled);
+  assert.match(get('cadViewCalibration').textContent,/px\/mm/);
+  get('cadViewHead').onclick();assert.equal(get('cadViewKind').value,'head');
+  assert.equal(get('cadViewScale').disabled,true);
+  assert.equal(get('cadViewDX').disabled,false);
+  get('cadViewKind').value='bone';get('cadViewKind').onchange();
+  assert.equal(get('cadViewScale').disabled,true);
+  assert.deepEqual(record(),old);
   let finish;const pending=file(), bytes=await pending.target.files[0].arrayBuffer();
   pending.target.files[0].arrayBuffer=()=>new Promise(r=>{finish=r});
   const task=get('cadViewFile').onchange(pending);h.run("peHash='c'.repeat(64);draw();");finish(bytes);await task;
   assert.equal(get('cadViewReset').disabled,true,'in-flight old file cannot bind to new image');
   get('peProjection').value='LAUENSTEIN';get('peProjection').dispatch('change');assert.equal(get('cadViewFile').disabled,true);
+});
+
+test('common cup calibration projects physical lengths without clamping long femora',()=>{
+  const width=1200,height=900, sourceWidth=940, pxPerMm=2.5;
+  for(const extent of [32,50,178.5,450]){
+    const model=CAD.parse('mm.obj',from('v 0 0 0\nv '+extent+' 0 0\nv 0 0 1\nf 1 2 3'));
+    assert.equal(model.extentMm,extent);
+    const span=pxPerMm*width/sourceWidth*model.extentMm;
+    const proj=CAD.projection(CAD.defaultPose(),width,height,span);
+    const nativeWidth=(proj(.5,0,0)[0]-proj(-.5,0,0)[0])*sourceWidth/width;
+    assert.ok(Math.abs(nativeWidth-extent*pxPerMm)<1e-9);
+  }
 });
