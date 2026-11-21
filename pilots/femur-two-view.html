@@ -2,7 +2,7 @@
 <style>*{box-sizing:border-box}body{margin:0;background:#12181b;color:#eff5f4;font:15px system-ui}header,main{max-width:1500px;margin:auto;padding:12px 22px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #435255}h1{font-size:21px;margin:0}button,select,input{font:inherit}button,select{color:inherit;background:#253238;border:1px solid #58686c;border-radius:5px;padding:5px 10px;cursor:pointer}button:hover{background:#405459}label,small{color:#cad7d7}.bar,.controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:8px 0}.views{display:flex;gap:10px}.panel{flex:1;min-width:0;background:#070b0d;border:1px solid #53636a}.panel h2{font-size:15px;margin:0;padding:6px 12px;background:#263238}.panel canvas{width:100%;height:clamp(240px,44vh,520px);display:block;touch-action:none;cursor:crosshair}.lower{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.lower canvas{background:#101415;border:1px solid #405258}#note{color:#ffd58b}.selected{outline:2px solid #8bdfc9}button:disabled{opacity:.5}input[type=number]{width:65px}section{border-top:1px solid #37474e;margin-top:10px;padding-top:6px}</style>
 <header><h1>大腿骨の位置合わせ</h1><small id="case"></small></header><main>
 <label id="loadLabel">試験データを開く <input type="file" id="load" accept=".json"></label>
-<div id="app" hidden><div class="bar"><select id="mode"><option value="split">近位・遠位の2画面</option><option value="whole">全体合わせ（比較用）</option></select><span id="status"></span><button id="save">下書きを保存</button><button id="reset">この方式を初期位置に戻す</button></div>
+<div id="app" hidden><div class="bar"><select id="mode"><option value="split">近位・遠位の2画面</option><option value="whole">全体合わせ（比較用）</option></select><span id="status"></span><button id="save">ブラウザに下書き保存</button><button id="exportFile">ファイルに保存</button><button id="reset">この方式を初期位置に戻す</button></div>
 <div class="views"><div class="panel"><h2 id="titleA">遠位｜骨軸</h2><canvas id="dist"></canvas></div><div class="panel" id="panelB"><h2>近位｜大転子・小転子</h2><canvas id="prox"></canvas></div></div>
 <small>赤＝皮質とステムの接触候補　紫紅＝医師が確認した接触</small><div class="controls" id="controls"></div><small>画像をドラッグして平行移動。水色＝外皮質、橙＝髄腔内縁候補、緑＝骨軸、紫＝選択断面。GT・LT・骨軸はCT候補。まず姿勢を合わせ、次に境界を修正。修正点はAP画像座標に固定。</small>
 <section><div class="bar"><label>小転子から遠位 <select id="level"></select> mm</label><label>境界 <select id="which"><option>内側外皮質</option><option>内側髄腔</option><option>外側髄腔</option><option>外側外皮質</option></select></label><button id="minus">点を左へ 1 px</button><button id="plus">右へ 1 px</button><button id="confirmContact">接触を確認</button><button id="absent">判読不能</button><button id="undo">CT候補へ戻す</button></div>
@@ -11,16 +11,22 @@
 <script>
 const $=id=>document.getElementById(id), rad=Math.PI/180, img=new Image(), sample=document.createElement('canvas');
 let data,gray,states,rows,frames={},points,profilePoints,ctIdx=-1,ctBitmap,activeMode='split',drag;
+const pageTemplate=document.documentElement?.outerHTML.replace(/(<script id="payload" type="application\/json">)[\s\S]*?(<\/script>)/, '$1null$2');
+let snapshotId='';
 let tick=null;function clock(){if(tick!==null){st().ms+=performance.now()-tick;tick=null}}
 const fresh=()=>({x:0,y:0,tilt:0,roll:0,edits:{},moves:0,ms:0});const st=()=>states[activeMode];
-function init(d){
+function init(d,review=null){
+ snapshotId=review?.id||'';
+ if(review)$('mode').value=review.mode;
  data=d;states={split:fresh(),whole:fresh()};activeMode=$('mode').value;
+ if(review)states=review.states;
  try{const saved=JSON.parse(localStorage.getItem(key()));if(saved&&saved.split&&saved.whole)states=saved}catch{}
  $('case').textContent=d.caption;$('app').hidden=false;$('loadLabel').hidden=true;
  $('level').replaceChildren(...[0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120].filter(x=>d.lt[2]-x>=d.rings[0].z).map(x=>new Option(x,x)));$('level').value='10';
+ if(review){$('level').value=review.level;$('which').selectedIndex=review.edge}
  img.onload=()=>{sample.width=img.width;sample.height=img.height;const g=sample.getContext('2d');g.drawImage(img,0,0);gray=g.getImageData(0,0,img.width,img.height).data;render()};img.src='data:image/png;base64,'+d.image;
 }
-function key(){return 'fma-femur-pilot-v1:'+data.imageHash}
+function key(){return 'fma-femur-pilot-v1:'+data.imageHash+(snapshotId?':'+snapshotId:'')}
 function projectFn(){
  const s=st(),[a,b,e]=[data.pose.rx,data.pose.ry,data.pose.rz].map(v=>v*rad),ca=Math.cos(a),sa=Math.sin(a),cb=Math.cos(b),sb=Math.sin(b),cc=Math.cos(e),sc=Math.sin(e);
  const u=[cc*cb,cc*sb*sa-sc*ca,cc*sb*ca+sc*sa],v=[sb,-cb*sa,-cb*ca],base=data.axis[1],axis=data.axis[0].map((x,i)=>x-base[i]),len=Math.hypot(...axis),[nx,ny,nz]=axis.map(x=>x/len);
@@ -91,6 +97,16 @@ $('absent').onclick=()=>edit(null);$('undo').onclick=()=>{if(st().confirmed)dele
 $('mode').onchange=e=>{clock();activeMode=e.target.value;render()};$('level').onchange=$('which').onchange=render;$('reset').onclick=()=>{if(confirm('この方式の姿勢と点修正を初期値に戻しますか？')){clock();states[activeMode]=fresh();render()}};$('save').onclick=()=>{clock();localStorage.setItem(key(),JSON.stringify(states));$('status').textContent+='　このブラウザに保存済み'};
 $('load').onchange=async e=>init(JSON.parse(await e.target.files[0].text()));window.onresize=render;
 setInterval(()=>{if(tick!==null)render()},1000);document.addEventListener('visibilitychange',()=>{if(document.hidden)clock()});
-const embedded=JSON.parse($('payload').textContent);if(embedded)init(embedded);
+function exportReview(){
+ clock();
+ const review={id:crypto.randomUUID(),states,mode:activeMode,level:$('level').value,edge:$('which').selectedIndex};
+ const json=JSON.stringify({format:'FMA-femur-review-v1',data,review}).replace(/</g,'\\u003c');
+ return '<!doctype html>'+pageTemplate.replace('<script id="payload" type="application/json">null',()=>'<script id="payload" type="application/json">'+json);
+}
+$('exportFile').onclick=()=>{
+ const url=URL.createObjectURL(new Blob([exportReview()],{type:'text/html;charset=utf-8'}));
+ const a=document.createElement('a');a.href=url;a.download='FMA_femur_'+data.imageHash.slice(0,8)+'_'+new Date().toISOString().replace(/[:.]/g,'-')+'.html';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+};
+const embedded=JSON.parse($('payload').textContent);if(embedded?.format==='FMA-femur-review-v1')init(embedded.data,embedded.review);else if(embedded)init(embedded);
 </script></html>
 
