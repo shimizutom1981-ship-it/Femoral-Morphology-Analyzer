@@ -32,7 +32,7 @@ Key Rules for AI Assistants modifying this file:
 @media(max-width:620px){.cadControls{max-width:none}.cadImagePane{flex-basis:100%}}
 .cadZoomBar{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:3px}
 .cadZoomBar button,.cadControls label{width:auto;margin:0;padding:4px 6px}
-.cadSpinPad{display:grid;grid-template-columns:repeat(2,auto);gap:2px}
+.cadSpinPad{display:grid;grid-template-columns:repeat(3,auto);gap:2px}
 .cadSpinPad button,.cadPad button{width:auto;margin:0;padding:5px;min-height:30px;border:1px solid #8999a9;border-radius:5px;background:#192432;color:white}
 .cadSpinPad button:disabled,.cadPad button:disabled{opacity:.55}
 .cadPad{display:grid;grid-template-areas:". up ." "left dock right" ". down .";gap:2px}
@@ -182,11 +182,13 @@ Key Rules for AI Assistants modifying this file:
       <button type="button" id="cadZoomReset">全体表示</button>
     </div>
     <input id="cadDockLeft" class="cadDockToggle" type="checkbox" aria-label="操作ボタンを画像の左側に置く">
-    <div class="cadSpinPad" role="group" aria-label="選択中のCADを1度回転">
+    <div class="cadSpinPad" role="group" aria-label="選択中のCADの回転と倍率">
         <button type="button" id="cadNumpad7" aria-label="X軸 −1度 テンキー7" disabled>7 X−</button>
         <button type="button" id="cadNumpad8" aria-label="X軸 ＋1度 テンキー8" disabled>8 X＋</button>
+        <button type="button" id="cadNumpad9" aria-label="CAD倍率 ＋0.01 テンキー9" disabled>9 倍率＋</button>
         <button type="button" id="cadNumpad4" aria-label="Y軸 −1度 テンキー4" disabled>4 Y−</button>
         <button type="button" id="cadNumpad5" aria-label="Y軸 ＋1度 テンキー5" disabled>5 Y＋</button>
+        <button type="button" id="cadNumpad6" aria-label="CAD倍率 −0.01 テンキー6" disabled>6 倍率−</button>
         <button type="button" id="cadNumpad1" aria-label="Z軸 −1度 テンキー1" disabled>1 Z−</button>
         <button type="button" id="cadNumpad2" aria-label="Z軸 ＋1度 テンキー2" disabled>2 Z＋</button>
     </div>
@@ -3535,7 +3537,7 @@ if(typeof module!=='undefined'&&module.exports)module.exports=FmaCadOverlay;
       button.disabled=!items[id];
       button.setAttribute('aria-pressed',String(!!items[id] && id===kind()));
     }
-    for(const code of Object.keys(spinKeys))$('cad'+code).disabled=!movable();
+    for(const code of Object.keys(poseKeys))$('cad'+code).disabled=!movable()||(shared&&poseKeys[code][0]==='scale');
     for(const id of Object.keys(moves))$(id).disabled=!movable();
     $('cadViewLock').disabled=!items.cup;
     $('cadViewLock').textContent=shared?'共通倍率を解除':'カップの倍率を全CADに固定';
@@ -3587,28 +3589,30 @@ if(typeof module!=='undefined'&&module.exports)module.exports=FmaCadOverlay;
     items.head=head;$('cadViewKind').value='head';notice='32 mmヘッドの中心をX線に合わせてください。';render();
   };
   const moves={cadLeft:[-1,0],cadRight:[1,0],cadUp:[0,-1],cadDown:[0,1]};
-  const spinKeys={
-    Numpad7:['rx',-1],Numpad8:['rx',1],
-    Numpad4:['ry',-1],Numpad5:['ry',1],
+  const poseKeys={
+    Numpad7:['rx',-1],Numpad8:['rx',1],Numpad9:['scale',.01],
+    Numpad4:['ry',-1],Numpad5:['ry',1],Numpad6:['scale',-.01],
     Numpad1:['rz',-1],Numpad2:['rz',1]
   };
-  function rotateSelected(code){
+  function adjustSelected(code){
     if(!panel.open || !movable())return false;
-    const item=selected(),[axis,step]=spinKeys[code];
-    let angle=item.pose[axis]+step;
-    if(angle>180)angle-=360;
-    if(angle< -180)angle+=360;
-    item.pose=M.normalise({...item.pose,[axis]:angle});
+    const item=selected(),[axis,step]=poseKeys[code];
+    if(axis==='scale' && shared)return false;
+    let value=item.pose[axis]+step;
+    if(axis==='scale')value=Number(value.toFixed(6));
+    else if(value>180)value-=360;
+    else if(value< -180)value+=360;
+    item.pose=M.normalise({...item.pose,[axis]:value});
     notice='';later();return true;
   }
-  for(const code of Object.keys(spinKeys))$('cad'+code).onclick=()=>rotateSelected(code);
+  for(const code of Object.keys(poseKeys))$('cad'+code).onclick=()=>adjustSelected(code);
   document.addEventListener('keydown',event=>{
-    if(!Object.hasOwn(spinKeys,event.code)||event.defaultPrevented||event.isComposing||
+    if(!Object.hasOwn(poseKeys,event.code)||event.defaultPrevented||event.isComposing||
        event.ctrlKey||event.altKey||event.metaKey||event.shiftKey)return;
     const target=event.target;
     if(target.isContentEditable||target.closest?.('textarea,select,input:not([type="range"]):not([type="checkbox"]):not([type="file"])'))return;
     if(target!==document.body && target!==document.documentElement && !panel.contains(target))return;
-    if(rotateSelected(event.code)){event.preventDefault();event.stopPropagation();}
+    if(adjustSelected(event.code)){event.preventDefault();event.stopPropagation();}
   },true);
   function movable(){
     return binding() && $('cadViewMaster').checked && selected()?.pose.visible && selected().pose.opacity>0;
