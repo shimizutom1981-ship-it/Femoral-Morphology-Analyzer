@@ -4,8 +4,8 @@
 <label id="loadLabel">試験データを開く <input type="file" id="load" accept=".json"></label>
 <div id="app" hidden><div class="bar"><select id="mode"><option value="split">近位・遠位の2画面</option><option value="whole">全体合わせ（比較用）</option></select><span id="status"></span><button id="save">下書きを保存</button><button id="reset">この方式を初期位置に戻す</button></div>
 <div class="views"><div class="panel"><h2 id="titleA">遠位｜骨軸</h2><canvas id="dist"></canvas></div><div class="panel" id="panelB"><h2>近位｜大転子・小転子</h2><canvas id="prox"></canvas></div></div>
-<div class="controls" id="controls"></div><small>画像をドラッグして平行移動。水色＝外皮質、橙＝髄腔内縁候補、緑＝骨軸、紫＝選択断面。GT・LT・骨軸はCT候補。まず姿勢を合わせ、次に境界を修正。修正点はAP画像座標に固定。</small>
-<section><div class="bar"><label>小転子から遠位 <select id="level"></select> mm</label><label>境界 <select id="which"><option>内側外皮質</option><option>内側髄腔</option><option>外側髄腔</option><option>外側外皮質</option></select></label><button id="minus">点を左へ 1 px</button><button id="plus">右へ 1 px</button><button id="absent">判読不能</button><button id="undo">CT候補へ戻す</button></div>
+<small>赤＝皮質とステムの接触候補　紫紅＝医師が確認した接触</small><div class="controls" id="controls"></div><small>画像をドラッグして平行移動。水色＝外皮質、橙＝髄腔内縁候補、緑＝骨軸、紫＝選択断面。GT・LT・骨軸はCT候補。まず姿勢を合わせ、次に境界を修正。修正点はAP画像座標に固定。</small>
+<section><div class="bar"><label>小転子から遠位 <select id="level"></select> mm</label><label>境界 <select id="which"><option>内側外皮質</option><option>内側髄腔</option><option>外側髄腔</option><option>外側外皮質</option></select></label><button id="minus">点を左へ 1 px</button><button id="plus">右へ 1 px</button><button id="confirmContact">接触を確認</button><button id="absent">判読不能</button><button id="undo">CT候補へ戻す</button></div>
 <div class="lower"><div><small>選択した高さのCT横断像</small><br><canvas width="180" height="165" id="ct"></canvas></div><div><small>AP輝度プロファイル｜境界を選び、グラフをクリックして修正</small><br><canvas id="profile" width="420" height="145"></canvas></div><small id="note"></small></div></section></div></main>
 <script id="payload" type="application/json">null</script>
 <script>
@@ -34,29 +34,41 @@ function compute(){
  const proj=projectFn();rows=data.rings.map((r,i)=>{let lo,hi,li,ri;for(let j=0;j<r.o.length;j++){if(!r.o[j])continue;const p=proj(r.o[j]);if(!lo||p[0]<lo[0]){lo=p;li=j}if(!hi||p[0]>hi[0]){hi=p;ri=j}}
  const edge=[lo,r.i[li]?proj(r.i[li]):null,r.i[ri]?proj(r.i[ri]):null,hi];
  for(let j=0;j<4;j++){const k=i+':'+j;if(k in st().edits)edge[j]=st().edits[k]}
+ edge.contact=[false,!!r.contact?.[li],!!r.contact?.[ri],false];
  return edge});
  points={axis:data.axis.map(proj),gt:proj(data.gt),lt:proj(data.lt)};
 }
 function index(){let z=data.lt[2]-Number($('level').value);return data.rings.reduce((best,r,i)=>Math.abs(r.z-z)<Math.abs(data.rings[best].z-z)?i:best,0)}
 const colors=['#5cf0f5','#ffab48','#ffab48','#5cf0f5'];
+function lineColor(row,i,j){
+ if(!row[j] || (j!==1 && j!==2))return colors[j];
+ if(st().confirmed?.[i+':'+j])return '#ed53ca';
+ return row.contact[j]?'#ff5656':colors[j];
+}
 function view(id,cx,cy,height){
  const el=$(id),width=el.clientWidth,h=el.clientHeight;if(!width||!h)return;
  el.width=width;el.height=h;const g=el.getContext('2d'),scale=Math.min(h/height,width/(height*.76));const x0=cx-width/(2*scale),y0=cy-h/(2*scale);frames[id]={scale,x0,y0};
  g.setTransform(scale,0,0,scale,-x0*scale,-y0*scale);g.drawImage(img,0,0);g.lineWidth=1.4/scale;
  function path(ps,color){g.strokeStyle=color;g.beginPath();let last;for(const p of ps){if(!p){last=null;continue}if(last)g.lineTo(...p);else g.moveTo(...p);last=p}g.stroke()}
- for(let j=0;j<4;j++)path(rows.map(v=>v[j]),colors[j]);path(points.axis,'#99ee80');
+ for(let j=0;j<4;j++)for(let i=0;i<rows.length;i++){
+   const q=rows[i][j];if(!q)continue;
+   const c=lineColor(rows[i],i,j),prev=rows[i-1]?.[j];
+   if(prev){const mid=[(prev[0]+q[0])/2,(prev[1]+q[1])/2];path([prev,mid],lineColor(rows[i-1],i-1,j));path([mid,q],c)}
+   g.fillStyle=c;g.fillRect(q[0],q[1],1/scale,1/scale);
+ }path(points.axis,'#99ee80');
  function mark(p,name,color){g.fillStyle=color;g.beginPath();g.arc(...p,3/scale,0,2*Math.PI);g.fill();g.font=(13/scale)+'px sans-serif';g.fillText(name,p[0]+4/scale,p[1]-4/scale)}
  mark(points.gt,'GT','#fff');mark(points.lt,'LT','#fff');points.axis.forEach((p,i)=>mark(p,i?'100':'10','#99ee80'));
- const sel=rows[index()];if(sel[0]&&sel[3])path([sel[0],sel[3]],'#c3a2ff');sel.forEach((p,i)=>{if(p)mark(p,'',colors[i])});
+ const sel=rows[index()];if(sel[0]&&sel[3])path([sel[0],sel[3]],'#c3a2ff');sel.forEach((p,i)=>{if(p)mark(p,'',lineColor(sel,index(),i))});
 }
 function profile(){
  const idx=index(),r=data.rings[idx],edge=rows[idx],p=projectFn(),lo=p(r.o.find(Boolean)),outer=r.o.filter(Boolean).map(p).sort((a,b)=>a[0]-b[0]);const L=outer[0],R=outer.at(-1),dx=R[0]-L[0],dy=R[1]-L[1]; // follow the projected transverse chord
  const g=$('profile').getContext('2d');g.clearRect(0,0,420,145);g.strokeStyle='#eee';g.beginPath();profilePoints=[];
  for(let k=0;k<420;k++){let t=k/419*1.5-.25,x=L[0]+t*dx,y=L[1]+t*dy;profilePoints.push([x,y]);let at=4*(Math.round(y)*img.width+Math.round(x));let lum=.299*gray[at]+.587*gray[at+1]+.114*gray[at+2];if(k)g.lineTo(k,138-lum*.48);else g.moveTo(k,138-lum*.48)}g.stroke();
- edge.forEach((q,j)=>{if(!q)return;let xx=((q[0]-L[0])/dx+.25)/1.5*419;g.strokeStyle=colors[j];g.beginPath();g.moveTo(xx,0);g.lineTo(xx,145);g.stroke()});
- const ci=$('ct').getContext('2d');function paint(){ci.drawImage(ctBitmap,0,0,180,165);for(let field of ['o','i']){ci.fillStyle=field==='o'?colors[0]:colors[1];for(let q of r[field])if(q)ci.fillRect((q[0]-data.ctOrigin[0])/data.ctSp/97*180,(q[1]-data.ctOrigin[1])/data.ctSp/100*165,2,2)}}
+ edge.forEach((q,j)=>{if(!q)return;let xx=((q[0]-L[0])/dx+.25)/1.5*419;g.strokeStyle=lineColor(edge,idx,j);g.beginPath();g.moveTo(xx,0);g.lineTo(xx,145);g.stroke()});
+ const ci=$('ct').getContext('2d');function paint(){ci.drawImage(ctBitmap,0,0,180,165);for(let field of ['o','i']){ci.fillStyle=field==='o'?colors[0]:colors[1];for(let [k,q] of r[field].entries())if(q){ci.fillStyle=field==='o'?colors[0]:r.contact?.[k]?'#ff5656':colors[1];ci.fillRect((q[0]-data.ctOrigin[0])/data.ctSp/97*180,(q[1]-data.ctOrigin[1])/data.ctSp/100*165,2,2)}}}
  if(idx!==ctIdx){ctIdx=idx;ctBitmap=new Image();ctBitmap.onload=()=>{if(ctIdx===idx)paint()};ctBitmap.src='data:image/png;base64,'+r.ct}else if(ctBitmap.complete)paint();
- $('note').textContent='選択高 '+$('level').value+' mm ｜ '+(edge[$('which').selectedIndex]?'候補あり':'候補なし・要確認')+' ｜ 修正・欠測 '+Object.keys(st().edits).length+' 点';
+ const j=$('which').selectedIndex,k=idx+':'+j,confirmed=!!st().confirmed?.[k];$('confirmContact').disabled=!edge[j]||(j!==1&&j!==2);$('confirmContact').textContent=confirmed?'接触確認を解除':'接触を確認';
+ $('note').textContent=(confirmed?'接触確認済み｜':edge.contact[j]&&edge[j]?'接触候補｜':'')+'選択高 '+$('level').value+' mm ｜ '+(edge[$('which').selectedIndex]?'候補あり':'候補なし・要確認')+' ｜ 修正・欠測 '+Object.keys(st().edits).length+' 点';
 }
 function referenceError(start,end){
  const diffs=[];for(const [y,l,r] of data.ref){if(y<start||y>end)continue;
@@ -71,10 +83,11 @@ function render(){if(!gray)return;compute();const split=activeMode==='split';$('
 function move(k,v){if(tick===null)tick=performance.now();st()[k]=Math.round((st()[k]+v)*10)/10;st().moves++;render()}
 for(let [k,title,step] of [['x','左右',1],['y','上下',1],['tilt','面内傾き',.5],['roll','骨軸回旋',1]]){let label=document.createElement('label');label.textContent=title+' ';for(let s of [-1,1]){let b=document.createElement('button');b.textContent=(s>0?'+':'−')+step;b.onclick=()=>move(k,s*step);label.append(b)}$('controls').append(label)}
 for(let id of ['dist','prox']){const el=$(id);el.onpointerdown=e=>{if(tick===null)tick=performance.now();el.setPointerCapture(e.pointerId);drag={x:e.clientX,y:e.clientY,dx:st().x,dy:st().y}};el.onpointermove=e=>{if(!drag)return;const scale=frames[id].scale;st().x=Math.round(drag.dx+(e.clientX-drag.x)/scale);st().y=Math.round(drag.dy+(e.clientY-drag.y)/scale);render()};el.onpointerup=el.onpointercancel=()=>{if(drag){drag=null;st().moves++;render()}}}
-function edit(p){if(tick===null)tick=performance.now();st().edits[index()+':'+$('which').selectedIndex]=p;render()}
+function edit(p){if(st().confirmed)delete st().confirmed[index()+':'+$('which').selectedIndex];if(tick===null)tick=performance.now();st().edits[index()+':'+$('which').selectedIndex]=p;render()}
 $('profile').onclick=e=>{const rect=e.target.getBoundingClientRect();edit(profilePoints[Math.max(0,Math.min(419,Math.round(419*(e.clientX-rect.left)/rect.width)))])};
 for(let [id,s] of [['minus',-1],['plus',1]])$(id).onclick=()=>{let q=rows[index()][$('which').selectedIndex];if(q)edit([q[0]+s,q[1]])};
-$('absent').onclick=()=>edit(null);$('undo').onclick=()=>{delete st().edits[index()+':'+$('which').selectedIndex];render()};
+$('confirmContact').onclick=()=>{const j=$('which').selectedIndex,k=index()+':'+j;if((j!==1&&j!==2)||!rows[index()][j])return;const m=st().confirmed??={};if(m[k])delete m[k];else m[k]=true;render()};
+$('absent').onclick=()=>edit(null);$('undo').onclick=()=>{if(st().confirmed)delete st().confirmed[index()+':'+$('which').selectedIndex];delete st().edits[index()+':'+$('which').selectedIndex];render()};
 $('mode').onchange=e=>{clock();activeMode=e.target.value;render()};$('level').onchange=$('which').onchange=render;$('reset').onclick=()=>{if(confirm('この方式の姿勢と点修正を初期値に戻しますか？')){clock();states[activeMode]=fresh();render()}};$('save').onclick=()=>{clock();localStorage.setItem(key(),JSON.stringify(states));$('status').textContent+='　このブラウザに保存済み'};
 $('load').onchange=async e=>init(JSON.parse(await e.target.files[0].text()));window.onresize=render;
 setInterval(()=>{if(tick!==null)render()},1000);document.addEventListener('visibilitychange',()=>{if(document.hidden)clock()});
