@@ -1,0 +1,49 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FMA｜骨軸目盛り</title>
+<style>*{box-sizing:border-box}body{margin:1rem;background:#142127;color:#edf5f4;font:16px system-ui}h1{font-size:1.3rem}header{display:flex;flex-wrap:wrap;gap:1rem;align-items:center}select,input,button{font:inherit}main{display:grid;grid-template-columns:1fr 1fr;gap:1rem}figure{margin:.7rem 0}canvas{width:100%;height:auto;background:#091013}small{color:#bed3d3}p{margin:.6rem 0}</style>
+<h1>FMA｜大腿骨の長軸目盛り</h1><header><label>小転子から遠位 <select id="level"></select></label><label>位置合わせ <select id="fit"><option value="both">両方</option><option value="full">全体</option><option value="shaft">骨幹部</option></select></label><label><input id="ticks" type="checkbox" checked>10 mm目盛り</label><label><input id="land" type="checkbox" checked>骨特徴点候補</label></header>
+<p>水色の実線は全体合わせ、橙の破線は骨幹部合わせ。白い十字はX線上の小転子・大転子の参照候補です。</p>
+<div id="load"><label>症例の比較ファイルを開く <input id="file" type="file" accept=".html,.json"></label></div><main id="panes"></main><output id="info"></output>
+<script id="pair-data" type="application/json">null</script><script>
+const el=id=>document.getElementById(id);
+let pair=null, panels=[];
+function draw(){
+ if(!pair)return;
+ const height=Number(el('level').value),fit=el('fit').value;
+ const differences=[];
+ for(const {canvas,image,view} of panels){
+  const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);
+  function segment(a,b){ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke()}
+  for(const key of ['full','shaft']){
+   if(fit!=='both'&&fit!==key)continue;
+   const rows=view.poses[key],color=key==='full'?'#49e8ef':'#ffac51';
+   ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=1.4;ctx.setLineDash(key==='full'?[]:[4,3]);
+   for(const row of rows){
+    const [mm,c,a,b]=row;
+    if(mm===height){ctx.lineWidth=2;segment(a,b);ctx.lineWidth=1.4}
+    if(el('ticks').checked){segment([c[0]-3,c[1]],[c[0]+3,c[1]]);if(mm%20===0&&(key==='full'||fit==='shaft')){ctx.font='10px sans-serif';ctx.fillText(String(mm),c[0]+5,c[1]-2)}}
+   }
+  }
+  ctx.setLineDash([]);ctx.strokeStyle='white';ctx.fillStyle='white';ctx.font='12px sans-serif';
+  if(el('land').checked)for(const [tag,[x,y]] of Object.entries(view.landmarks)){segment([x-4,y],[x+4,y]);segment([x,y-4],[x,y+4]);ctx.fillText(tag,x+6,y-4)}
+  const idx=view.poses.full.findIndex(row=>row[0]===height);
+  const delta=Math.abs(view.poses.full[idx][1][1]-view.poses.shaft[idx][1][1])/view.ppm;
+  differences.push(view.title+' '+delta.toFixed(1)+' mm');
+ }
+ el('info').textContent=height+' mm基準点の画像縦方向の差　'+differences.join(' ／ ');
+}
+async function openPair(data){
+ if(!data||data.version!==1||data.views.length!==2)throw Error('症例比較データを確認してください');
+ const next=await Promise.all(data.views.map(async view=>{
+  if(!/^data:image\/png;base64,/.test(view.image))throw Error('画像形式を確認してください');
+  const image=new Image();image.src=view.image;await image.decode();
+  const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+  const figure=document.createElement('figure'),caption=document.createElement('figcaption');caption.textContent=view.title;figure.append(caption,canvas);
+  return {view,image,canvas,figure};
+ }));
+ panels=next;pair=data;el('panes').replaceChildren(...panels.map(p=>p.figure));
+ el('level').replaceChildren(...data.views[0].poses.full.map(row=>new Option(row[0]+' mm',row[0])));el('level').value='100';draw();
+}
+for(const id of ['level','fit','ticks','land'])el(id).onchange=draw;
+el('file').onchange=async e=>{try{const raw=await e.target.files[0].text();const doc=new DOMParser().parseFromString(raw,'text/html');await openPair(JSON.parse(doc.getElementById('pair-data')?.textContent||raw))}catch(err){el('info').textContent=err.message}};
+const preset=JSON.parse(el('pair-data').textContent);if(preset){el('load').hidden=true;openPair(preset).catch(err=>el('info').textContent=err.message)}
+</script></html>
