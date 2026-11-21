@@ -2,7 +2,9 @@
 <style>*{box-sizing:border-box}body{margin:0;background:#12181b;color:#eff5f4;font:15px system-ui}header,main{max-width:1500px;margin:auto;padding:12px 22px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #435255}h1{font-size:21px;margin:0}button,select,input{font:inherit}button,select{color:inherit;background:#253238;border:1px solid #58686c;border-radius:5px;padding:5px 10px;cursor:pointer}button:hover{background:#405459}label,small{color:#cad7d7}.bar,.controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:8px 0}.views{display:flex;gap:10px}.panel{flex:1;min-width:0;background:#070b0d;border:1px solid #53636a}.panel h2{font-size:15px;margin:0;padding:6px 12px;background:#263238}.panel canvas{width:100%;height:clamp(240px,44vh,520px);display:block;touch-action:none;cursor:crosshair}.lower{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.lower canvas{background:#101415;border:1px solid #405258}#note{color:#ffd58b}.selected{outline:2px solid #8bdfc9}button:disabled{opacity:.5}input[type=number]{width:65px}section{border-top:1px solid #37474e;margin-top:10px;padding-top:6px}</style>
 <header><h1>大腿骨の位置合わせ</h1><small id="case"></small></header><main>
 <label id="loadLabel">試験データを開く <input type="file" id="load" accept=".json"></label>
-<div id="app" hidden><div class="bar"><select id="mode"><option value="split">近位・遠位の2画面</option><option value="whole">全体合わせ（比較用）</option></select><span id="status"></span><button id="save">ブラウザに下書き保存</button><button id="exportFile">ファイルに保存</button><button id="reset">この方式を初期位置に戻す</button></div>
+<div id="app" hidden><div class="bar"><select id="mode"><option value="split">近位・遠位の2画面</option><option value="whole">全体合わせ（比較用）</option></select><span id="status"></span><button id="save">ブラウザに下書き保存</button><label>保存済みの編集を開く <input type="file" accept=".html" id="resume"></label><button id="exportFile">ファイルに保存</button><button id="reset">この方式を初期位置に戻す</button></div>
+<div class="bar"><label>画像操作 <select id="tool"><option value="bone">大腿骨を移動</option><option value="lt">LTを置く・移動</option><option value="gt">GTを置く・移動</option><option value="edge">選択断面の境界に打点</option><option value="cad">追加CADを移動</option></select></label><button id="restorePoint" hidden>転子点をCT候補に戻す</button><small>打点はAP画像上。断面の基準はCTのLT。</small></div>
+<details><summary>CADを追加・調整</summary><div class="bar"><input type="file" id="stl" multiple accept=".stl"><label><input type="checkbox" checked id="native">症例CTと同じLPS座標（mm）</label><select id="layer" aria-label="追加CAD"></select><button id="visibility">表示切替</button><button id="remove">CADを外す</button></div><div class="controls" id="cadControls"></div><small id="message"></small></details>
 <div class="views"><div class="panel"><h2 id="titleA">遠位｜骨軸</h2><canvas id="dist"></canvas></div><div class="panel" id="panelB"><h2>近位｜大転子・小転子</h2><canvas id="prox"></canvas></div></div>
 <small>赤＝皮質とステムの接触候補　紫紅＝医師が確認した接触</small><div class="controls" id="controls"></div><small>画像をドラッグして平行移動。水色＝外皮質、橙＝髄腔内縁候補、緑＝骨軸、紫＝選択断面。GT・LT・骨軸はCT候補。まず姿勢を合わせ、次に境界を修正。修正点はAP画像座標に固定。</small>
 <section><div class="bar"><label>小転子から遠位 <select id="level"></select> mm</label><label>境界 <select id="which"><option>内側外皮質</option><option>内側髄腔</option><option>外側髄腔</option><option>外側外皮質</option></select></label><button id="minus">点を左へ 1 px</button><button id="plus">右へ 1 px</button><button id="confirmContact">接触を確認</button><button id="absent">判読不能</button><button id="undo">CT候補へ戻す</button></div>
@@ -22,7 +24,7 @@ function init(d,review=null){
  if(review)states=review.states;
  try{const saved=JSON.parse(localStorage.getItem(key()));if(saved&&saved.split&&saved.whole)states=saved}catch{}
  $('case').textContent=d.caption;$('app').hidden=false;$('loadLabel').hidden=true;
- $('level').replaceChildren(...[0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120].filter(x=>d.lt[2]-x>=d.rings[0].z).map(x=>new Option(x,x)));$('level').value='10';
+ $('level').replaceChildren(...[...new Set(d.rings.map(r=>Number((d.lt[2]-r.z).toFixed(3))))].sort((a,b)=>a-b).map(x=>new Option(x,x)));$('level').value='10';
  if(review){$('level').value=review.level;$('which').selectedIndex=review.edge}
  img.onload=()=>{sample.width=img.width;sample.height=img.height;const g=sample.getContext('2d');g.drawImage(img,0,0);gray=g.getImageData(0,0,img.width,img.height).data;render()};img.src='data:image/png;base64,'+d.image;
 }
@@ -42,19 +44,19 @@ function compute(){
  for(let j=0;j<4;j++){const k=i+':'+j;if(k in st().edits)edge[j]=st().edits[k]}
  edge.contact=[false,!!r.contact?.[li],!!r.contact?.[ri],false];
  return edge});
- points={axis:data.axis.map(proj),gt:proj(data.gt),lt:proj(data.lt)};
+ points={axis:data.axis.map(proj),gt:st().landmarks?.gt??proj(data.gt),lt:st().landmarks?.lt??proj(data.lt)};
 }
 function index(){let z=data.lt[2]-Number($('level').value);return data.rings.reduce((best,r,i)=>Math.abs(r.z-z)<Math.abs(data.rings[best].z-z)?i:best,0)}
 const colors=['#5cf0f5','#ffab48','#ffab48','#5cf0f5'];
 function lineColor(row,i,j){
  if(!row[j] || (j!==1 && j!==2))return colors[j];
  if(st().confirmed?.[i+':'+j])return '#ed53ca';
- return row.contact[j]?'#ff5656':colors[j];
+ if((i+':'+j) in st().edits)return '#ffe588';return row.contact[j]?'#ff5656':colors[j];
 }
 function view(id,cx,cy,height){
  const el=$(id),width=el.clientWidth,h=el.clientHeight;if(!width||!h)return;
  el.width=width;el.height=h;const g=el.getContext('2d'),scale=Math.min(h/height,width/(height*.76));const x0=cx-width/(2*scale),y0=cy-h/(2*scale);frames[id]={scale,x0,y0};
- g.setTransform(scale,0,0,scale,-x0*scale,-y0*scale);g.drawImage(img,0,0);g.lineWidth=1.4/scale;
+ g.setTransform(scale,0,0,scale,-x0*scale,-y0*scale);g.drawImage(img,0,0);for(const l of st().layers??[])if(l.visible){g.globalAlpha=.4;g.drawImage(layerImage(l),0,0);g.globalAlpha=1}g.lineWidth=1.4/scale;
  function path(ps,color){g.strokeStyle=color;g.beginPath();let last;for(const p of ps){if(!p){last=null;continue}if(last)g.lineTo(...p);else g.moveTo(...p);last=p}g.stroke()}
  for(let j=0;j<4;j++)for(let i=0;i<rows.length;i++){
    const q=rows[i][j];if(!q)continue;
@@ -83,20 +85,86 @@ function referenceError(start,end){
  if((a[1]-y)*(b[1]-y)<=0){const x=a[0]+(y-a[1])*(b[0]-a[0])/(b[1]-a[1]);diffs.push(Math.abs(x-target));break}}}}
  return diffs.length?(diffs.reduce((a,b)=>a+b,0)/diffs.length).toFixed(1):'—'
 }
-function render(){if(!gray)return;compute();const split=activeMode==='split';$('panelB').hidden=!split;$('titleA').textContent=split?'遠位｜骨軸':'全体｜比較用';const row=points.axis;
+function render(){if(!gray)return;syncLayers();compute();const split=activeMode==='split';$('panelB').hidden=!split;$('titleA').textContent=split?'遠位｜骨軸':'全体｜比較用';const row=points.axis;
  view('dist',...(split?data.views.dist:data.views.whole));if(split)view('prox',...data.views.prox);profile();
  $('status').textContent='横 '+st().x+' px　縦 '+st().y+' px　傾き '+st().tilt+'°　軸回旋 '+st().roll+'°　操作 '+st().moves+' 回　'+Math.round((st().ms+(tick===null?0:performance.now()-tick))/1000)+' 秒　既存外皮質点との平均差　近位 '+referenceError(200,338)+' / 遠位 '+referenceError(372,610)+' px'}
 function move(k,v){if(tick===null)tick=performance.now();st()[k]=Math.round((st()[k]+v)*10)/10;st().moves++;render()}
 for(let [k,title,step] of [['x','左右',1],['y','上下',1],['tilt','面内傾き',.5],['roll','骨軸回旋',1]]){let label=document.createElement('label');label.textContent=title+' ';for(let s of [-1,1]){let b=document.createElement('button');b.textContent=(s>0?'+':'−')+step;b.onclick=()=>move(k,s*step);label.append(b)}$('controls').append(label)}
-for(let id of ['dist','prox']){const el=$(id);el.onpointerdown=e=>{if(tick===null)tick=performance.now();el.setPointerCapture(e.pointerId);drag={x:e.clientX,y:e.clientY,dx:st().x,dy:st().y}};el.onpointermove=e=>{if(!drag)return;const scale=frames[id].scale;st().x=Math.round(drag.dx+(e.clientX-drag.x)/scale);st().y=Math.round(drag.dy+(e.clientY-drag.y)/scale);render()};el.onpointerup=el.onpointercancel=()=>{if(drag){drag=null;st().moves++;render()}}}
+const meshCache=new WeakMap(),renderCache=new WeakMap();
+function parseSTL(bytes){
+ const v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),n=bytes.length>=84?v.getUint32(80,true):0;
+ let xyz;
+ if(n && 84+n*50===bytes.length){
+   xyz=new Float32Array(n*9);for(let i=0;i<n;i++)for(let k=0;k<9;k++)xyz[i*9+k]=v.getFloat32(96+i*50+k*4,true);
+ }else{
+   const coords=[];for(const m of new TextDecoder().decode(bytes).matchAll(/\bvertex\s+(\S+)\s+(\S+)\s+(\S+)/gi))coords.push(Number(m[1]),Number(m[2]),Number(m[3]));xyz=new Float32Array(coords);
+ }
+ if(!xyz.length||xyz.length%9||!xyz.every(Number.isFinite))throw Error('STLの三角形を読み取れません');
+ const lo=[Infinity,Infinity,Infinity],hi=lo.map(()=>-Infinity);
+ xyz.forEach((x,i)=>{const k=i%3;lo[k]=Math.min(x,lo[k]);hi[k]=Math.max(x,hi[k])});
+ return {xyz,center:lo.map((x,k)=>(x+hi[k])/2)};
+}
+function layerImage(l){
+ const key=[st().x,st().y,st().tilt,st().roll,l.x,l.y,l.rx,l.ry,l.rz,l.scale].join(',');
+ const old=renderCache.get(l);if(old?.key===key)return old.canvas;
+ let mesh=meshCache.get(l);if(!mesh){mesh=parseSTL(Uint8Array.from(atob(l.bytes),c=>c.charCodeAt(0)));meshCache.set(l,mesh)}
+ const canvas=old?.canvas??document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;
+ const g=canvas.getContext('2d'),project=projectFn(),origin=project(l.native?mesh.center:data.center),zero=project(data.center);
+ const [a,b,c]=[l.rx,l.ry,l.rz].map(n=>n*rad),sa=Math.sin(a),ca=Math.cos(a),sb=Math.sin(b),cb=Math.cos(b),sc=Math.sin(c),cc=Math.cos(c);
+ const basis=[[cc*cb,sc*cb,-sb],[cc*sb*sa-sc*ca,sc*sb*sa+cc*ca,cb*sa],[cc*sb*ca+sc*sa,sc*sb*ca-cc*sa,cb*ca]];
+ const axes=basis.map(v=>project(data.center.map((x,i)=>x+v[i])).map((x,i)=>(x-zero[i])*l.scale));
+ const xyz=mesh.xyz;g.fillStyle='#91baff';
+ for(let i=0;i<xyz.length;i+=9){g.beginPath();for(let k=0;k<9;k+=3){
+   const x=xyz[i+k]-mesh.center[0],y=xyz[i+k+1]-mesh.center[1],z=xyz[i+k+2]-mesh.center[2];
+   const px=origin[0]+l.x+x*axes[0][0]+y*axes[1][0]+z*axes[2][0],py=origin[1]+l.y+x*axes[0][1]+y*axes[1][1]+z*axes[2][1];
+   if(k)g.lineTo(px,py);else g.moveTo(px,py);
+ }g.closePath();g.fill()}
+ renderCache.set(l,{key,canvas});return canvas;
+}
+const selectedLayer=()=>(st().layers??[])[Number($('layer').value)];
+let listKey='';
+function syncLayers(){
+ const layers=st().layers??[],key=JSON.stringify([activeMode,...layers.map(l=>[l.id,l.visible])]);
+ if(listKey!==key){listKey=key;const old=$('layer').value;$('layer').replaceChildren(...layers.map((l,i)=>new Option((l.visible?'':'非表示・')+l.name,i)));$('layer').value=layers[old]?old:String(Math.max(0,layers.length-1))}
+ $('restorePoint').hidden=!['gt','lt'].includes($('tool').value);
+}
+$('stl').onchange=async e=>{
+ const state=st(),native=$('native').checked;
+ for(const f of Array.from(e.target.files)){try{const bytes=new Uint8Array(await f.arrayBuffer()),mesh=parseSTL(bytes);let raw='';
+   for(let i=0;i<bytes.length;i+=32768)raw+=String.fromCharCode(...bytes.subarray(i,i+32768));
+   const layer={id:crypto.randomUUID(),name:f.name,bytes:btoa(raw),native,visible:true,x:0,y:0,rx:0,ry:0,rz:0,scale:1};
+   (state.layers??=[]).push(layer);meshCache.set(layer,mesh);$('message').textContent='';
+   if(state===st()){$('tool').value='cad';render();$('layer').value=String(state.layers.length-1)}
+ }catch(err){$('message').textContent=f.name+'：'+err.message;break}}e.target.value='';
+};
+$('visibility').onclick=()=>{const l=selectedLayer();if(l){l.visible=!l.visible;render()}};
+$('remove').onclick=()=>{const l=selectedLayer();if(l&&confirm(l.name+' を外しますか？')){st().layers.splice(Number($('layer').value),1);render()}};
+for(const [k,label,step] of [['x','左右 px',1],['y','上下 px',1],['rx','X°',1],['ry','Y°',1],['rz','Z°',1],['scale','倍率',.01]]){
+ const box=document.createElement('label');box.textContent=label+' ';for(const sign of [-1,1]){const b=document.createElement('button');b.textContent=(sign>0?'+':'−')+step;b.onclick=()=>{const l=selectedLayer();if(l){l[k]=Math.round((l[k]+sign*step)*100)/100;if(k==='scale')l[k]=Math.max(.01,l[k]);render()}};box.append(b)}$('cadControls').append(box)
+}
+$('restorePoint').onclick=()=>{if(st().landmarks)delete st().landmarks[$('tool').value];render()};$('tool').onchange=render;
+function mousePoint(id,e){const f=frames[id],rect=$(id).getBoundingClientRect();return [f.x0+(e.clientX-rect.left)/f.scale,f.y0+(e.clientY-rect.top)/f.scale]}
+function place(k,id,e){(st().landmarks??={})[k]=mousePoint(id,e);render()}
+for(let id of ['dist','prox']){const el=$(id);el.onpointerdown=e=>{if(tick===null)tick=performance.now();const tool=e.shiftKey&&selectedLayer()?'cad':$('tool').value;
+ if(tool==='edge'){edit(mousePoint(id,e));return}
+ const target=tool==='cad'?selectedLayer():st();if(!target)return;
+ el.setPointerCapture(e.pointerId);drag={id,tool,target,x:e.clientX,y:e.clientY,dx:target.x,dy:target.y};
+ if(tool==='lt'||tool==='gt')place(tool,id,e)};el.onpointermove=e=>{if(drag?.id!==id)return;if(drag.tool==='lt'||drag.tool==='gt'){place(drag.tool,id,e);return}const scale=frames[id].scale;drag.target.x=Math.round(drag.dx+(e.clientX-drag.x)/scale);drag.target.y=Math.round(drag.dy+(e.clientY-drag.y)/scale);render()};el.onpointerup=el.onpointercancel=()=>{if(drag){drag=null;st().moves++;render()}}}
 function edit(p){if(st().confirmed)delete st().confirmed[index()+':'+$('which').selectedIndex];if(tick===null)tick=performance.now();st().edits[index()+':'+$('which').selectedIndex]=p;render()}
 $('profile').onclick=e=>{const rect=e.target.getBoundingClientRect();edit(profilePoints[Math.max(0,Math.min(419,Math.round(419*(e.clientX-rect.left)/rect.width)))])};
 for(let [id,s] of [['minus',-1],['plus',1]])$(id).onclick=()=>{let q=rows[index()][$('which').selectedIndex];if(q)edit([q[0]+s,q[1]])};
 $('confirmContact').onclick=()=>{const j=$('which').selectedIndex,k=index()+':'+j;if((j!==1&&j!==2)||!rows[index()][j])return;const m=st().confirmed??={};if(m[k])delete m[k];else m[k]=true;render()};
 $('absent').onclick=()=>edit(null);$('undo').onclick=()=>{if(st().confirmed)delete st().confirmed[index()+':'+$('which').selectedIndex];delete st().edits[index()+':'+$('which').selectedIndex];render()};
-$('mode').onchange=e=>{clock();activeMode=e.target.value;render()};$('level').onchange=$('which').onchange=render;$('reset').onclick=()=>{if(confirm('この方式の姿勢と点修正を初期値に戻しますか？')){clock();states[activeMode]=fresh();render()}};$('save').onclick=()=>{clock();localStorage.setItem(key(),JSON.stringify(states));$('status').textContent+='　このブラウザに保存済み'};
+$('mode').onchange=e=>{clock();activeMode=e.target.value;render()};$('level').onchange=$('which').onchange=render;$('reset').onclick=()=>{if(confirm('この方式の姿勢と点修正を初期値に戻しますか？')){clock();states[activeMode]=fresh();render()}};$('save').onclick=()=>{clock();try{localStorage.setItem(key(),JSON.stringify(states))}catch{$('status').textContent='ブラウザの保存容量を超えました。「ファイルに保存」を押してください。';return}$('status').textContent+='　このブラウザに保存済み'};
 $('load').onchange=async e=>init(JSON.parse(await e.target.files[0].text()));window.onresize=render;
 setInterval(()=>{if(tick!==null)render()},1000);document.addEventListener('visibilitychange',()=>{if(document.hidden)clock()});
+$('resume').onchange=async e=>{
+ try{const text=await e.target.files[0].text(),doc=new DOMParser().parseFromString(text,'text/html');
+ const record=JSON.parse(doc.getElementById('payload')?.textContent??'null');
+ if(record?.format!=='FMA-femur-review-v1'||record.data?.imageHash!==data.imageHash||!record.review?.states?.split||!record.review?.states?.whole)throw Error('この症例の保存済みHTMLを選んでください');
+ clock();snapshotId=record.review.id;states=record.review.states;activeMode=record.review.mode;$('mode').value=activeMode;$('level').value=record.review.level;$('which').selectedIndex=record.review.edge;render();
+ }catch(err){alert(err.message)}finally{e.target.value=''}
+};
 function exportReview(){
  clock();
  const review={id:crypto.randomUUID(),states,mode:activeMode,level:$('level').value,edge:$('which').selectedIndex};
