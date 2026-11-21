@@ -1,7 +1,7 @@
-<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FMA｜大腿骨の位置合わせ</title>
+<!doctype html><html lang="ja"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FMA CAD研究版｜大腿骨の位置合わせ</title>
 <style>*{box-sizing:border-box}body{margin:0;background:#12181b;color:#eff5f4;font:15px system-ui}header,main{max-width:1500px;margin:auto;padding:12px 22px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #435255}h1{font-size:21px;margin:0}button,select,input{font:inherit}button,select{color:inherit;background:#253238;border:1px solid #58686c;border-radius:5px;padding:5px 10px;cursor:pointer}button:hover{background:#405459}label,small{color:#cad7d7}.bar,.controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:8px 0}.views{display:flex;gap:10px}.panel{flex:1;min-width:0;background:#070b0d;border:1px solid #53636a}.panel h2{font-size:15px;margin:0;padding:6px 12px;background:#263238}.panel canvas{width:100%;height:clamp(240px,44vh,520px);display:block;touch-action:none;cursor:crosshair}.lower{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.lower canvas{background:#101415;border:1px solid #405258}#note{color:#ffd58b}.selected{outline:2px solid #8bdfc9}button:disabled{opacity:.5}input[type=number]{width:65px}section{border-top:1px solid #37474e;margin-top:10px;padding-top:6px}</style>
 <header><h1>大腿骨の位置合わせ</h1><small id="case"></small></header><main>
-<label id="loadLabel">試験データを開く <input type="file" id="load" accept=".json"></label>
+<label id="loadLabel">症例を開く <input type="file" id="load" accept=".html,.htm,.json"><br><small>「ファイルに保存」で作成した症例HTMLを選んでください。画像とCADはこのブラウザ内で読み込みます。</small></label>
 <div id="app" hidden><div class="bar"><select id="mode"><option value="split">近位・遠位の2画面</option><option value="whole">全体合わせ（比較用）</option></select><span id="status"></span><button id="save">ブラウザに下書き保存</button><label>保存済みの編集を開く <input type="file" accept=".html" id="resume"></label><button id="exportFile">ファイルに保存</button><button id="reset">この方式を初期位置に戻す</button></div>
 <div class="bar"><label>画像操作 <select id="tool"><option value="bone">大腿骨を移動</option><option value="edge">選択断面の境界に打点</option><option value="cad">追加CADを移動</option></select></label><small>GT・LTは大腿骨CADに固定。断面の高さはCT上のLTを基準とします。</small></div>
 <details><summary>CADを追加・調整</summary><div class="bar"><input type="file" id="stl" multiple accept=".stl"><label><input type="checkbox" checked id="native">症例CTと同じLPS座標（mm）</label><select id="layer" aria-label="追加CAD"></select><button id="visibility">表示切替</button><button id="remove">CADを外す</button></div><div class="controls" id="cadControls"></div><small id="message"></small></details>
@@ -18,12 +18,12 @@ const pageTemplate=document.documentElement?.outerHTML.replace(/(<script id="pay
 let snapshotId='';
 let tick=null;function clock(){if(tick!==null){st().ms+=performance.now()-tick;tick=null}}
 const fresh=()=>({x:0,y:0,tilt:0,roll:0,edits:{},moves:0,ms:0});const st=()=>states[activeMode];
-function init(d,review=null){
+function init(d,review=null,fromFile=false){
  snapshotId=review?.id||'';
  if(review)$('mode').value=review.mode;
  data=d;states={split:fresh(),whole:fresh()};activeMode=$('mode').value;
  if(review)states=review.states;
- try{const saved=JSON.parse(localStorage.getItem(key()));if(saved&&saved.split&&saved.whole)states=saved}catch{}
+ try{const saved=JSON.parse(localStorage.getItem(key()));if(!fromFile&&saved&&saved.split&&saved.whole)states=saved}catch{}
  clearLegacyLandmarks();
  $('case').textContent=d.caption;$('app').hidden=false;$('loadLabel').hidden=true;
  $('level').replaceChildren(...[...new Set(d.rings.map(r=>Number((d.lt[2]-r.z).toFixed(3))))].sort((a,b)=>a-b).map(x=>new Option(x,x)));$('level').value='10';
@@ -159,12 +159,23 @@ for(let [id,s] of [['minus',-1],['plus',1]])$(id).onclick=()=>{let q=rows[index(
 $('confirmContact').onclick=()=>{const j=$('which').selectedIndex,k=index()+':'+j;if((j!==1&&j!==2)||!rows[index()][j])return;const m=st().confirmed??={};if(m[k])delete m[k];else m[k]=true;render()};
 $('absent').onclick=()=>edit(null);$('undo').onclick=()=>{if(st().confirmed)delete st().confirmed[index()+':'+$('which').selectedIndex];delete st().edits[index()+':'+$('which').selectedIndex];render()};
 $('mode').onchange=e=>{clock();activeMode=e.target.value;render()};$('level').onchange=$('which').onchange=render;$('reset').onclick=()=>{if(confirm('この方式の姿勢と点修正を初期値に戻しますか？')){clock();states[activeMode]=fresh();render()}};$('save').onclick=()=>{clock();try{localStorage.setItem(key(),JSON.stringify(states))}catch{$('status').textContent='ブラウザの保存容量を超えました。「ファイルに保存」を押してください。';return}$('status').textContent+='　このブラウザに保存済み'};
-$('load').onchange=async e=>init(JSON.parse(await e.target.files[0].text()));window.onresize=render;
+function parseCaseFile(text){
+ const raw=text.trimStart();
+ // Read only the embedded JSON. Never render or execute the selected HTML.
+ const match=raw.startsWith('<')?raw.match(/<script\s+id=["']payload["']\s+type=["']application\/json["']\s*>([\s\S]*?)<\/script>/i):null;
+ if(raw.startsWith('<')&&!match)throw Error('症例データを含むFMA大腿骨の保存HTMLを選んでください。');
+ const record=JSON.parse(match?match[1]:raw);
+ const review=record?.format==='FMA-femur-review-v1'?record.review:null;
+ const d=review?record.data:record;
+ if(!d?.image||!d.imageHash||!d.rings?.length||!d.pose||!d.axis||!d.views||!d.lt||!d.gt)throw Error('この画面には大腿骨の位置合わせ画面から保存したHTMLまたは試験JSONを指定してください。');
+ if(review&&(!review.states?.split||!review.states?.whole||!['split','whole'].includes(review.mode)))throw Error('位置合わせの保存情報を読み取れません。');
+ return {data:d,review};
+}
+$('load').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;const record=parseCaseFile(await f.text());init(record.data,record.review,true)}catch(err){alert(err.message)}finally{e.target.value=''}};window.onresize=render;
 setInterval(()=>{if(tick!==null)render()},1000);document.addEventListener('visibilitychange',()=>{if(document.hidden)clock()});
 $('resume').onchange=async e=>{
- try{const text=await e.target.files[0].text(),doc=new DOMParser().parseFromString(text,'text/html');
- const record=JSON.parse(doc.getElementById('payload')?.textContent??'null');
- if(record?.format!=='FMA-femur-review-v1'||record.data?.imageHash!==data.imageHash||!record.review?.states?.split||!record.review?.states?.whole)throw Error('この症例の保存済みHTMLを選んでください');
+ try{const record=parseCaseFile(await e.target.files[0].text());
+ if(!record.review||record.data?.imageHash!==data.imageHash||!record.review?.states?.split||!record.review?.states?.whole)throw Error('この症例の保存済みHTMLを選んでください');
  clock();snapshotId=record.review.id;states=record.review.states;clearLegacyLandmarks();activeMode=record.review.mode;$('mode').value=activeMode;$('level').value=record.review.level;$('which').selectedIndex=record.review.edge;render();
  }catch(err){alert(err.message)}finally{e.target.value=''}
 };
