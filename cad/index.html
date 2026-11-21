@@ -25,21 +25,22 @@ Key Rules for AI Assistants modifying this file:
 #workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
 
 .cadTargetBar button[aria-pressed="true"]{background:#164e68;color:white;outline:2px solid #67c6e6}
-.cadStage{position:relative;width:fit-content;max-width:100%;margin:8px auto}
-#cadViewCanvas{display:block;width:auto;height:auto;max-width:100%;max-height:72vh;max-height:72dvh}
-.cadZoomBar{position:absolute;top:4px;left:4px;display:flex;align-items:center;gap:3px;background:#192432ed;color:white;border-radius:6px;padding:2px}
-.cadZoomBar button{width:auto;margin:0;padding:4px 8px;min-height:30px}
-.cadSpinPad{position:absolute;left:4px;bottom:4px;display:grid;grid-template-columns:repeat(2,auto);gap:2px}
-.cadSpinPad button{width:auto;margin:0;padding:3px 5px;min-height:28px;background:#192432ed;color:white;border:1px solid #8999a9;border-radius:5px;font-size:13px}
-.cadSpinPad button:disabled{opacity:.55}
-.cadDockToggle:checked~.cadSpinPad{left:auto;right:4px}
-.cadPad{position:absolute;right:4px;bottom:4px;display:grid;grid-template-areas:". up ." "left dock right" ". down .";gap:2px;pointer-events:none}
-.cadPad button,.cadPad label{box-sizing:border-box;width:clamp(30px,6vw,40px);height:clamp(30px,6vw,40px);padding:0;margin:0;display:grid;place-items:center;border:1px solid #8999a9;border-radius:6px;background:#192432ed;color:white;font-size:17px;line-height:1;cursor:pointer;pointer-events:auto}
-.cadPad button:disabled{opacity:.55}
-.cadPad label{grid-area:dock;font-size:11px}
+.cadStage{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:8px auto;max-width:100%}
+.cadImagePane{flex:1 1 400px;min-width:0}
+#cadViewCanvas{display:block;width:auto;height:auto;max-width:100%;max-height:70vh;max-height:70dvh;margin:auto}
+.cadControls{flex:1 1 126px;display:flex;flex-wrap:wrap;align-items:center;align-content:flex-start;justify-content:center;gap:8px;max-width:160px}
+@media(max-width:620px){.cadControls{max-width:none}.cadImagePane{flex-basis:100%}}
+.cadZoomBar{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:3px}
+.cadZoomBar button,.cadControls label{width:auto;margin:0;padding:4px 6px}
+.cadSpinPad{display:grid;grid-template-columns:repeat(2,auto);gap:2px}
+.cadSpinPad button,.cadPad button{width:auto;margin:0;padding:5px;min-height:30px;border:1px solid #8999a9;border-radius:5px;background:#192432;color:white}
+.cadSpinPad button:disabled,.cadPad button:disabled{opacity:.55}
+.cadPad{display:grid;grid-template-areas:". up ." "left dock right" ". down .";gap:2px}
+.cadPad button{min-width:30px}
+.cadPad label{grid-area:dock;cursor:pointer;font-size:11px}
 .cadDockToggle{position:absolute;opacity:0;width:1px;height:1px}
-.cadDockToggle:checked~.cadPad{right:auto;left:4px}
 .cadDockToggle:focus-visible~.cadPad label{outline:2px solid #ffda69}
+.cadStage:has(.cadDockToggle:checked){flex-direction:row-reverse}
 #cadLeft{grid-area:left}#cadRight{grid-area:right}#cadUp{grid-area:up}#cadDown{grid-area:down}
 </style></head><body><div class="app">
 <div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub" id="buildIdentity"></div><div class="sub">参照文書：Protocol v2.1 / Annotation Rule v1.1 / Data Dictionary v1.2（2026-10-16 LT定義改訂）。実装済み保存形式：v1.1＋明示的な追補項目。全規約への適合は未検証。</div></div>
@@ -172,7 +173,8 @@ Key Rules for AI Assistants modifying this file:
     <button type="button" id="cadPick-head" aria-pressed="false" disabled>ヘッド</button>
   </div>
   <div class="cadStage">
-    <canvas tabindex="0" id="cadViewCanvas" width="900" height="650" aria-label="X線とCAD重ね合わせ画像"></canvas>
+    <div class="cadImagePane"><canvas tabindex="0" id="cadViewCanvas" width="900" height="650" aria-label="X線とCAD重ね合わせ画像"></canvas></div>
+    <div class="cadControls">
     <div class="cadZoomBar" role="group" aria-label="画像の表示倍率">
       <button type="button" id="cadZoomOut" aria-label="画像を縮小">−</button>
       <output id="cadZoomLevel">100%</output>
@@ -195,6 +197,7 @@ Key Rules for AI Assistants modifying this file:
       <button type="button" id="cadDown" aria-label="下へ1ピクセル" disabled>↓</button>
       <label for="cadDockLeft" title="ボタンを左右の反対側に移す">左右<br>切替</label>
     </div>
+    </div>
   </div>
   <div class="grid">
     <label for="cadViewRX">X軸回転 <output id="cadViewRXVal"></output><input id="cadViewRX" type="range" min="-180" max="180" step="1" value="0"></label>
@@ -210,7 +213,7 @@ Key Rules for AI Assistants modifying this file:
   <button id="cadViewHead">32 mmヘッドを表示</button>
   <output id="cadViewCalibration" aria-live="polite"></output>
   <div id="cadViewStatus" class="small" role="status"></div>
-  <p class="small">ホイールで拡大・縮小、拡大中はドラッグで画像を移動。動かしたいCADをShift＋ドラッグ。重なる場所では「動かすCAD」の選択を優先します。矢印ボタンは元のX線画像の1ピクセル単位です。</p>
+  <p class="small">ホイールで拡大・縮小、ホイールを押しながらドラッグで画像を移動。動かしたいCADをShift＋ドラッグ。重なる場所では「動かすCAD」の選択を優先します。矢印ボタンは元のX線画像の1ピクセル単位です。</p>
 
   <div class="grid"><button id="cadViewReset">回転・位置・倍率をリセット</button><button id="cadViewRemove">選んだCADを外す</button>
     <button id="cadViewSave">設定だけ端末に保存</button><button id="cadViewForget">端末に保存した設定を削除</button></div>
@@ -3622,8 +3625,8 @@ if(typeof module!=='undefined'&&module.exports)module.exports=FmaCadOverlay;
   let zoom=1, left=0, top=0, drag=null;
   function setViewport(scale,x,y){
     zoom=scale;
-    left=Math.max(0,Math.min(1-1/zoom,x));
-    top=Math.max(0,Math.min(1-1/zoom,y));
+    left=Math.max(-.8/zoom,Math.min(1-.2/zoom,x));
+    top=Math.max(-.8/zoom,Math.min(1-.2/zoom,y));
     $('cadZoomLevel').textContent=Math.round(zoom*100)+'%';
     later();
   }
@@ -3669,14 +3672,17 @@ if(typeof module!=='undefined'&&module.exports)module.exports=FmaCadOverlay;
     };
   }
   view.addEventListener('pointerdown',event=>{
-    if(drag || event.button!==0 || !binding())return;
+    const middle=event.button===1;
+    if(drag || (!middle && event.button!==0) || !binding())return;
     view.focus({preventScroll:true});
-    if(event.shiftKey)pickAtPointer(event);
-    if(event.shiftKey ? !movable() : zoom===1)return;
-    drag={pointer:event.pointerId,item:event.shiftKey?selected():null,x:event.clientX,y:event.clientY};
+    const moveCad=!middle && event.shiftKey;
+    if(moveCad)pickAtPointer(event);
+    if(moveCad ? !movable() : !middle && zoom===1)return;
+    drag={pointer:event.pointerId,item:moveCad?selected():null,x:event.clientX,y:event.clientY};
     view.setPointerCapture(event.pointerId);
     event.preventDefault();
   });
+  view.addEventListener('auxclick',event=>{if(event.button===1)event.preventDefault();});
   function track(event){
     if(!drag || drag.pointer!==event.pointerId)return;
     const dx=(event.clientX-drag.x)/(view.clientWidth*zoom);
