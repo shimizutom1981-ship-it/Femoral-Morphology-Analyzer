@@ -3,7 +3,7 @@
 <header><h1>大腿骨の位置合わせ</h1><small id="case"></small></header><main>
 <label id="loadLabel">症例を開く <input type="file" id="load" accept=".html,.htm,.json"><br><small>「ファイルに保存」で作成した症例HTMLを選んでください。画像とCADはこのブラウザ内で読み込みます。</small></label>
 <div id="app" hidden><div class="bar"><select id="mode"><option value="split">近位・遠位の2画面</option><option value="whole">全体合わせ（比較用）</option></select><span id="status"></span><button id="save">ブラウザに下書き保存</button><label>保存済みの編集を開く <input type="file" accept=".html" id="resume"></label><button id="exportFile">ファイルに保存</button><button id="reset">この方式を初期位置に戻す</button></div>
-<div class="bar"><label>画像操作 <select id="tool"><option value="bone">大腿骨を移動</option><option value="edge">選択断面の境界に打点</option><option value="cad">追加CADを移動</option></select></label><small>GT・LTは大腿骨CADに固定。断面の高さはCT上のLTを基準とします。</small></div>
+<div class="bar"><label>画像操作 <select id="tool"><option value="bone">大腿骨を移動</option><option value="edge">画像上に点を追加</option><option value="cad">追加CADを移動</option></select></label><small>属性を選び、輪郭に沿って複数箇所をクリック。GT・LTは大腿骨CADに固定。断面の高さはCT上のLTを基準とします。</small></div>
 <details><summary>CADを追加・調整</summary><div class="bar"><input type="file" id="stl" multiple accept=".stl"><label><input type="checkbox" checked id="native">症例CTと同じLPS座標（mm）</label><select id="layer" aria-label="追加CAD"></select><button id="visibility">表示切替</button><button id="remove">CADを外す</button></div><div class="controls" id="cadControls"></div><small id="message"></small></details>
 <div class="bar"><span>CT上の転子点確認</span><label>GT <select id="reviewGT"><option value="pending">未確認</option><option value="checked">確認済み</option><option value="revise">要修正</option></select></label><label>LT <select id="reviewLT"><option value="pending">未確認</option><option value="checked">確認済み</option><option value="revise">要修正</option></select></label></div>
 <div class="bar" role="group" aria-label="打点する点の属性"><strong>点の属性</strong><button id="attr0" aria-pressed="false">内側外皮質</button><button id="attr1" aria-pressed="false">内側髄腔</button><button id="attr2" aria-pressed="false">外側髄腔</button><button id="attr3" aria-pressed="false">外側外皮質</button><button id="attr4" aria-pressed="false">内側ステム接触</button><button id="attr5" aria-pressed="false">外側ステム接触</button><button id="undoPoint" disabled>↶ 1点戻す</button></div>
@@ -47,6 +47,7 @@ function projectFn(){
 function compute(){
  const proj=projectFn();rows=data.rings.map((r,i)=>{let lo,hi,li,ri;for(let j=0;j<r.o.length;j++){if(!r.o[j])continue;const p=proj(r.o[j]);if(!lo||p[0]<lo[0]){lo=p;li=j}if(!hi||p[0]>hi[0]){hi=p;ri=j}}
  const edge=[lo,r.i[li]?proj(r.i[li]):null,r.i[ri]?proj(r.i[ri]):null,hi];
+ edge.ct=edge.slice();
  for(let j=0;j<4;j++){const k=i+':'+j;if(k in st().edits)edge[j]=st().edits[k]}
  edge.contact=[false,!!r.contact?.[li],!!r.contact?.[ri],false];
  return edge});
@@ -67,12 +68,13 @@ function view(id,cx,cy,height){
  for(let j=0;j<4;j++)for(let i=0;i<rows.length;i++){
    const q=rows[i][j];if(!q)continue;
    const c=lineColor(rows[i],i,j),prev=rows[i-1]?.[j];
-   if(prev){const mid=[(prev[0]+q[0])/2,(prev[1]+q[1])/2];path([prev,mid],lineColor(rows[i-1],i-1,j));path([mid,q],c)}
-   g.fillStyle=c;g.fillRect(q[0],q[1],1/scale,1/scale);
+   if(prev&&!Object.hasOwn(st().edits,i+':'+j)&&!Object.hasOwn(st().edits,(i-1)+':'+j)){const mid=[(prev[0]+q[0])/2,(prev[1]+q[1])/2];path([prev,mid],lineColor(rows[i-1],i-1,j));path([mid,q],c)}
+   if(Object.hasOwn(st().edits,i+':'+j))mark(q,'',c);else{g.fillStyle=c;g.fillRect(q[0],q[1],1/scale,1/scale)}
  }path(points.axis,'#99ee80');
  function mark(p,name,color){g.fillStyle=color;g.beginPath();g.arc(...p,3/scale,0,2*Math.PI);g.fill();g.font=(13/scale)+'px sans-serif';g.fillText(name,p[0]+4/scale,p[1]-4/scale)}
  mark(points.gt,'GT','#fff');mark(points.lt,'LT','#fff');points.axis.forEach((p,i)=>mark(p,i?'100':'10','#99ee80'));
- const sel=rows[index()];if(sel[0]&&sel[3])path([sel[0],sel[3]],'#c3a2ff');sel.forEach((p,i)=>{if(p)mark(p,'',lineColor(sel,index(),i))});
+ const sel=rows[index()];if(sel.ct[0]&&sel.ct[3])path([sel.ct[0],sel.ct[3]],'#c3a2ff');sel.forEach((p,i)=>{if(p)mark(p,'',lineColor(sel,index(),i))});
+ for(const dot of st().apPoints??[])mark(dot.xy,'',dot.contact?'#ed53ca':'#ffe588');
 }
 function profile(){
  const idx=index(),r=data.rings[idx],edge=rows[idx],p=projectFn(),lo=p(r.o.find(Boolean)),outer=r.o.filter(Boolean).map(p).sort((a,b)=>a[0]-b[0]);const L=outer[0],R=outer.at(-1),dx=R[0]-L[0],dy=R[1]-L[1]; // follow the projected transverse chord
@@ -100,12 +102,19 @@ function updatePointTools(){
 for(let i=0;i<6;i++)$('attr'+i).onclick=()=>{
  $('which').selectedIndex=i<4?i:i===4?1:2;contactTool=i>=4;$('tool').value='edge';render();
 };
+function addAPPoint(xy){
+ const j=$('which').selectedIndex,id=crypto.randomUUID();
+ (st().apPoints??=[]).push({id,xy,j,contact:contactTool&&(j===1||j===2)});
+ (st().pointHistory??=[]).push({kind:'apPoint',id});
+ render();
+}
 function rememberPoint(){
  const j=$('which').selectedIndex,k=index()+':'+j;
  (st().pointHistory??=[]).push({key:k,j,level:$('level').value,edited:Object.hasOwn(st().edits,k),p:st().edits[k],confirmed:!!st().confirmed?.[k]});
 }
 $('undoPoint').onclick=()=>{
  const last=st().pointHistory?.pop();if(!last)return;
+ if(last.kind==='apPoint'){st().apPoints=st().apPoints.filter(p=>p.id!==last.id);render();return}
  if(last.edited)st().edits[last.key]=last.p;else delete st().edits[last.key];
  if(last.confirmed)(st().confirmed??={})[last.key]=true;else if(st().confirmed)delete st().confirmed[last.key];
  $('level').value=last.level;$('which').selectedIndex=last.j;contactTool=false;render();
@@ -169,7 +178,7 @@ for(const [k,label,step] of [['x','左右 px',1],['y','上下 px',1],['rx','X°'
 $('tool').onchange=render;
 function mousePoint(id,e){const f=frames[id],rect=$(id).getBoundingClientRect();return [f.x0+(e.clientX-rect.left)/f.scale,f.y0+(e.clientY-rect.top)/f.scale]}
 for(let id of ['dist','prox']){const el=$(id);el.onpointerdown=e=>{if(tick===null)tick=performance.now();const tool=e.shiftKey&&selectedLayer()?'cad':$('tool').value;
- if(tool==='edge'){edit(mousePoint(id,e));return}
+ if(tool==='edge'){addAPPoint(mousePoint(id,e));return}
  const target=tool==='cad'?selectedLayer():st();if(!target)return;
  el.setPointerCapture(e.pointerId);drag={id,tool,target,x:e.clientX,y:e.clientY,dx:target.x,dy:target.y};
  };el.onpointermove=e=>{if(drag?.id!==id)return;const scale=frames[id].scale;drag.target.x=Math.round(drag.dx+(e.clientX-drag.x)/scale);drag.target.y=Math.round(drag.dy+(e.clientY-drag.y)/scale);render()};el.onpointerup=el.onpointercancel=()=>{if(drag){drag=null;st().moves++;render()}}}
