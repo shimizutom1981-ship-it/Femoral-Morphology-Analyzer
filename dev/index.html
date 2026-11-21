@@ -23,6 +23,25 @@ Key Rules for AI Assistants modifying this file:
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" type="image/x-icon" href="../icons/favicon-20261105.ico"><link rel="icon" type="image/png" sizes="192x192" href="../icons/icon-192-20261105.png"><link rel="apple-touch-icon" sizes="180x180" href="../icons/apple-touch-icon-20261105.png"><title>Femoral Morphology Analyzer v2.2-axis-split</title><style>
 :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--cloud:#8b5cf6}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:12px}.app{max-width:980px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}h1{font-size:1.35rem;color:var(--accent);margin:0 0 4px}.sub,.small{color:var(--muted);font-size:.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}label{display:block;font-size:.75rem;color:var(--muted)}input,select,button{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:#0f172a;color:var(--text)}button{font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#082f49}.cloudBtn{background:var(--cloud);color:#fff;border-color:#7c3aed}.danger{background:#475569}.canvasWrap{background:#000;border-radius:8px;overflow:hidden;touch-action:none;min-height:320px;display:flex;align-items:center;justify-content:center}canvas{width:100%;height:auto;display:block;touch-action:none}.guide{padding:10px;border-left:3px solid var(--accent);background:#0f172a;border-radius:6px;margin:8px 0}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.result{background:#0f172a;padding:9px;border-radius:8px;text-align:center}.val{font-size:1.15rem;font-weight:700;color:var(--accent)}table{width:100%;border-collapse:collapse;font-size:.75rem}th,td{padding:5px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}.status{color:var(--ok);font-weight:700}.warn{color:var(--warn)}.filterBar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#0f172a;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:.75rem}.filterBar label{display:flex;align-items:center;gap:6px;margin:0;color:var(--text)}.filterBar input[type=range]{width:110px;padding:0}
 #workflowBack{order:20}#workflowNext{order:21}#undoAnnotation{order:22}#zoomOut{order:23}#zoomLabel{order:24}#zoomIn{order:25}#zoomReset{order:26}#accept{order:30}#export{order:31}#saveCase{order:32}#saveCloud{order:33}
+
+.cadTargetBar button[aria-pressed="true"]{background:#164e68;color:white;outline:2px solid #67c6e6}
+.cadStage{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:8px auto;max-width:100%}
+.cadImagePane{flex:1 1 400px;min-width:0}
+#cadViewCanvas{display:block;width:auto;height:auto;max-width:100%;max-height:70vh;max-height:70dvh;margin:auto}
+.cadControls{flex:1 1 126px;display:flex;flex-wrap:wrap;align-items:center;align-content:flex-start;justify-content:center;gap:8px;max-width:160px}
+@media(max-width:620px){.cadControls{max-width:none}.cadImagePane{flex-basis:100%}}
+.cadZoomBar{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:3px}
+.cadZoomBar button,.cadControls label{width:auto;margin:0;padding:4px 6px}
+.cadSpinPad{display:grid;grid-template-columns:repeat(3,auto);gap:2px}
+.cadSpinPad button,.cadPad button{width:auto;margin:0;padding:5px;min-height:30px;border:1px solid #8999a9;border-radius:5px;background:#192432;color:white}
+.cadSpinPad button:disabled,.cadPad button:disabled{opacity:.55}
+.cadPad{display:grid;grid-template-areas:". up ." "left dock right" ". down .";gap:2px}
+.cadPad button{min-width:30px}
+.cadPad label{grid-area:dock;cursor:pointer;font-size:11px}
+.cadDockToggle{position:absolute;opacity:0;width:1px;height:1px}
+.cadDockToggle:focus-visible~.cadPad label{outline:2px solid #ffda69}
+.cadStage:has(.cadDockToggle:checked){flex-direction:row-reverse}
+#cadLeft{grid-area:left}#cadRight{grid-area:right}#cadUp{grid-area:up}#cadDown{grid-area:down}
 </style></head><body><div class="app">
 <div class="card"><h1>Femoral Morphology Analyzer</h1><div class="sub" id="buildIdentity"></div><div class="sub">参照文書：Protocol v2.1 / Annotation Rule v1.1 / Data Dictionary v1.2（2026-10-16 LT定義改訂）。実装済み保存形式：v1.1＋明示的な追補項目。全規約への適合は未検証。</div></div>
 
@@ -55,6 +74,7 @@ Key Rules for AI Assistants modifying this file:
 <div class="card">
   <div class="grid">
     <label class="primary" style="text-align:center;padding:9px;border-radius:7px;cursor:pointer">1. 画像選択<input id="file" type="file" accept="image/*" style="display:none"></label>
+    <label>CAD下書きを開く<input type="file" id="cadDraftFile" accept=".fmacad"><span id="cadDraftMessage" role="status"></span></label>
     <label class="primary" style="text-align:center;padding:9px;border-radius:7px;cursor:pointer">AI Mask512 PNG<input id="aiMaskFile" type="file" accept="image/png" style="display:none"></label>
     <label class="primary" style="text-align:center;padding:9px;border-radius:7px;cursor:pointer">AI候補JSON<input id="aiJsonFile" type="file" accept=".json,application/json" style="display:none"></label>
     <button id="aiSuggest" class="primary">AI候補を適用</button>
@@ -137,6 +157,70 @@ Key Rules for AI Assistants modifying this file:
 <div id="cupHint" class="small" role="status"></div><canvas id="cupCanvas" width="900" height="650" style="width:100%;height:auto;cursor:crosshair"></canvas>
 <div class="grid"><button id="cupDetect">CADで開口縁を自動検出</button><button id="cupFit">指定点にCADを合わせる</button><button id="cupConfirm" disabled>重ね合わせを確認</button><button id="cupSave" disabled>カップ計測JSONを保存</button></div>
 <output id="cupOutput" aria-live="polite"></output></details>
+<details id="cadView" class="card">
+  <summary><strong>CADをX線に重ねる（目視確認）</strong></summary>
+  <p class="small">大腿骨・ステム・カップ・ヘッドをそれぞれローカルファイルから読み込み、近似投影を手で合わせます。角度は表示モデルの回転で、設置角・移動量や計測結果には反映されません。ファイルは送信しません。</p>
+  <div class="grid">
+    <label>対象<select id="cadViewKind"><option value="bone">大腿骨</option><option value="stem">ステム</option><option value="cup">カップ</option><option value="head">ヘッド</option></select></label>
+    <label>選んだ対象のCAD（STL／OBJ）<input type="file" id="cadViewFile" accept=".stl,.obj"></label>
+    <label><input type="checkbox" id="cadViewMaster" style="width:auto" checked> 全CADを表示</label>
+    <label><input type="checkbox" id="cadViewVisible" style="width:auto" checked> 選んだCADを表示</label>
+  </div>
+  <div class="row cadTargetBar" role="group" aria-label="動かすCAD">動かすCAD
+    <button type="button" id="cadPick-bone" aria-pressed="false" disabled>大腿骨</button>
+    <button type="button" id="cadPick-stem" aria-pressed="false" disabled>ステム</button>
+    <button type="button" id="cadPick-cup" aria-pressed="false" disabled>カップ</button>
+    <button type="button" id="cadPick-head" aria-pressed="false" disabled>ヘッド</button>
+  </div>
+  <div class="cadStage">
+    <div class="cadImagePane"><canvas tabindex="0" id="cadViewCanvas" width="900" height="650" aria-label="X線とCAD重ね合わせ画像"></canvas></div>
+    <div class="cadControls">
+    <div class="cadZoomBar" role="group" aria-label="画像の表示倍率">
+      <button type="button" id="cadZoomOut" aria-label="画像を縮小">−</button>
+      <output id="cadZoomLevel">100%</output>
+      <button type="button" id="cadZoomIn" aria-label="画像を拡大">＋</button>
+      <button type="button" id="cadZoomReset">全体表示</button>
+    </div>
+    <input id="cadDockLeft" class="cadDockToggle" type="checkbox" aria-label="操作ボタンを画像の左側に置く">
+    <div class="cadSpinPad" role="group" aria-label="選択中のCADの回転と倍率">
+        <button type="button" id="cadNumpad7" aria-label="X軸 −1度 テンキー7" disabled>7 X−</button>
+        <button type="button" id="cadNumpad8" aria-label="X軸 ＋1度 テンキー8" disabled>8 X＋</button>
+        <button type="button" id="cadNumpad9" aria-label="CAD倍率 ＋0.01 テンキー9" disabled>9 倍率＋</button>
+        <button type="button" id="cadNumpad4" aria-label="Y軸 −1度 テンキー4" disabled>4 Y−</button>
+        <button type="button" id="cadNumpad5" aria-label="Y軸 ＋1度 テンキー5" disabled>5 Y＋</button>
+        <button type="button" id="cadNumpad6" aria-label="CAD倍率 −0.01 テンキー6" disabled>6 倍率−</button>
+        <button type="button" id="cadNumpad1" aria-label="Z軸 −1度 テンキー1" disabled>1 Z−</button>
+        <button type="button" id="cadNumpad2" aria-label="Z軸 ＋1度 テンキー2" disabled>2 Z＋</button>
+    </div>
+    <div class="cadPad" role="group" aria-label="選択中のCADを1ピクセル移動">
+      <button type="button" id="cadLeft" aria-label="左へ1ピクセル" disabled>←</button>
+      <button type="button" id="cadRight" aria-label="右へ1ピクセル" disabled>→</button>
+      <button type="button" id="cadUp" aria-label="上へ1ピクセル" disabled>↑</button>
+      <button type="button" id="cadDown" aria-label="下へ1ピクセル" disabled>↓</button>
+      <label for="cadDockLeft" title="ボタンを左右の反対側に移す">左右<br>切替</label>
+    </div>
+    </div>
+  </div>
+  <div class="grid">
+    <label for="cadViewRX">X軸回転 <output id="cadViewRXVal"></output><input id="cadViewRX" type="range" min="-180" max="180" step="1" value="0"></label>
+    <label for="cadViewRY">Y軸回転 <output id="cadViewRYVal"></output><input id="cadViewRY" type="range" min="-180" max="180" step="1" value="0"></label>
+    <label for="cadViewRZ">Z軸回転 <output id="cadViewRZVal"></output><input id="cadViewRZ" type="range" min="-180" max="180" step="1" value="0"></label>
+    <label for="cadViewDX">左右移動 <output id="cadViewDXVal"></output><input id="cadViewDX" type="range" min="-1" max="1" step=".002" value="0"></label>
+    <label for="cadViewDY">上下移動 <output id="cadViewDYVal"></output><input id="cadViewDY" type="range" min="-1" max="1" step=".002" value="0"></label>
+    <label for="cadViewScale">倍率 <output id="cadViewScaleVal"></output><input id="cadViewScale" type="range" min=".05" max="4" step=".01" value="1"></label>
+    <label for="cadViewOpacity">不透明度 <output id="cadViewOpacityVal"></output><input id="cadViewOpacity" type="range" min="0" max="1" step=".01" value=".42"></label>
+  </div>
+  <p class="small">実寸mmのカップCADをX線に合わせて倍率を固定すると、他の実寸mmモデルにも適用します。</p>
+  <button id="cadViewLock">カップの倍率を全CADに固定</button>
+  <button id="cadViewHead">32 mmヘッドを表示</button>
+  <output id="cadViewCalibration" aria-live="polite"></output>
+  <div id="cadViewStatus" class="small" role="status"></div>
+  <p class="small">ホイールで拡大・縮小、ホイールを押しながらドラッグで画像を移動。動かしたいCADをShift＋ドラッグ。重なる場所では「動かすCAD」の選択を優先します。矢印ボタンは元のX線画像の1ピクセル単位です。</p>
+
+  <div class="grid"><button id="cadViewReset">回転・位置・倍率をリセット</button><button id="cadViewRemove">選んだCADを外す</button>
+    <button id="cadViewSave">設定だけ端末に保存</button><button id="cadViewForget">端末に保存した設定を削除</button></div>
+  <p class="small">設定は任意でこのブラウザ内だけに保存します。同一画像・同一側・同一CADを選び直すと復元します。画像・CAD本体・FMA計測ファイルには書き込みません。</p>
+</details>
 <div class="canvasWrap"><canvas id="cv" width="900" height="650"></canvas></div>
   <div class="small" style="margin-top:6px">操作ヒント：Alt+ドラッグ（または中ボタン）で画面移動、ホイールで拡大縮小、Shift+ドラッグで既存の点を微調整。LTが同定できない場合は「LT Visibility」を Occluded に設定してください。この試験版では自動FEMORAL軸とそれに依存する計測値は未計測になります。輪郭の途中保存は可能です。</div>
 </div>
@@ -3318,4 +3402,367 @@ if(typeof module!=='undefined'&&module.exports)module.exports=FmaStemCad;
   for(const id of ['studyId','imageId','side','headSize','imageType','calMode','scale','rpDirection','peProjection'])$(id).addEventListener('change',()=>{invalidateChangedRegistration();render();});
 })();
 // END STEM CAD UI
+// BEGIN CAD OVERLAY (lib/cad-overlay.js)
+// Local-only FMA CAD preview. No network, calibration or clinical measurements.
+const FmaCadOverlay=(()=>{
+  const LIMIT_BYTES=25_000_000, LIMIT_TRIANGLES=180_000, KINDS=['bone','stem','cup','head'];
+  const defaultPose=()=>({rx:0,ry:0,rz:0,dx:0,dy:0,scale:1,opacity:.42,visible:true});
+  const decimal=(v,min,max,otherwise)=>Number.isFinite(v)?Math.min(max,Math.max(min,v)):otherwise;
+  const normalise=(p={})=>({rx:decimal(p.rx,-180,180,0),ry:decimal(p.ry,-180,180,0),rz:decimal(p.rz,-180,180,0),
+    dx:decimal(p.dx,-1,1,0),dy:decimal(p.dy,-1,1,0),scale:decimal(p.scale,.05,4,1),opacity:decimal(p.opacity,0,1,.42),
+    visible:typeof p.visible==='boolean'?p.visible:true});
+  const sha=v=>typeof v==='string'&&/^[a-f\d]{64}$/i.test(v);
+  function sourceKey(hash,side,projection){
+    return sha(hash)&&['L','R'].includes(side)&&['AP','AXIAL','LAUENSTEIN'].includes(projection)?
+      [hash.toLowerCase(),side,projection].join(':'):null;
+  }
+  function storageKey(source,kind,hash){
+    if(typeof source!=='string'||!KINDS.includes(kind)||!sha(hash))return null;
+    const [s,side,projection,extra]=source.split(':');
+    if(extra!==undefined||sourceKey(s,side,projection)!==source)return null;
+    return 'FMA_cad_display_v1:'+source+':'+kind+':'+hash.toLowerCase();
+  }
+  function parse(extension,buffer){
+    if(!(buffer instanceof ArrayBuffer)||buffer.byteLength===0||buffer.byteLength>LIMIT_BYTES)throw Error('CADは25 MB以下のSTLまたはOBJを選んでください。');
+    const fmt=String(extension).toLowerCase().replace(/^.*\./,'');
+    if(!['stl','obj'].includes(fmt))throw Error('対応形式はSTLとOBJです。');
+    const v=new DataView(buffer), count=fmt==='stl'&&v.byteLength>=84?v.getUint32(80,true):0;
+    const binary=fmt==='stl'&&count>0&&84+count*50===v.byteLength;
+    let raw;
+    const n=x=>{
+      const a=Number(x);
+      if(!Number.isFinite(a)||Math.abs(a)>1e7)throw Error('CADの座標が不正です。');
+      return a;
+    };
+    if(binary){
+      if(count>LIMIT_TRIANGLES)throw Error('CADは18万三角形以下に簡略化してください。');
+      raw=new Float64Array(count*9);
+      for(let i=0;i<count;i++)for(let j=0;j<9;j++)raw[9*i+j]=n(v.getFloat32(96+50*i+4*j,true));
+    }else{
+      const txt=new TextDecoder('utf-8',{fatal:true}).decode(buffer);
+      const verts=[],coords=[];
+      for(const line of txt.split(/\r?\n/)){
+        const fields=line.replace(/#.*/,'').trim().split(/\s+/);
+        if(fmt==='stl'&&fields[0]==='vertex'){
+          if(fields.length!==4)throw Error('ASCII STLの頂点が不正です。');
+          coords.push(...fields.slice(1).map(n));
+        }
+        if(fmt==='obj'&&fields[0]==='v'){
+          if(fields.length<4||verts.length>LIMIT_TRIANGLES*3)throw Error('OBJの頂点が不正か、多すぎます。');
+          verts.push(fields.slice(1,4).map(n));
+        }
+        if(fmt==='obj'&&fields[0]==='f'){
+          if(fields.length<4||fields.length>33)throw Error('OBJの面が不正です。複雑な面は三角形化してください。');
+          const face=fields.slice(1).map(v=>{
+            const i=v.split('/')[0];
+            if(!/^-?\d+$/.test(i))throw Error('OBJの頂点参照が不正です。');
+            const j=Number(i),k=j>0?j-1:verts.length+j;
+            if(!j||!verts[k])throw Error('OBJの頂点参照が範囲外です。');
+            return verts[k];
+          });
+          for(let j=1;j+1<face.length;j++)coords.push(...face[0],...face[j],...face[j+1]);
+        }
+        if(coords.length>LIMIT_TRIANGLES*9)throw Error('CADは18万三角形以下に簡略化してください。');
+      }
+      if(fmt==='stl'&&(!/^\s*solid(?:\s|$)/i.test(txt)||!/^\s*endsolid(?:\s|$)/im.test(txt)))throw Error('STL形式が不正です。');
+      raw=coords;
+    }
+    if(raw.length<9||raw.length%9)throw Error('表示できる三角形がありません。');
+    const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];
+    for(let i=0;i<raw.length;i++){const j=i%3;lo[j]=Math.min(lo[j],raw[i]);hi[j]=Math.max(hi[j],raw[i]);}
+    const center=lo.map((a,i)=>(a+hi[i])/2), extent=Math.max(...hi.map((a,i)=>a-lo[i]));
+    if(!(extent>0))throw Error('CADの大きさが不正です。');
+    return {xyz:Float32Array.from(raw,(a,i)=>(a-center[i%3])/extent),extentMm:extent,triangles:raw.length/9};
+  }
+  function projection(pose,width,height,spanPixels=null){
+    const p=normalise(pose),[a,b,c]=[p.rx,p.ry,p.rz].map(v=>v*Math.PI/180);
+    const [ca,sa,cb,sb,cc,sc]=[Math.cos(a),Math.sin(a),Math.cos(b),Math.sin(b),Math.cos(c),Math.sin(c)];
+    // Rz * Ry * Rx, front-facing (X horizontal / Z up); depth Y is not inferred.
+    const u=[cc*cb,cc*sb*sa-sc*ca,cc*sb*ca+sc*sa], v=[sb,-cb*sa,-cb*ca];
+    const ox=width*(.5+p.dx),oy=height*(.5+p.dy),s=spanPixels??(.62*Math.min(width,height)*p.scale);
+    return (x,y,z)=>[ox+s*(u[0]*x+u[1]*y+u[2]*z),oy+s*(v[0]*x+v[1]*y+v[2]*z)];
+  }
+  return {LIMIT_BYTES,LIMIT_TRIANGLES,KINDS,defaultPose,normalise,sourceKey,storageKey,parse,projection};
+})();
+if(typeof module!=='undefined'&&module.exports)module.exports=FmaCadOverlay;
+// END CAD OVERLAY
+// BEGIN CAD OVERLAY UI (lib/cad-overlay-ui.js)
+// A private, display-only canvas: it never writes annotation or measurement state.
+(()=>{
+  const M=FmaCadOverlay,panel=$('cadView'),view=$('cadViewCanvas'),ctx=view.getContext('2d');
+  const kinds={bone:['大腿骨','#39e5ff'],stem:['ステム','#ffd269'],cup:['カップ','#da96ff'],head:['ヘッド','#80acff']};
+  const fields={cadViewRX:'rx',cadViewRY:'ry',cadViewRZ:'rz',cadViewDX:'dx',cadViewDY:'dy',cadViewScale:'scale',cadViewOpacity:'opacity'};
+  let bound=null,epoch=0,items={},tokens={},notice='',queued=false;
+  let shared=false;
+  const source=()=>img&&!imageLoading&&!imageLoadFailed&&$('peProjection').value==='AP'&&$('rpDirection').value==='AP'?
+    M.sourceKey(peHash,$('side').value,'AP'):null;
+  const kind=()=>$('cadViewKind').value;
+  const selected=()=>items[kind()];
+  function clear(){
+    drag=null;setViewport(1,0,0);
+    shared=false;bound=null;epoch++;items={};tokens={};notice='';
+    ctx.clearRect(0,0,view.width,view.height);
+  }
+  function binding(){const now=source();if(now!==bound){clear();bound=now;}return bound;}
+  function canvasPixelsPerMm(){
+    return .62*Math.min(cv.width,cv.height)*items.cup.pose.scale/items.cup.mesh.extentMm;
+  }
+  function paintLayer(item,color,w,h){
+    const span=shared?canvasPixelsPerMm()*item.mesh.extentMm:null;
+    const p=item.pose,key=JSON.stringify([w,h,p.rx,p.ry,p.rz,p.dx,p.dy,p.scale,span]);
+    if(!item.canvas){item.canvas=document.createElement('canvas');item.canvas.width=w;item.canvas.height=h;}
+    const canvas=item.canvas;
+    if(item.maskKey===key)return canvas;
+    if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
+    const c=canvas.getContext('2d');c.clearRect(0,0,w,h);c.fillStyle=color;
+    const project=M.projection(p,w,h,span),v=item.mesh.xyz;
+    if(item.mesh.sphere){
+      const [cx,cy]=project(0,0,0),radius=(span??(.62*Math.min(w,h)*p.scale))/2;
+      c.strokeStyle=color;c.lineWidth=2;c.beginPath();c.arc(cx,cy,radius,0,Math.PI*2);c.stroke();
+    }else for(let i=0;i<v.length;i+=9){
+      const [x0,y0]=project(v[i],v[i+1],v[i+2]),[x1,y1]=project(v[i+3],v[i+4],v[i+5]),[x2,y2]=project(v[i+6],v[i+7],v[i+8]);
+      c.beginPath();c.moveTo(x0,y0);c.lineTo(x1,y1);c.lineTo(x2,y2);c.closePath();c.fill();
+    }
+    item.maskKey=key;return canvas;
+  }
+  function render(){
+    if(!panel.open)return;
+    const key=binding(),item=selected(),p=item?.pose||M.defaultPose(),status=$('cadViewStatus');
+    for(const [id,name] of Object.entries(fields)){
+      const e=$(id);e.disabled=!item||(shared&&name==='scale');e.value=String(p[name]);const o=$(id+'Val');
+      o.textContent=['dx','dy','opacity'].includes(name)?(100*p[name]).toFixed(0)+'%':name==='scale'?(shared?'共通':p[name].toFixed(2)+'×'):p[name].toFixed(0)+'°';
+    }
+    for(const id of M.KINDS){
+      const button=$('cadPick-'+id);
+      button.disabled=!items[id];
+      button.setAttribute('aria-pressed',String(!!items[id] && id===kind()));
+    }
+    for(const code of Object.keys(poseKeys))$('cad'+code).disabled=!movable()||(shared&&poseKeys[code][0]==='scale');
+    for(const id of Object.keys(moves))$(id).disabled=!movable();
+    $('cadViewLock').disabled=!items.cup;
+    $('cadViewLock').textContent=shared?'共通倍率を解除':'カップの倍率を全CADに固定';
+    $('cadViewCalibration').textContent=shared?'共通倍率 '+(canvasPixelsPerMm()*(img.naturalWidth||img.width)/cv.width).toFixed(3)+' px/mm（元画像）':'';
+    $('cadViewHead').disabled=!key||!!items.head;
+    $('cadViewVisible').disabled=!item;$('cadViewVisible').checked=p.visible;
+    $('cadViewFile').disabled=!key;
+    for(const id of ['cadViewReset','cadViewSave','cadViewRemove','cadViewForget'])$(id).disabled=!item;
+    const w=cv.width,h=cv.height;if(view.width!==w||view.height!==h){view.width=w;view.height=h;}
+    ctx.clearRect(0,0,w,h);
+    if(!key){status.textContent='正面（AP）画像の読込完了を確認してください。画像照合ができない環境では利用できません。';return;}
+    ctx.save();ctx.setTransform(zoom,0,0,zoom,-left*w*zoom,-top*h*zoom);
+    ctx.drawImage(img,0,0,w,h);
+    if($('cadViewMaster').checked)for(const id of M.KINDS){const a=items[id];if(!a?.pose.visible||a.pose.opacity===0)continue;
+      ctx.save();ctx.globalAlpha=a.pose.opacity;ctx.drawImage(paintLayer(a,kinds[id][1],w,h),0,0);ctx.restore();
+    }
+    ctx.restore();
+    const available=M.KINDS.filter(id=>items[id]).map(id=>kinds[id][0]);
+    status.textContent=notice||(!available.length?'大腿骨・ステム・カップ・ヘッドから対象を選び、STL/OBJを開きます。':'読込済：'+available.join('／')+(item?.mesh.sphere?'（32 mm球）':item?'（選択 '+item.mesh.triangles.toLocaleString()+'三角形）':''));
+  }
+  function later(){if(queued||!panel.open)return;queued=true;requestAnimationFrame(()=>{queued=false;render();});}
+  function persist(item,id,key){return item.mesh.sphere?'FMA_cad_display_v1:'+key+':head:nominal-32mm':M.storageKey(key,id,item.digest);}
+  $('cadViewFile').onchange=async e=>{
+    const f=e.target.files?.[0],key=binding(),id=kind(),gen=epoch,request=(tokens[id]||0)+1;e.target.value='';if(!f)return;
+    tokens[id]=request;const current=()=>gen===epoch&&request===tokens[id]&&key===binding();
+    try{
+      if(!key)throw Error('先に正面（AP）画像を選んでください。');
+      if(f.size>M.LIMIT_BYTES)throw Error('CADは25 MB以下のSTLまたはOBJを選んでください。');
+      const bytes=await f.arrayBuffer();
+      if(!current())return;
+      const mesh=M.parse(f.name,bytes),hash=await crypto.subtle.digest('SHA-256',bytes);
+      if(!current())return;
+      const digest=Array.from(new Uint8Array(hash),x=>x.toString(16).padStart(2,'0')).join('');
+      const next={mesh,digest,pose:M.defaultPose()};let restored=false,restoreLock=false;
+      try{const q=JSON.parse(localStorage.getItem(persist(next,id,key))||'null');if(q?.version===1&&q.pose){next.pose=M.normalise(q.pose);restored=true;restoreLock=q.shared===true;}}catch(e){}
+      if(id==='cup')shared=restoreLock;
+      items[id]=next;notice=kinds[id][0]+'を読み込みました。'+(restored?'端末内の表示設定を復元しました。':'');
+    }catch(e){if(current())notice=e.message||'読込に失敗しました。';}later();
+  };
+  for(const [id,name] of Object.entries(fields))$(id).oninput=e=>{const q=selected();if(!binding()||!q||q!==selected()||(shared&&name==='scale'))return;q.pose=M.normalise({...q.pose,[name]:Number(e.target.value)});notice='';later();};
+  $('cadViewVisible').onchange=e=>{if(binding()&&selected())selected().pose.visible=e.target.checked;later();};
+  $('cadViewLock').onclick=()=>{if(!binding()||!items.cup)return;shared=!shared;notice='';render();};
+  $('cadViewHead').onclick=()=>{
+    if(!binding()||items.head)return;
+    const pose=M.defaultPose(),cup=items.cup;
+    if(cup){pose.dx=cup.pose.dx;pose.dy=cup.pose.dy;pose.scale=M.normalise({scale:cup.pose.scale*32/cup.mesh.extentMm}).scale;}
+    const head={mesh:{sphere:true,extentMm:32,triangles:0},digest:'nominal-32mm',pose};
+    try{const saved=JSON.parse(localStorage.getItem(persist(head,'head',bound)));if(saved?.version===1)head.pose=M.normalise(saved.pose);}catch(e){}
+    items.head=head;$('cadViewKind').value='head';notice='32 mmヘッドの中心をX線に合わせてください。';render();
+  };
+  const moves={cadLeft:[-1,0],cadRight:[1,0],cadUp:[0,-1],cadDown:[0,1]};
+  const poseKeys={
+    Numpad7:['rx',-1],Numpad8:['rx',1],Numpad9:['scale',.01],
+    Numpad4:['ry',-1],Numpad5:['ry',1],Numpad6:['scale',-.01],
+    Numpad1:['rz',-1],Numpad2:['rz',1]
+  };
+  function adjustSelected(code){
+    if(!panel.open || !movable())return false;
+    const item=selected(),[axis,step]=poseKeys[code];
+    if(axis==='scale' && shared)return false;
+    let value=item.pose[axis]+step;
+    if(axis==='scale')value=Number(value.toFixed(6));
+    else if(value>180)value-=360;
+    else if(value< -180)value+=360;
+    item.pose=M.normalise({...item.pose,[axis]:value});
+    notice='';later();return true;
+  }
+  for(const code of Object.keys(poseKeys))$('cad'+code).onclick=()=>adjustSelected(code);
+  document.addEventListener('keydown',event=>{
+    if(!Object.hasOwn(poseKeys,event.code)||event.defaultPrevented||event.isComposing||
+       event.ctrlKey||event.altKey||event.metaKey||event.shiftKey)return;
+    const target=event.target;
+    if(target.isContentEditable||target.closest?.('textarea,select,input:not([type="range"]):not([type="checkbox"]):not([type="file"])'))return;
+    if(target!==document.body && target!==document.documentElement && !panel.contains(target))return;
+    if(adjustSelected(event.code)){event.preventDefault();event.stopPropagation();}
+  },true);
+  function movable(){
+    return binding() && $('cadViewMaster').checked && selected()?.pose.visible && selected().pose.opacity>0;
+  }
+  function translate(item,dx,dy){
+    item.pose=M.normalise({...item.pose,dx:item.pose.dx+dx,dy:item.pose.dy+dy});
+    notice='';later();
+  }
+  for(const [id,[x,y]] of Object.entries(moves)){
+    $(id).onclick=()=>{
+      if(movable())translate(selected(),x/img.naturalWidth,y/img.naturalHeight);
+    };
+  }
+  let zoom=1, left=0, top=0, drag=null;
+  function setViewport(scale,x,y){
+    zoom=scale;
+    left=Math.max(-.8/zoom,Math.min(1-.2/zoom,x));
+    top=Math.max(-.8/zoom,Math.min(1-.2/zoom,y));
+    $('cadZoomLevel').textContent=Math.round(zoom*100)+'%';
+    later();
+  }
+  function zoomAt(scale,x=.5,y=.5){
+    const next=Math.min(8,Math.max(1,scale));
+    setViewport(next,left+x*(1/zoom-1/next),top+y*(1/zoom-1/next));
+  }
+  $('cadZoomIn').onclick=()=>zoomAt(zoom*1.25);
+  $('cadZoomOut').onclick=()=>zoomAt(zoom/1.25);
+  $('cadZoomReset').onclick=()=>setViewport(1,0,0);
+  view.addEventListener('wheel',event=>{
+    if(!binding() || !event.deltaY)return;
+    event.preventDefault();
+    const rect=view.getBoundingClientRect();
+    zoomAt(zoom*(event.deltaY<0?1.15:1/1.15),(event.clientX-rect.left)/rect.width,(event.clientY-rect.top)/rect.height);
+  },{passive:false});
+  function pickAtPointer(event){
+    if(!$('cadViewMaster').checked)return;
+    const rect=view.getBoundingClientRect();
+    const x=Math.floor((left+(event.clientX-rect.left)/rect.width/zoom)*view.width);
+    const y=Math.floor((top+(event.clientY-rect.top)/rect.height/zoom)*view.height);
+    if(x<0 || y<0 || x>=view.width || y>=view.height)return;
+    const order=[kind(),...M.KINDS.slice().reverse().filter(id=>id!==kind())];
+    for(const id of order){
+      const item=items[id];
+      if(!item?.pose.visible || !item.pose.opacity || !item.canvas)continue;
+      if(item.canvas.getContext('2d').getImageData(x,y,1,1).data[3]){
+        $('cadViewKind').value=id;
+        notice='';
+        later();
+        return;
+      }
+    }
+  }
+  for(const id of M.KINDS){
+    $('cadPick-'+id).onclick=()=>{
+      if(!binding() || !items[id])return;
+      $('cadViewKind').value=id;
+      $('cadViewMaster').checked=true;
+      items[id].pose.visible=true;
+      if(!items[id].pose.opacity)items[id].pose.opacity=M.defaultPose().opacity;
+      notice='';render();
+    };
+  }
+  view.addEventListener('pointerdown',event=>{
+    const middle=event.button===1;
+    if(drag || (!middle && event.button!==0) || !binding())return;
+    view.focus({preventScroll:true});
+    const moveCad=!middle && event.shiftKey;
+    if(moveCad)pickAtPointer(event);
+    if(moveCad ? !movable() : !middle && zoom===1)return;
+    drag={pointer:event.pointerId,item:moveCad?selected():null,x:event.clientX,y:event.clientY};
+    view.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  view.addEventListener('auxclick',event=>{if(event.button===1)event.preventDefault();});
+  function track(event){
+    if(!drag || drag.pointer!==event.pointerId)return;
+    const dx=(event.clientX-drag.x)/(view.clientWidth*zoom);
+    const dy=(event.clientY-drag.y)/(view.clientHeight*zoom);
+    if(!Number.isFinite(dx)||!Number.isFinite(dy))return;
+    if(drag.item){
+      if(!movable() || selected()!==drag.item){drag=null;return;}
+      translate(drag.item,dx,dy);
+    }else setViewport(zoom,left-dx,top-dy);
+    drag.x=event.clientX;drag.y=event.clientY;
+  }
+  view.addEventListener('pointermove',track);
+  view.addEventListener('pointerup',event=>{
+    track(event);
+    if(drag?.pointer===event.pointerId)drag=null;
+  });
+  for(const name of ['pointercancel','lostpointercapture']){
+    view.addEventListener(name,event=>{if(drag?.pointer===event.pointerId)drag=null;});
+  }
+  $('cadViewMaster').onchange=later;
+  $('cadViewKind').onchange=()=>{notice='';render();};
+  $('cadViewReset').onclick=()=>{if(!binding()||!selected())return;const p=selected().pose;selected().pose={...M.defaultPose(),scale:shared?p.scale:1,opacity:p.opacity,visible:p.visible};notice=shared?'位置と回転をリセットしました。':'回転・位置・倍率をリセットしました。';later();};
+  $('cadViewSave').onclick=()=>{const key=binding(),id=kind(),q=selected();if(!key||!q)return;try{
+    localStorage.setItem(persist(q,id,key),JSON.stringify({version:1,pose:q.pose,shared:id==='cup'&&shared}));notice='この画像・CADの表示設定だけを端末内に保存しました。';
+  }catch(e){notice='端末内に保存できませんでした。';}later();};
+  $('cadViewForget').onclick=()=>{const key=binding(),id=kind(),q=selected();if(!key||!q)return;try{
+    localStorage.removeItem(persist(q,id,key));notice='端末内の表示設定を削除しました。現在の表示はそのままです。';
+  }catch(e){notice='端末内の表示設定を削除できませんでした。';}later();};
+  $('cadViewRemove').onclick=()=>{if(!binding()||!selected())return;const id=kind();tokens[id]=(tokens[id]||0)+1;if(id==='cup')shared=false;delete items[id];notice='この重ね合わせ表示を外しました。';later();};
+  async function draftAsset(asset){
+    if(typeof asset?.name!=='string'||typeof asset.base64!=='string'||asset.base64.length>M.LIMIT_BYTES*1.4)throw Error('下書き内のファイルが不正です。');
+    const bytes=Uint8Array.from(atob(asset.base64),c=>c.charCodeAt(0));
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');
+    if(digest!==asset.sha256)throw Error('下書き内のファイルの照合に失敗しました。');
+    return bytes;
+  }
+  $('cadDraftFile').onchange=async event=>{
+    const input=event.target,file=input.files?.[0],message=$('cadDraftMessage');
+    input.value='';
+    if(!file||input.disabled)return;
+    input.disabled=true;
+    try{
+      const previous=peLoadToken;
+      if(img&&!confirm('現在の画像とCADを閉じて、この下書きを開きますか？'))return;
+      if(file.size>110_000_000)throw Error('下書きファイルが大きすぎます。');
+      message.textContent='下書きの画像とCADを確認中…';
+      const draft=JSON.parse(await file.text());
+      if(draft.format!=='FMA-CAD-draft'||draft.version!==1||!['L','R'].includes(draft.side)||typeof draft.studyId!=='string'||!Array.isArray(draft.layers)||draft.layers.length!==4)throw Error('対応する4モデルのCAD下書きを選んでください。');
+      const restored={};
+      for(const layer of draft.layers){
+        const id=layer.kind;
+        if(!M.KINDS.includes(id)||restored[id]||!layer.pose||!Object.keys(M.defaultPose()).every(k=>k==='visible'?typeof layer.pose[k]==='boolean':Number.isFinite(layer.pose[k])))throw Error('CADの種類または姿勢が不正です。');
+        const mesh=id==='head'?{sphere:true,extentMm:32,triangles:0}:M.parse(layer.file.name,(await draftAsset(layer.file)).buffer);
+        restored[id]={mesh,digest:id==='head'?'nominal-32mm':layer.file.sha256,pose:M.normalise(layer.pose)};
+      }
+      const sourceFile=new File([await draftAsset(draft.image)],draft.image.name,{type:'image/png'});
+      const bitmap=await createImageBitmap(sourceFile);bitmap.close();
+      if(peLoadToken!==previous)throw Error('画像が切り替わりました。下書きを選び直してください。');
+      $('studyId').value=draft.studyId;$('side').value=draft.side;$('imageType').value='postop_THA';
+      $('peProjection').value='AP';$('rpDirection').value='AP';
+      const transfer=new DataTransfer();transfer.items.add(sourceFile);$('file').files=transfer.files;
+      await $('file').onchange({target:$('file')});
+      const deadline=Date.now()+30000;
+      while(imageLoading&&peLoadToken===previous+1&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,30));
+      if(peLoadToken!==previous+1||window._fmaFile?.name!==sourceFile.name||peHash!==draft.image.sha256||!binding())throw Error('下書きと表示画像を照合できませんでした。');
+      items=restored;shared=draft.shared===true;
+      $('cadViewKind').value='cup';$('cadViewMaster').checked=true;panel.open=true;
+      notice='下書き合わせを読み込みました。カップ・ヘッド・ステム・大腿骨の輪郭を確認してください。';
+      render();view.focus({preventScroll:true});view.scrollIntoView({block:'center'});message.textContent=notice;
+    }catch(error){message.textContent=error.message||'下書き読込に失敗しました。';}
+    finally{input.disabled=false;}
+  };
+  panel.addEventListener('toggle',render);
+  const beforeFile=$('file').onchange;$('file').onchange=function(e){if(e.target.files?.[0]){clear();later();}return beforeFile.call(this,e);};
+  const before=draw;draw=function(){before();binding();later();};
+  for(const id of ['side','peProjection','rpDirection'])$(id).addEventListener('change',()=>{binding();later();});
+})();
+// END CAD OVERLAY UI
 </script></body></html>

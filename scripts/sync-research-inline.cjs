@@ -3,6 +3,8 @@ const fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),file=path.join(root,'dev/index.html');
 let text=fs.readFileSync(file,'utf8');
 for(const [source,start,end]of [
+  ['lib/cad-overlay.js','// BEGIN CAD OVERLAY (lib/cad-overlay.js)','// END CAD OVERLAY'],
+  ['lib/cad-overlay-ui.js','// BEGIN CAD OVERLAY UI (lib/cad-overlay-ui.js)','// END CAD OVERLAY UI'],
   ['lib/stem-cad.js','// BEGIN STEM CAD (lib/stem-cad.js)','// END STEM CAD'],
   ['lib/stem-cad-ui.js','// BEGIN STEM CAD UI (lib/stem-cad-ui.js)','// END STEM CAD UI'],
   ['lib/cup-cad.js','// BEGIN CUP CAD (lib/cup-cad.js)','// END CUP CAD'],
