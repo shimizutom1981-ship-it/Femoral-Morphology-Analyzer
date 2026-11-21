@@ -1,0 +1,223 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FMA CAD研究版｜大腿骨の位置合わせ</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#12181b;color:#eff5f4;font:15px system-ui}header,main{max-width:1500px;margin:auto;padding:12px 22px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #435255}h1{font-size:21px;margin:0}button,select,input{font:inherit}button,select{color:inherit;background:#253238;border:1px solid #58686c;border-radius:5px;padding:5px 10px;cursor:pointer}button:hover{background:#405459}label,small{color:#cad7d7}.bar,.controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:8px 0}.views{display:flex;gap:10px}.panel{flex:1;min-width:0;background:#070b0d;border:1px solid #53636a}.panel h2{font-size:15px;margin:0;padding:6px 12px;background:#263238}.panel canvas{width:100%;height:clamp(240px,44vh,520px);display:block;touch-action:none;cursor:crosshair}.lower{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.lower canvas{background:#101415;border:1px solid #405258}#note{color:#ffd58b}.selected{outline:2px solid #8bdfc9}button:disabled{opacity:.5}input[type=number]{width:65px}section{border-top:1px solid #37474e;margin-top:10px;padding-top:6px}button[aria-pressed="true"]{background:#186050;outline:2px solid #87f0cd}</style>
+<header><h1>大腿骨の位置合わせ</h1><small id="case"></small></header><main>
+<label id="loadLabel">症例を開く <input type="file" id="load" accept=".html,.htm,.json"><br><small>「ファイルに保存」で作成した症例HTMLを選んでください。画像とCADはこのブラウザ内で読み込みます。</small></label>
+<div id="app" hidden><div class="bar"><select id="mode"><option value="split">近位・遠位の2画面</option><option value="whole">全体合わせ（比較用）</option></select><span id="status"></span><button id="save">ブラウザに下書き保存</button><label>保存済みの編集を開く <input type="file" accept=".html" id="resume"></label><button id="exportFile">ファイルに保存</button><button id="reset">この方式を初期位置に戻す</button></div>
+<div class="bar"><label>画像操作 <select id="tool"><option value="bone">大腿骨を移動</option><option value="edge">画像上に点を追加</option><option value="cad">追加CADを移動</option></select></label><small>属性を選び、輪郭に沿って複数箇所をクリック。GT・LTは大腿骨CADに固定。断面の高さはCT上のLTを基準とします。</small></div>
+<details><summary>CADを追加・調整</summary><div class="bar"><input type="file" id="stl" multiple accept=".stl"><label><input type="checkbox" checked id="native">症例CTと同じLPS座標（mm）</label><select id="layer" aria-label="追加CAD"></select><button id="visibility">表示切替</button><button id="remove">CADを外す</button></div><div class="controls" id="cadControls"></div><small id="message"></small></details>
+<div class="bar"><span>CT上の転子点確認</span><label>GT <select id="reviewGT"><option value="pending">未確認</option><option value="checked">確認済み</option><option value="revise">要修正</option></select></label><label>LT <select id="reviewLT"><option value="pending">未確認</option><option value="checked">確認済み</option><option value="revise">要修正</option></select></label></div>
+<div class="bar" role="group" aria-label="打点する点の属性"><strong>点の属性</strong><button id="attr0" aria-pressed="false">内側外皮質</button><button id="attr1" aria-pressed="false">内側髄腔</button><button id="attr2" aria-pressed="false">外側髄腔</button><button id="attr3" aria-pressed="false">外側外皮質</button><button id="attr4" aria-pressed="false">内側ステム接触</button><button id="attr5" aria-pressed="false">外側ステム接触</button><button id="undoPoint" disabled>↶ 1点戻す</button></div>
+<div class="views"><div class="panel"><h2 id="titleA">遠位｜骨軸</h2><canvas id="dist"></canvas></div><div class="panel" id="panelB"><h2>近位｜大転子・小転子</h2><canvas id="prox"></canvas></div></div>
+<small>赤＝皮質とステムの接触候補　紫紅＝医師が確認した接触</small><div class="controls" id="controls"></div><small>画像をドラッグして平行移動。水色＝外皮質、橙＝髄腔内縁候補、緑＝骨軸、紫＝選択断面。GT・LT・骨軸はCT候補。まず姿勢を合わせ、次に境界を修正。修正点はAP画像座標に固定。</small>
+<section><div class="bar"><label>小転子から遠位 <select id="level"></select> mm</label><label>境界 <select id="which"><option>内側外皮質</option><option>内側髄腔</option><option>外側髄腔</option><option>外側外皮質</option></select></label><button id="minus">点を左へ 1 px</button><button id="plus">右へ 1 px</button><button id="confirmContact">接触を確認</button><button id="absent">判読不能</button><button id="undo">CT候補へ戻す</button></div>
+<div class="lower"><div><small>選択した高さのCT横断像</small><br><canvas width="180" height="165" id="ct"></canvas></div><div><small>AP輝度プロファイル｜境界を選び、グラフをクリックして修正</small><br><canvas id="profile" width="420" height="145"></canvas></div><small id="note"></small></div></section></div></main>
+<script id="payload" type="application/json">null</script>
+<script>
+const $=id=>document.getElementById(id), rad=Math.PI/180, img=new Image(), sample=document.createElement('canvas');
+let data,gray,states,rows,frames={},points,profilePoints,ctIdx=-1,ctBitmap,activeMode='split',drag;
+const pageTemplate=document.documentElement?.outerHTML.replace(/(<script id="payload" type="application\/json">)[\s\S]*?(<\/script>)/, '$1null$2');
+let snapshotId='';
+let tick=null;function clock(){if(tick!==null){st().ms+=performance.now()-tick;tick=null}}
+const fresh=()=>({x:0,y:0,tilt:0,roll:0,edits:{},moves:0,ms:0});const st=()=>states[activeMode];
+function init(d,review=null,fromFile=false){
+ snapshotId=review?.id||'';
+ if(review)$('mode').value=review.mode;
+ data=d;states={split:fresh(),whole:fresh()};activeMode=$('mode').value;
+ if(review)states=review.states;
+ try{const saved=JSON.parse(localStorage.getItem(key()));if(!fromFile&&saved&&saved.split&&saved.whole)states=saved}catch{}
+ clearLegacyLandmarks();
+ $('case').textContent=d.caption;$('app').hidden=false;$('loadLabel').hidden=true;
+ $('level').replaceChildren(...[...new Set(d.rings.map(r=>Number((d.lt[2]-r.z).toFixed(3))))].sort((a,b)=>a-b).map(x=>new Option(x,x)));$('level').value='10';
+ if(review){$('level').value=review.level;$('which').selectedIndex=review.edge}
+ img.onload=()=>{sample.width=img.width;sample.height=img.height;const g=sample.getContext('2d');g.drawImage(img,0,0);gray=g.getImageData(0,0,img.width,img.height).data;render()};img.src='data:image/png;base64,'+d.image;
+}
+for(const k of ['GT','LT'])$('review'+k).onchange=e=>{(states.landmarkReview??={})[k]=e.target.value};
+function syncLandmarkReview(){for(const k of ['GT','LT'])$('review'+k).value=states.landmarkReview?.[k]??'pending'}
+function clearLegacyLandmarks(){syncLandmarkReview();for(const state of [states.split,states.whole])delete state.landmarks}
+function key(){return 'fma-femur-pilot-v1:'+data.imageHash+(snapshotId?':'+snapshotId:'')}
+function projectFn(){
+ const s=st(),[a,b,e]=[data.pose.rx,data.pose.ry,data.pose.rz].map(v=>v*rad),ca=Math.cos(a),sa=Math.sin(a),cb=Math.cos(b),sb=Math.sin(b),cc=Math.cos(e),sc=Math.sin(e);
+ const u=[cc*cb,cc*sb*sa-sc*ca,cc*sb*ca+sc*sa],v=[sb,-cb*sa,-cb*ca],base=data.axis[1],axis=data.axis[0].map((x,i)=>x-base[i]),len=Math.hypot(...axis),[nx,ny,nz]=axis.map(x=>x/len);
+ const dot=(a,b)=>a.reduce((v,x,i)=>v+x*b[i],0),pivot=base.map((x,i)=>x-data.center[i]),px=img.width*(.5+data.pose.dx)+data.ppm*dot(pivot,u),py=img.height*(.5+data.pose.dy)+data.ppm*dot(pivot,v);
+ const co=Math.cos(s.roll*rad),si=Math.sin(s.roll*rad),ct=Math.cos(s.tilt*rad),ss=Math.sin(s.tilt*rad);
+ return p=>{const x=p[0]-base[0],y=p[1]-base[1],z=p[2]-base[2],t=(nx*x+ny*y+nz*z)*(1-co);
+ const q=[co*x+si*(ny*z-nz*y)+nx*t,co*y+si*(nz*x-nx*z)+ny*t,co*z+si*(nx*y-ny*x)+nz*t],xx=data.ppm*dot(q,u),yy=data.ppm*dot(q,v);
+ return [px+s.x+ct*xx-ss*yy,py+s.y+ss*xx+ct*yy]};
+}
+function compute(){
+ const proj=projectFn();rows=data.rings.map((r,i)=>{let lo,hi,li,ri;for(let j=0;j<r.o.length;j++){if(!r.o[j])continue;const p=proj(r.o[j]);if(!lo||p[0]<lo[0]){lo=p;li=j}if(!hi||p[0]>hi[0]){hi=p;ri=j}}
+ const edge=[lo,r.i[li]?proj(r.i[li]):null,r.i[ri]?proj(r.i[ri]):null,hi];
+ edge.ct=edge.slice();
+ for(let j=0;j<4;j++){const k=i+':'+j;if(k in st().edits)edge[j]=st().edits[k]}
+ edge.contact=[false,!!r.contact?.[li],!!r.contact?.[ri],false];
+ return edge});
+ points={axis:data.axis.map(proj),gt:proj(data.gt),lt:proj(data.lt)};
+}
+function index(){let z=data.lt[2]-Number($('level').value);return data.rings.reduce((best,r,i)=>Math.abs(r.z-z)<Math.abs(data.rings[best].z-z)?i:best,0)}
+const colors=['#5cf0f5','#ffab48','#ffab48','#5cf0f5'];
+function lineColor(row,i,j){
+ if(!row[j] || (j!==1 && j!==2))return colors[j];
+ if(st().confirmed?.[i+':'+j])return '#ed53ca';
+ if((i+':'+j) in st().edits)return '#ffe588';return row.contact[j]?'#ff5656':colors[j];
+}
+function view(id,cx,cy,height){
+ const el=$(id),width=el.clientWidth,h=el.clientHeight;if(!width||!h)return;
+ el.width=width;el.height=h;const g=el.getContext('2d'),scale=Math.min(h/height,width/(height*.76));const x0=cx-width/(2*scale),y0=cy-h/(2*scale);frames[id]={scale,x0,y0};
+ g.setTransform(scale,0,0,scale,-x0*scale,-y0*scale);g.drawImage(img,0,0);for(const l of st().layers??[])if(l.visible){g.globalAlpha=.4;g.drawImage(layerImage(l),0,0);g.globalAlpha=1}g.lineWidth=1.4/scale;
+ function path(ps,color){g.strokeStyle=color;g.beginPath();let last;for(const p of ps){if(!p){last=null;continue}if(last)g.lineTo(...p);else g.moveTo(...p);last=p}g.stroke()}
+ for(let j=0;j<4;j++)for(let i=0;i<rows.length;i++){
+   const q=rows[i][j];if(!q)continue;
+   const c=lineColor(rows[i],i,j),prev=rows[i-1]?.[j];
+   if(prev&&!Object.hasOwn(st().edits,i+':'+j)&&!Object.hasOwn(st().edits,(i-1)+':'+j)){const mid=[(prev[0]+q[0])/2,(prev[1]+q[1])/2];path([prev,mid],lineColor(rows[i-1],i-1,j));path([mid,q],c)}
+   if(Object.hasOwn(st().edits,i+':'+j))mark(q,'',c);else{g.fillStyle=c;g.fillRect(q[0],q[1],1/scale,1/scale)}
+ }path(points.axis,'#99ee80');
+ function mark(p,name,color){g.fillStyle=color;g.beginPath();g.arc(...p,3/scale,0,2*Math.PI);g.fill();g.font=(13/scale)+'px sans-serif';g.fillText(name,p[0]+4/scale,p[1]-4/scale)}
+ mark(points.gt,'GT','#fff');mark(points.lt,'LT','#fff');points.axis.forEach((p,i)=>mark(p,i?'100':'10','#99ee80'));
+ const sel=rows[index()];if(sel.ct[0]&&sel.ct[3])path([sel.ct[0],sel.ct[3]],'#c3a2ff');sel.forEach((p,i)=>{if(p)mark(p,'',lineColor(sel,index(),i))});
+ for(const dot of st().apPoints??[])mark(dot.xy,'',dot.contact?'#ed53ca':'#ffe588');
+}
+function profile(){
+ const idx=index(),r=data.rings[idx],edge=rows[idx],p=projectFn(),lo=p(r.o.find(Boolean)),outer=r.o.filter(Boolean).map(p).sort((a,b)=>a[0]-b[0]);const L=outer[0],R=outer.at(-1),dx=R[0]-L[0],dy=R[1]-L[1]; // follow the projected transverse chord
+ const g=$('profile').getContext('2d');g.clearRect(0,0,420,145);g.strokeStyle='#eee';g.beginPath();profilePoints=[];
+ for(let k=0;k<420;k++){let t=k/419*1.5-.25,x=L[0]+t*dx,y=L[1]+t*dy;profilePoints.push([x,y]);let at=4*(Math.round(y)*img.width+Math.round(x));let lum=.299*gray[at]+.587*gray[at+1]+.114*gray[at+2];if(k)g.lineTo(k,138-lum*.48);else g.moveTo(k,138-lum*.48)}g.stroke();
+ edge.forEach((q,j)=>{if(!q)return;let xx=((q[0]-L[0])/dx+.25)/1.5*419;g.strokeStyle=lineColor(edge,idx,j);g.beginPath();g.moveTo(xx,0);g.lineTo(xx,145);g.stroke()});
+ const ci=$('ct').getContext('2d');function paint(){ci.drawImage(ctBitmap,0,0,180,165);for(let field of ['o','i']){ci.fillStyle=field==='o'?colors[0]:colors[1];for(let [k,q] of r[field].entries())if(q){ci.fillStyle=field==='o'?colors[0]:r.contact?.[k]?'#ff5656':colors[1];ci.fillRect((q[0]-data.ctOrigin[0])/data.ctSp/97*180,(q[1]-data.ctOrigin[1])/data.ctSp/100*165,2,2)}}}
+ if(idx!==ctIdx){ctIdx=idx;ctBitmap=new Image();ctBitmap.onload=()=>{if(ctIdx===idx)paint()};ctBitmap.src='data:image/png;base64,'+r.ct}else if(ctBitmap.complete)paint();
+ const j=$('which').selectedIndex,k=idx+':'+j,confirmed=!!st().confirmed?.[k];$('confirmContact').disabled=!edge[j]||(j!==1&&j!==2);$('confirmContact').textContent=confirmed?'接触確認を解除':'接触を確認';
+ $('note').textContent=(confirmed?'接触確認済み｜':edge.contact[j]&&edge[j]?'接触候補｜':'')+'選択高 '+$('level').value+' mm ｜ '+(edge[$('which').selectedIndex]?'候補あり':'候補なし・要確認')+' ｜ 修正・欠測 '+Object.keys(st().edits).length+' 点';
+}
+function referenceError(start,end){
+ const diffs=[];for(const [y,l,r] of data.ref){if(y<start||y>end)continue;
+ for(const [j,target] of [[0,l],[3,r]]){if(target===null)continue;
+ for(let k=1;k<rows.length;k++){const a=rows[k-1][j],b=rows[k][j];if(!a||!b||Math.abs(b[1]-a[1])<.01)continue;
+ if((a[1]-y)*(b[1]-y)<=0){const x=a[0]+(y-a[1])*(b[0]-a[0])/(b[1]-a[1]);diffs.push(Math.abs(x-target));break}}}}
+ return diffs.length?(diffs.reduce((a,b)=>a+b,0)/diffs.length).toFixed(1):'—'
+}
+let contactTool=false;
+function updatePointTools(){
+ const j=$('which').selectedIndex,active=$('tool').value==='edge'?(contactTool?(j===1?4:5):j):-1;
+ for(let i=0;i<6;i++)$('attr'+i).setAttribute?.('aria-pressed',String(active===i));
+ $('undoPoint').disabled=!st().pointHistory?.length;
+}
+for(let i=0;i<6;i++)$('attr'+i).onclick=()=>{
+ $('which').selectedIndex=i<4?i:i===4?1:2;contactTool=i>=4;$('tool').value='edge';render();
+};
+function addAPPoint(xy){
+ const j=$('which').selectedIndex,id=crypto.randomUUID();
+ (st().apPoints??=[]).push({id,xy,j,contact:contactTool&&(j===1||j===2)});
+ (st().pointHistory??=[]).push({kind:'apPoint',id});
+ render();
+}
+function rememberPoint(){
+ const j=$('which').selectedIndex,k=index()+':'+j;
+ (st().pointHistory??=[]).push({key:k,j,level:$('level').value,edited:Object.hasOwn(st().edits,k),p:st().edits[k],confirmed:!!st().confirmed?.[k]});
+}
+$('undoPoint').onclick=()=>{
+ const last=st().pointHistory?.pop();if(!last)return;
+ if(last.kind==='apPoint'){st().apPoints=st().apPoints.filter(p=>p.id!==last.id);render();return}
+ if(last.edited)st().edits[last.key]=last.p;else delete st().edits[last.key];
+ if(last.confirmed)(st().confirmed??={})[last.key]=true;else if(st().confirmed)delete st().confirmed[last.key];
+ $('level').value=last.level;$('which').selectedIndex=last.j;contactTool=false;render();
+};
+function render(){if(!gray)return;updatePointTools();syncLayers();compute();const split=activeMode==='split';$('panelB').hidden=!split;$('titleA').textContent=split?'遠位｜骨軸':'全体｜比較用';const row=points.axis;
+ view('dist',...(split?data.views.dist:data.views.whole));if(split)view('prox',...data.views.prox);profile();
+ $('status').textContent='横 '+st().x+' px　縦 '+st().y+' px　傾き '+st().tilt+'°　軸回旋 '+st().roll+'°　操作 '+st().moves+' 回　'+Math.round((st().ms+(tick===null?0:performance.now()-tick))/1000)+' 秒　既存外皮質点との平均差　近位 '+referenceError(200,338)+' / 遠位 '+referenceError(372,610)+' px'}
+function move(k,v){if(tick===null)tick=performance.now();st()[k]=Math.round((st()[k]+v)*10)/10;st().moves++;render()}
+for(let [k,title,step] of [['x','左右',1],['y','上下',1],['tilt','面内傾き',.5],['roll','骨軸回旋',1]]){let label=document.createElement('label');label.textContent=title+' ';for(let s of [-1,1]){let b=document.createElement('button');b.textContent=(s>0?'+':'−')+step;b.onclick=()=>move(k,s*step);label.append(b)}$('controls').append(label)}
+const meshCache=new WeakMap(),renderCache=new WeakMap();
+function parseSTL(bytes){
+ const v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),n=bytes.length>=84?v.getUint32(80,true):0;
+ let xyz;
+ if(n && 84+n*50===bytes.length){
+   xyz=new Float32Array(n*9);for(let i=0;i<n;i++)for(let k=0;k<9;k++)xyz[i*9+k]=v.getFloat32(96+i*50+k*4,true);
+ }else{
+   const coords=[];for(const m of new TextDecoder().decode(bytes).matchAll(/\bvertex\s+(\S+)\s+(\S+)\s+(\S+)/gi))coords.push(Number(m[1]),Number(m[2]),Number(m[3]));xyz=new Float32Array(coords);
+ }
+ if(!xyz.length||xyz.length%9||!xyz.every(Number.isFinite))throw Error('STLの三角形を読み取れません');
+ const lo=[Infinity,Infinity,Infinity],hi=lo.map(()=>-Infinity);
+ xyz.forEach((x,i)=>{const k=i%3;lo[k]=Math.min(x,lo[k]);hi[k]=Math.max(x,hi[k])});
+ return {xyz,center:lo.map((x,k)=>(x+hi[k])/2)};
+}
+function layerImage(l){
+ const key=[st().x,st().y,st().tilt,st().roll,l.x,l.y,l.rx,l.ry,l.rz,l.scale].join(',');
+ const old=renderCache.get(l);if(old?.key===key)return old.canvas;
+ let mesh=meshCache.get(l);if(!mesh){mesh=parseSTL(Uint8Array.from(atob(l.bytes),c=>c.charCodeAt(0)));meshCache.set(l,mesh)}
+ const canvas=old?.canvas??document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;
+ const g=canvas.getContext('2d'),project=projectFn(),origin=project(l.native?mesh.center:data.center),zero=project(data.center);
+ const [a,b,c]=[l.rx,l.ry,l.rz].map(n=>n*rad),sa=Math.sin(a),ca=Math.cos(a),sb=Math.sin(b),cb=Math.cos(b),sc=Math.sin(c),cc=Math.cos(c);
+ const basis=[[cc*cb,sc*cb,-sb],[cc*sb*sa-sc*ca,sc*sb*sa+cc*ca,cb*sa],[cc*sb*ca+sc*sa,sc*sb*ca-cc*sa,cb*ca]];
+ const axes=basis.map(v=>project(data.center.map((x,i)=>x+v[i])).map((x,i)=>(x-zero[i])*l.scale));
+ const xyz=mesh.xyz;g.fillStyle='#91baff';
+ for(let i=0;i<xyz.length;i+=9){g.beginPath();for(let k=0;k<9;k+=3){
+   const x=xyz[i+k]-mesh.center[0],y=xyz[i+k+1]-mesh.center[1],z=xyz[i+k+2]-mesh.center[2];
+   const px=origin[0]+l.x+x*axes[0][0]+y*axes[1][0]+z*axes[2][0],py=origin[1]+l.y+x*axes[0][1]+y*axes[1][1]+z*axes[2][1];
+   if(k)g.lineTo(px,py);else g.moveTo(px,py);
+ }g.closePath();g.fill()}
+ renderCache.set(l,{key,canvas});return canvas;
+}
+const selectedLayer=()=>(st().layers??[])[Number($('layer').value)];
+let listKey='';
+function syncLayers(){
+ const layers=st().layers??[],key=JSON.stringify([activeMode,...layers.map(l=>[l.id,l.visible])]);
+ if(listKey!==key){listKey=key;const old=$('layer').value;$('layer').replaceChildren(...layers.map((l,i)=>new Option((l.visible?'':'非表示・')+l.name,i)));$('layer').value=layers[old]?old:String(Math.max(0,layers.length-1))}
+}
+$('stl').onchange=async e=>{
+ const state=st(),native=$('native').checked;
+ for(const f of Array.from(e.target.files)){try{const bytes=new Uint8Array(await f.arrayBuffer()),mesh=parseSTL(bytes);let raw='';
+   for(let i=0;i<bytes.length;i+=32768)raw+=String.fromCharCode(...bytes.subarray(i,i+32768));
+   const layer={id:crypto.randomUUID(),name:f.name,bytes:btoa(raw),native,visible:true,x:0,y:0,rx:0,ry:0,rz:0,scale:1};
+   (state.layers??=[]).push(layer);meshCache.set(layer,mesh);$('message').textContent='';
+   if(state===st()){$('tool').value='cad';render();$('layer').value=String(state.layers.length-1)}
+ }catch(err){$('message').textContent=f.name+'：'+err.message;break}}e.target.value='';
+};
+$('visibility').onclick=()=>{const l=selectedLayer();if(l){l.visible=!l.visible;render()}};
+$('remove').onclick=()=>{const l=selectedLayer();if(l&&confirm(l.name+' を外しますか？')){st().layers.splice(Number($('layer').value),1);render()}};
+for(const [k,label,step] of [['x','左右 px',1],['y','上下 px',1],['rx','X°',1],['ry','Y°',1],['rz','Z°',1],['scale','倍率',.01]]){
+ const box=document.createElement('label');box.textContent=label+' ';for(const sign of [-1,1]){const b=document.createElement('button');b.textContent=(sign>0?'+':'−')+step;b.onclick=()=>{const l=selectedLayer();if(l){l[k]=Math.round((l[k]+sign*step)*100)/100;if(k==='scale')l[k]=Math.max(.01,l[k]);render()}};box.append(b)}$('cadControls').append(box)
+}
+$('tool').onchange=render;
+function mousePoint(id,e){const f=frames[id],rect=$(id).getBoundingClientRect();return [f.x0+(e.clientX-rect.left)/f.scale,f.y0+(e.clientY-rect.top)/f.scale]}
+for(let id of ['dist','prox']){const el=$(id);el.onpointerdown=e=>{if(tick===null)tick=performance.now();const tool=e.shiftKey&&selectedLayer()?'cad':$('tool').value;
+ if(tool==='edge'){addAPPoint(mousePoint(id,e));return}
+ const target=tool==='cad'?selectedLayer():st();if(!target)return;
+ el.setPointerCapture(e.pointerId);drag={id,tool,target,x:e.clientX,y:e.clientY,dx:target.x,dy:target.y};
+ };el.onpointermove=e=>{if(drag?.id!==id)return;const scale=frames[id].scale;drag.target.x=Math.round(drag.dx+(e.clientX-drag.x)/scale);drag.target.y=Math.round(drag.dy+(e.clientY-drag.y)/scale);render()};el.onpointerup=el.onpointercancel=()=>{if(drag){drag=null;st().moves++;render()}}}
+function edit(p){rememberPoint();if(st().confirmed)delete st().confirmed[index()+':'+$('which').selectedIndex];if(tick===null)tick=performance.now();const j=$('which').selectedIndex,k=index()+':'+j;st().edits[k]=p;if(p&&contactTool&&$('tool').value==='edge'&&(j===1||j===2))(st().confirmed??={})[k]=true;render()}
+$('profile').onclick=e=>{const rect=e.target.getBoundingClientRect();edit(profilePoints[Math.max(0,Math.min(419,Math.round(419*(e.clientX-rect.left)/rect.width)))])};
+for(let [id,s] of [['minus',-1],['plus',1]])$(id).onclick=()=>{let q=rows[index()][$('which').selectedIndex];if(q)edit([q[0]+s,q[1]])};
+$('confirmContact').onclick=()=>{const j=$('which').selectedIndex,k=index()+':'+j;if((j!==1&&j!==2)||!rows[index()][j])return;rememberPoint();const m=st().confirmed??={};if(m[k])delete m[k];else m[k]=true;render()};
+$('absent').onclick=()=>edit(null);$('undo').onclick=()=>{rememberPoint();if(st().confirmed)delete st().confirmed[index()+':'+$('which').selectedIndex];delete st().edits[index()+':'+$('which').selectedIndex];render()};
+$('mode').onchange=e=>{clock();activeMode=e.target.value;render()};$('level').onchange=render;$('which').onchange=()=>{contactTool=false;render()};$('reset').onclick=()=>{if(confirm('この方式の姿勢と点修正を初期値に戻しますか？')){clock();states[activeMode]=fresh();render()}};$('save').onclick=()=>{clock();try{localStorage.setItem(key(),JSON.stringify(states))}catch{$('status').textContent='ブラウザの保存容量を超えました。「ファイルに保存」を押してください。';return}$('status').textContent+='　このブラウザに保存済み'};
+function parseCaseFile(text){
+ const raw=text.trimStart();
+ // Read only the embedded JSON. Never render or execute the selected HTML.
+ const match=raw.startsWith('<')?raw.match(/<script\s+id=["']payload["']\s+type=["']application\/json["']\s*>([\s\S]*?)<\/script>/i):null;
+ if(raw.startsWith('<')&&!match)throw Error('症例データを含むFMA大腿骨の保存HTMLを選んでください。');
+ const record=JSON.parse(match?match[1]:raw);
+ const review=record?.format==='FMA-femur-review-v1'?record.review:null;
+ const d=review?record.data:record;
+ if(!d?.image||!d.imageHash||!d.rings?.length||!d.pose||!d.axis||!d.views||!d.lt||!d.gt)throw Error('この画面には大腿骨の位置合わせ画面から保存したHTMLまたは試験JSONを指定してください。');
+ if(review&&(!review.states?.split||!review.states?.whole||!['split','whole'].includes(review.mode)))throw Error('位置合わせの保存情報を読み取れません。');
+ return {data:d,review};
+}
+$('load').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;const record=parseCaseFile(await f.text());init(record.data,record.review,true)}catch(err){alert(err.message)}finally{e.target.value=''}};window.onresize=render;
+setInterval(()=>{if(tick!==null)render()},1000);document.addEventListener('visibilitychange',()=>{if(document.hidden)clock()});
+$('resume').onchange=async e=>{
+ try{const record=parseCaseFile(await e.target.files[0].text());
+ if(!record.review||record.data?.imageHash!==data.imageHash||!record.review?.states?.split||!record.review?.states?.whole)throw Error('この症例の保存済みHTMLを選んでください');
+ clock();snapshotId=record.review.id;states=record.review.states;clearLegacyLandmarks();activeMode=record.review.mode;$('mode').value=activeMode;$('level').value=record.review.level;$('which').selectedIndex=record.review.edge;render();
+ }catch(err){alert(err.message)}finally{e.target.value=''}
+};
+function exportReview(){
+ clock();
+ const review={id:crypto.randomUUID(),states,mode:activeMode,level:$('level').value,edge:$('which').selectedIndex};
+ const json=JSON.stringify({format:'FMA-femur-review-v1',data,review}).replace(/</g,'\\u003c');
+ return '<!doctype html>'+pageTemplate.replace('<script id="payload" type="application/json">null',()=>'<script id="payload" type="application/json">'+json);
+}
+$('exportFile').onclick=()=>{
+ const url=URL.createObjectURL(new Blob([exportReview()],{type:'text/html;charset=utf-8'}));
+ const a=document.createElement('a');a.href=url;a.download='FMA_femur_'+data.imageHash.slice(0,8)+'_'+new Date().toISOString().replace(/[:.]/g,'-')+'.html';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+};
+const embedded=JSON.parse($('payload').textContent);if(embedded?.format==='FMA-femur-review-v1')init(embedded.data,embedded.review);else if(embedded)init(embedded);
+</script></html>
+
