@@ -1,0 +1,83 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FMA｜大腿骨の位置合わせ</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#12181b;color:#eff5f4;font:15px system-ui}header,main{max-width:1500px;margin:auto;padding:12px 22px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #435255}h1{font-size:21px;margin:0}button,select,input{font:inherit}button,select{color:inherit;background:#253238;border:1px solid #58686c;border-radius:5px;padding:5px 10px;cursor:pointer}button:hover{background:#405459}label,small{color:#cad7d7}.bar,.controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:8px 0}.views{display:flex;gap:10px}.panel{flex:1;min-width:0;background:#070b0d;border:1px solid #53636a}.panel h2{font-size:15px;margin:0;padding:6px 12px;background:#263238}.panel canvas{width:100%;height:clamp(240px,44vh,520px);display:block;touch-action:none;cursor:crosshair}.lower{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.lower canvas{background:#101415;border:1px solid #405258}#note{color:#ffd58b}.selected{outline:2px solid #8bdfc9}button:disabled{opacity:.5}input[type=number]{width:65px}section{border-top:1px solid #37474e;margin-top:10px;padding-top:6px}</style>
+<header><h1>大腿骨の位置合わせ</h1><small id="case"></small></header><main>
+<label id="loadLabel">試験データを開く <input type="file" id="load" accept=".json"></label>
+<div id="app" hidden><div class="bar"><select id="mode"><option value="split">近位・遠位の2画面</option><option value="whole">全体合わせ（比較用）</option></select><span id="status"></span><button id="save">下書きを保存</button><button id="reset">この方式を初期位置に戻す</button></div>
+<div class="views"><div class="panel"><h2 id="titleA">遠位｜骨軸</h2><canvas id="dist"></canvas></div><div class="panel" id="panelB"><h2>近位｜大転子・小転子</h2><canvas id="prox"></canvas></div></div>
+<div class="controls" id="controls"></div><small>画像をドラッグして平行移動。水色＝外皮質、橙＝髄腔内縁候補、緑＝骨軸、紫＝選択断面。GT・LT・骨軸はCT候補。まず姿勢を合わせ、次に境界を修正。修正点はAP画像座標に固定。</small>
+<section><div class="bar"><label>小転子から遠位 <select id="level"></select> mm</label><label>境界 <select id="which"><option>内側外皮質</option><option>内側髄腔</option><option>外側髄腔</option><option>外側外皮質</option></select></label><button id="minus">点を左へ 1 px</button><button id="plus">右へ 1 px</button><button id="absent">判読不能</button><button id="undo">CT候補へ戻す</button></div>
+<div class="lower"><div><small>選択した高さのCT横断像</small><br><canvas width="180" height="165" id="ct"></canvas></div><div><small>AP輝度プロファイル｜境界を選び、グラフをクリックして修正</small><br><canvas id="profile" width="420" height="145"></canvas></div><small id="note"></small></div></section></div></main>
+<script id="payload" type="application/json">null</script>
+<script>
+const $=id=>document.getElementById(id), rad=Math.PI/180, img=new Image(), sample=document.createElement('canvas');
+let data,gray,states,rows,frames={},points,profilePoints,ctIdx=-1,ctBitmap,activeMode='split',drag;
+let tick=null;function clock(){if(tick!==null){st().ms+=performance.now()-tick;tick=null}}
+const fresh=()=>({x:0,y:0,tilt:0,roll:0,edits:{},moves:0,ms:0});const st=()=>states[activeMode];
+function init(d){
+ data=d;states={split:fresh(),whole:fresh()};activeMode=$('mode').value;
+ try{const saved=JSON.parse(localStorage.getItem(key()));if(saved&&saved.split&&saved.whole)states=saved}catch{}
+ $('case').textContent=d.caption;$('app').hidden=false;$('loadLabel').hidden=true;
+ $('level').replaceChildren(...[0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120].filter(x=>d.lt[2]-x>=d.rings[0].z).map(x=>new Option(x,x)));$('level').value='10';
+ img.onload=()=>{sample.width=img.width;sample.height=img.height;const g=sample.getContext('2d');g.drawImage(img,0,0);gray=g.getImageData(0,0,img.width,img.height).data;render()};img.src='data:image/png;base64,'+d.image;
+}
+function key(){return 'fma-femur-pilot-v1:'+data.imageHash}
+function projectFn(){
+ const s=st(),[a,b,e]=[data.pose.rx,data.pose.ry,data.pose.rz].map(v=>v*rad),ca=Math.cos(a),sa=Math.sin(a),cb=Math.cos(b),sb=Math.sin(b),cc=Math.cos(e),sc=Math.sin(e);
+ const u=[cc*cb,cc*sb*sa-sc*ca,cc*sb*ca+sc*sa],v=[sb,-cb*sa,-cb*ca],base=data.axis[1],axis=data.axis[0].map((x,i)=>x-base[i]),len=Math.hypot(...axis),[nx,ny,nz]=axis.map(x=>x/len);
+ const dot=(a,b)=>a.reduce((v,x,i)=>v+x*b[i],0),pivot=base.map((x,i)=>x-data.center[i]),px=img.width*(.5+data.pose.dx)+data.ppm*dot(pivot,u),py=img.height*(.5+data.pose.dy)+data.ppm*dot(pivot,v);
+ const co=Math.cos(s.roll*rad),si=Math.sin(s.roll*rad),ct=Math.cos(s.tilt*rad),ss=Math.sin(s.tilt*rad);
+ return p=>{const x=p[0]-base[0],y=p[1]-base[1],z=p[2]-base[2],t=(nx*x+ny*y+nz*z)*(1-co);
+ const q=[co*x+si*(ny*z-nz*y)+nx*t,co*y+si*(nz*x-nx*z)+ny*t,co*z+si*(nx*y-ny*x)+nz*t],xx=data.ppm*dot(q,u),yy=data.ppm*dot(q,v);
+ return [px+s.x+ct*xx-ss*yy,py+s.y+ss*xx+ct*yy]};
+}
+function compute(){
+ const proj=projectFn();rows=data.rings.map((r,i)=>{let lo,hi,li,ri;for(let j=0;j<r.o.length;j++){if(!r.o[j])continue;const p=proj(r.o[j]);if(!lo||p[0]<lo[0]){lo=p;li=j}if(!hi||p[0]>hi[0]){hi=p;ri=j}}
+ const edge=[lo,r.i[li]?proj(r.i[li]):null,r.i[ri]?proj(r.i[ri]):null,hi];
+ for(let j=0;j<4;j++){const k=i+':'+j;if(k in st().edits)edge[j]=st().edits[k]}
+ return edge});
+ points={axis:data.axis.map(proj),gt:proj(data.gt),lt:proj(data.lt)};
+}
+function index(){let z=data.lt[2]-Number($('level').value);return data.rings.reduce((best,r,i)=>Math.abs(r.z-z)<Math.abs(data.rings[best].z-z)?i:best,0)}
+const colors=['#5cf0f5','#ffab48','#ffab48','#5cf0f5'];
+function view(id,cx,cy,height){
+ const el=$(id),width=el.clientWidth,h=el.clientHeight;if(!width||!h)return;
+ el.width=width;el.height=h;const g=el.getContext('2d'),scale=Math.min(h/height,width/(height*.76));const x0=cx-width/(2*scale),y0=cy-h/(2*scale);frames[id]={scale,x0,y0};
+ g.setTransform(scale,0,0,scale,-x0*scale,-y0*scale);g.drawImage(img,0,0);g.lineWidth=1.4/scale;
+ function path(ps,color){g.strokeStyle=color;g.beginPath();let last;for(const p of ps){if(!p){last=null;continue}if(last)g.lineTo(...p);else g.moveTo(...p);last=p}g.stroke()}
+ for(let j=0;j<4;j++)path(rows.map(v=>v[j]),colors[j]);path(points.axis,'#99ee80');
+ function mark(p,name,color){g.fillStyle=color;g.beginPath();g.arc(...p,3/scale,0,2*Math.PI);g.fill();g.font=(13/scale)+'px sans-serif';g.fillText(name,p[0]+4/scale,p[1]-4/scale)}
+ mark(points.gt,'GT','#fff');mark(points.lt,'LT','#fff');points.axis.forEach((p,i)=>mark(p,i?'100':'10','#99ee80'));
+ const sel=rows[index()];if(sel[0]&&sel[3])path([sel[0],sel[3]],'#c3a2ff');sel.forEach((p,i)=>{if(p)mark(p,'',colors[i])});
+}
+function profile(){
+ const idx=index(),r=data.rings[idx],edge=rows[idx],p=projectFn(),lo=p(r.o.find(Boolean)),outer=r.o.filter(Boolean).map(p).sort((a,b)=>a[0]-b[0]);const L=outer[0],R=outer.at(-1),dx=R[0]-L[0],dy=R[1]-L[1]; // follow the projected transverse chord
+ const g=$('profile').getContext('2d');g.clearRect(0,0,420,145);g.strokeStyle='#eee';g.beginPath();profilePoints=[];
+ for(let k=0;k<420;k++){let t=k/419*1.5-.25,x=L[0]+t*dx,y=L[1]+t*dy;profilePoints.push([x,y]);let at=4*(Math.round(y)*img.width+Math.round(x));let lum=.299*gray[at]+.587*gray[at+1]+.114*gray[at+2];if(k)g.lineTo(k,138-lum*.48);else g.moveTo(k,138-lum*.48)}g.stroke();
+ edge.forEach((q,j)=>{if(!q)return;let xx=((q[0]-L[0])/dx+.25)/1.5*419;g.strokeStyle=colors[j];g.beginPath();g.moveTo(xx,0);g.lineTo(xx,145);g.stroke()});
+ const ci=$('ct').getContext('2d');function paint(){ci.drawImage(ctBitmap,0,0,180,165);for(let field of ['o','i']){ci.fillStyle=field==='o'?colors[0]:colors[1];for(let q of r[field])if(q)ci.fillRect((q[0]-data.ctOrigin[0])/data.ctSp/97*180,(q[1]-data.ctOrigin[1])/data.ctSp/100*165,2,2)}}
+ if(idx!==ctIdx){ctIdx=idx;ctBitmap=new Image();ctBitmap.onload=()=>{if(ctIdx===idx)paint()};ctBitmap.src='data:image/png;base64,'+r.ct}else if(ctBitmap.complete)paint();
+ $('note').textContent='選択高 '+$('level').value+' mm ｜ '+(edge[$('which').selectedIndex]?'候補あり':'候補なし・要確認')+' ｜ 修正・欠測 '+Object.keys(st().edits).length+' 点';
+}
+function referenceError(start,end){
+ const diffs=[];for(const [y,l,r] of data.ref){if(y<start||y>end)continue;
+ for(const [j,target] of [[0,l],[3,r]]){if(target===null)continue;
+ for(let k=1;k<rows.length;k++){const a=rows[k-1][j],b=rows[k][j];if(!a||!b||Math.abs(b[1]-a[1])<.01)continue;
+ if((a[1]-y)*(b[1]-y)<=0){const x=a[0]+(y-a[1])*(b[0]-a[0])/(b[1]-a[1]);diffs.push(Math.abs(x-target));break}}}}
+ return diffs.length?(diffs.reduce((a,b)=>a+b,0)/diffs.length).toFixed(1):'—'
+}
+function render(){if(!gray)return;compute();const split=activeMode==='split';$('panelB').hidden=!split;$('titleA').textContent=split?'遠位｜骨軸':'全体｜比較用';const row=points.axis;
+ view('dist',...(split?data.views.dist:data.views.whole));if(split)view('prox',...data.views.prox);profile();
+ $('status').textContent='横 '+st().x+' px　縦 '+st().y+' px　傾き '+st().tilt+'°　軸回旋 '+st().roll+'°　操作 '+st().moves+' 回　'+Math.round((st().ms+(tick===null?0:performance.now()-tick))/1000)+' 秒　既存外皮質点との平均差　近位 '+referenceError(200,338)+' / 遠位 '+referenceError(372,610)+' px'}
+function move(k,v){if(tick===null)tick=performance.now();st()[k]=Math.round((st()[k]+v)*10)/10;st().moves++;render()}
+for(let [k,title,step] of [['x','左右',1],['y','上下',1],['tilt','面内傾き',.5],['roll','骨軸回旋',1]]){let label=document.createElement('label');label.textContent=title+' ';for(let s of [-1,1]){let b=document.createElement('button');b.textContent=(s>0?'+':'−')+step;b.onclick=()=>move(k,s*step);label.append(b)}$('controls').append(label)}
+for(let id of ['dist','prox']){const el=$(id);el.onpointerdown=e=>{if(tick===null)tick=performance.now();el.setPointerCapture(e.pointerId);drag={x:e.clientX,y:e.clientY,dx:st().x,dy:st().y}};el.onpointermove=e=>{if(!drag)return;const scale=frames[id].scale;st().x=Math.round(drag.dx+(e.clientX-drag.x)/scale);st().y=Math.round(drag.dy+(e.clientY-drag.y)/scale);render()};el.onpointerup=el.onpointercancel=()=>{if(drag){drag=null;st().moves++;render()}}}
+function edit(p){if(tick===null)tick=performance.now();st().edits[index()+':'+$('which').selectedIndex]=p;render()}
+$('profile').onclick=e=>{const rect=e.target.getBoundingClientRect();edit(profilePoints[Math.max(0,Math.min(419,Math.round(419*(e.clientX-rect.left)/rect.width)))])};
+for(let [id,s] of [['minus',-1],['plus',1]])$(id).onclick=()=>{let q=rows[index()][$('which').selectedIndex];if(q)edit([q[0]+s,q[1]])};
+$('absent').onclick=()=>edit(null);$('undo').onclick=()=>{delete st().edits[index()+':'+$('which').selectedIndex];render()};
+$('mode').onchange=e=>{clock();activeMode=e.target.value;render()};$('level').onchange=$('which').onchange=render;$('reset').onclick=()=>{if(confirm('この方式の姿勢と点修正を初期値に戻しますか？')){clock();states[activeMode]=fresh();render()}};$('save').onclick=()=>{clock();localStorage.setItem(key(),JSON.stringify(states));$('status').textContent+='　このブラウザに保存済み'};
+$('load').onchange=async e=>init(JSON.parse(await e.target.files[0].text()));window.onresize=render;
+setInterval(()=>{if(tick!==null)render()},1000);document.addEventListener('visibilitychange',()=>{if(document.hidden)clock()});
+const embedded=JSON.parse($('payload').textContent);if(embedded)init(embedded);
+</script></html>
+
