@@ -8,7 +8,7 @@
 <div class="bar"><span>CT上の転子点確認</span><label>GT <select id="reviewGT"><option value="pending">未確認</option><option value="checked">確認済み</option><option value="revise">要修正</option></select></label><label>LT <select id="reviewLT"><option value="pending">未確認</option><option value="checked">確認済み</option><option value="revise">要修正</option></select></label></div>
 <div class="bar" role="group" aria-label="打点する点の属性"><strong>点の属性</strong><button id="attr0" aria-pressed="false">内側外皮質</button><button id="attr1" aria-pressed="false">内側髄腔</button><button id="attr2" aria-pressed="false">外側髄腔</button><button id="attr3" aria-pressed="false">外側外皮質</button><button id="attr4" aria-pressed="false">内側ステム接触</button><button id="attr5" aria-pressed="false">外側ステム接触</button><button id="undoPoint" disabled>↶ 1点戻す</button></div>
 <div class="views"><div class="panel"><h2 id="titleA">遠位｜骨軸</h2><canvas id="dist"></canvas></div><div class="panel" id="panelB"><h2>近位｜大転子・小転子</h2><canvas id="prox"></canvas></div></div>
-<small>赤＝皮質とステムの接触候補　紫紅＝医師が確認した接触</small><div class="controls" id="controls"></div><small>画像をドラッグして平行移動。水色＝外皮質、橙＝髄腔内縁候補、緑＝骨軸、紫＝選択断面。GT・LT・骨軸はCT候補。まず姿勢を合わせ、次に境界を修正。修正点はAP画像座標に固定。</small>
+<small>赤＝皮質とステムの接触候補　紫紅＝医師が確認した接触</small><div class="controls" id="controls"></div><small>テンキー 7／9：面内傾き、4／6：骨軸回旋。追加CADは 2／8：X、7／9：Y、4／6：Z回転。画像をドラッグして平行移動。水色＝外皮質、橙＝髄腔内縁候補、緑＝骨軸、紫＝選択断面。GT・LT・骨軸はCT候補。まず姿勢を合わせ、次に境界を修正。修正点はAP画像座標に固定。</small>
 <section><div class="bar"><label>小転子から遠位 <select id="level"></select> mm</label><label>境界 <select id="which"><option>内側外皮質</option><option>内側髄腔</option><option>外側髄腔</option><option>外側外皮質</option></select></label><button id="minus">点を左へ 1 px</button><button id="plus">右へ 1 px</button><button id="confirmContact">接触を確認</button><button id="absent">判読不能</button><button id="undo">CT候補へ戻す</button></div>
 <div class="lower"><div><small>選択した高さのCT横断像</small><br><canvas width="180" height="165" id="ct"></canvas></div><div><small>AP輝度プロファイル｜境界を選び、グラフをクリックして修正</small><br><canvas id="profile" width="420" height="145"></canvas></div><small id="note"></small></div></section></div></main>
 <script id="payload" type="application/json">null</script>
@@ -176,6 +176,25 @@ for(const [k,label,step] of [['x','左右 px',1],['y','上下 px',1],['rx','X°'
  const box=document.createElement('label');box.textContent=label+' ';for(const sign of [-1,1]){const b=document.createElement('button');b.textContent=(sign>0?'+':'−')+step;b.onclick=()=>{const l=selectedLayer();if(l){l[k]=Math.round((l[k]+sign*step)*100)/100;if(k==='scale')l[k]=Math.max(.01,l[k]);render()}};box.append(b)}$('cadControls').append(box)
 }
 $('tool').onchange=render;
+
+document.addEventListener('keydown',event=>{
+  if(event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.target?.closest?.('textarea,[contenteditable=true],input:not([type=range]):not([type=checkbox]):not([type=button])'))return;
+  const bindings={Numpad4:['roll','rz',-1],Numpad6:['roll','rz',1],Numpad7:['tilt','ry',-1],Numpad9:['tilt','ry',1],Numpad2:[null,'rx',-1],Numpad8:[null,'rx',1]};
+  const action=bindings[event.code];
+  if(!action)return;
+  const [boneAxis,cadAxis,direction]=action;
+  if($('tool').value==='cad'){
+    const layer=selectedLayer();
+    if(!layer?.visible)return;
+    layer[cadAxis]+=direction;
+    render();
+  }else{
+    if(!boneAxis)return;
+    move(boneAxis,direction*(boneAxis==='tilt'?.5:1));
+  }
+  event.preventDefault();
+});
+
 function mousePoint(id,e){const f=frames[id],rect=$(id).getBoundingClientRect();return [f.x0+(e.clientX-rect.left)/f.scale,f.y0+(e.clientY-rect.top)/f.scale]}
 for(let id of ['dist','prox']){const el=$(id);el.onpointerdown=e=>{if(tick===null)tick=performance.now();const tool=e.shiftKey&&selectedLayer()?'cad':$('tool').value;
  if(tool==='edge'){addAPPoint(mousePoint(id,e));return}
