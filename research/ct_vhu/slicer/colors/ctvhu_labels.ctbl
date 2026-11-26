@@ -1,0 +1,5 @@
+0 background 0 0 0 0
+1 cortical_shell 30 200 200 255
+2 internal_high_density 255 210 0 255
+3 isolated_high_HU 255 0 200 255
+4 metal_excluded 120 120 120 255

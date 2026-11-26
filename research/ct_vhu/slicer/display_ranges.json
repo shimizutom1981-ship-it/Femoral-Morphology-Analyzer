@@ -1,0 +1,88 @@
+{
+  "vhu_mean_r1.5": {
+    "min": -200,
+    "max": 1600,
+    "cmap": "ctvhu_turbo",
+    "unit": "HU"
+  },
+  "vhu_mean_r2": {
+    "min": -200,
+    "max": 1600,
+    "cmap": "ctvhu_turbo",
+    "unit": "HU"
+  },
+  "vhu_mean_r3": {
+    "min": -200,
+    "max": 1600,
+    "cmap": "ctvhu_turbo",
+    "unit": "HU"
+  },
+  "vhu_presence": {
+    "min": -200,
+    "max": 1600,
+    "cmap": "ctvhu_turbo",
+    "unit": "HU"
+  },
+  "vhu_median_r1.5": {
+    "min": -200,
+    "max": 1600,
+    "cmap": "ctvhu_turbo",
+    "unit": "HU"
+  },
+  "vhu_oriented_r2": {
+    "min": -200,
+    "max": 1600,
+    "cmap": "ctvhu_turbo",
+    "unit": "HU"
+  },
+  "vhu_sd_r2": {
+    "min": 0,
+    "max": 500,
+    "cmap": "ctvhu_magma",
+    "unit": "HU"
+  },
+  "vhu_occ450_r2": {
+    "min": 0,
+    "max": 1,
+    "cmap": "ctvhu_viridis",
+    "unit": "fraction"
+  },
+  "grad_mag": {
+    "min": 0,
+    "max": 1500,
+    "cmap": "ctvhu_magma",
+    "unit": "HU/mm"
+  },
+  "continuity_log10mm3": {
+    "min": 0,
+    "max": 5,
+    "cmap": "ctvhu_viridis",
+    "unit": "log10 mm3",
+    "threshold_below": 0.01
+  },
+  "t_local": {
+    "min": 400,
+    "max": 800,
+    "cmap": "ctvhu_plasma",
+    "unit": "HU"
+  },
+  "boundary_field": {
+    "min": -600,
+    "max": 600,
+    "cmap": "ctvhu_coolwarm",
+    "unit": "HU"
+  },
+  "cortical_thickness_mm": {
+    "min": 0,
+    "max": 8,
+    "cmap": "ctvhu_plasma",
+    "unit": "mm",
+    "threshold_below": 0.05
+  },
+  "labels": {
+    "min": 0,
+    "max": 4,
+    "cmap": "ctvhu_labels",
+    "unit": "label"
+  }
+}
